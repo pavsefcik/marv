@@ -255,6 +255,9 @@ class TUIController:
         status.set_thinking(self._app.agent.thinking_level)
         chat.add_system_message(f"switched to {model_name}")
 
+        # Start warming the model up in the background so it's ready to answer.
+        self._app.start_model()
+
     def switch_thinking(self, level_name: str) -> None:
         """Switch thinking level."""
         chat = self._app.query_one("#chat-view", ChatView)
