@@ -1,14 +1,9 @@
 """Shared default model configuration for providers."""
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4"
-DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
-DEFAULT_OPENAI_CODEX_MODEL = "gpt-5.4"
-
-DEFAULT_MODEL_BY_PROVIDER = {
-    "openai": DEFAULT_OPENAI_MODEL,
-    "anthropic": DEFAULT_ANTHROPIC_MODEL,
-    "openai-codex": DEFAULT_OPENAI_CODEX_MODEL,
-}
+# YMLX is model-agnostic: the default model is discovered dynamically from the
+# managed hub, so there is no hardcoded cloud default. A caller can still pass
+# an explicit model override.
+DEFAULT_MODEL_BY_PROVIDER: dict[str, str] = {}
 
 
 def default_model_for_provider(provider: str) -> str | None:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import textwrap
 
-from marv import cli
 from typer.testing import CliRunner
 
+from marv import cli
 from marv.runtime.message import Message, Role
 from marv.runtime.session import Session
 

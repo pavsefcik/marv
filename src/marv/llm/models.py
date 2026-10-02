@@ -7,7 +7,7 @@ This avoids brittle name-prefix matching for capability detection.
 from dataclasses import dataclass
 from typing import Literal
 
-Provider = Literal["anthropic", "openai", "openai-compat"]
+Provider = Literal["anthropic", "openai", "openai-compat", "ymlx"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -452,6 +452,8 @@ def resolve_capability_provider(provider: str | None) -> Provider | None:
     """Map config/runtime provider names to capability provider families."""
     if provider == "anthropic":
         return "anthropic"
+    if provider == "ymlx":
+        return "ymlx"
     if provider in {"openai", "openai-codex"}:
         return "openai"
     if provider:
@@ -482,8 +484,12 @@ def _effective_capability_provider(
     model_prefix: str | None,
 ) -> Provider | None:
     capability_provider = resolve_capability_provider(provider)
-    if capability_provider != "openai-compat":
+    if capability_provider not in ("openai-compat", "ymlx"):
         return capability_provider
+
+    # YMLX models carry their own family capability via the model id.
+    if capability_provider == "ymlx":
+        return "ymlx"
 
     # OpenAI-compatible routes often encode upstream provider in the model ID.
     if model_prefix == "openai":
@@ -562,6 +568,12 @@ def supports_reasoning(model_id: str, provider: str | None = None) -> bool:
             return True
         # Older models don't
         return "claude-sonnet-4" in model_lower or "claude-opus-4" in model_lower
+
+    # YMLX: capability is per model family.
+    if effective_provider == "ymlx":
+        from marv.llm.ymlx_models import ymlx_supports_thinking
+
+        return ymlx_supports_thinking(model_id)
 
     # OpenAI: o1/o3/o4 and gpt-5+ support reasoning
     if effective_provider in ("openai", "openai-compat"):

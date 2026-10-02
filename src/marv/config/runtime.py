@@ -26,10 +26,10 @@ class ProviderConfig:
 class Config:
     """Resolved app config (delivery concern)."""
 
-    provider: str = "openai"
+    provider: str = "ymlx"
     model: str | None = None
     api_key: str | None = None
-    base_url: str | None = None
+    base_url: str | None = "http://localhost:11500"
     context_max_tokens: int = 128000
     max_output_tokens: int = 8192
     temperature: float = 0.7
@@ -175,10 +175,10 @@ class Config:
             max_output_tokens = min(8192, context_max_tokens)
 
         return cls(
-            provider=data.get("provider", "openai"),
+            provider=data.get("provider", "ymlx"),
             model=data.get("model"),
             api_key=data.get("api_key"),
-            base_url=data.get("base_url"),
+            base_url=data.get("base_url", "http://localhost:11500"),
             context_max_tokens=context_max_tokens,
             max_output_tokens=max_output_tokens,
             temperature=data.get("temperature", 0.7),

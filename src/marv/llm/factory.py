@@ -35,11 +35,9 @@ class ResolvedProviderConfig:
 
 def _env_provider_key(provider: str) -> str | None:
     mapping = {
-        "openai": "OPENAI_API_KEY",
-        "openai-codex": "OPENAI_CODEX_OAUTH_TOKEN",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "groq": "GROQ_API_KEY",
+        "ymlx": "YMLX_BASE_URL",
+        "openai-compat": "OPENAI_COMPAT_BASE_URL",
+        "ollama": "OLLAMA_BASE_URL",
     }
     env_var = mapping.get(provider)
     if env_var:
@@ -47,48 +45,17 @@ def _env_provider_key(provider: str) -> str | None:
     return None
 
 
-def _is_anthropic_key(value: str | None) -> bool:
-    return value is not None and value.startswith("sk-ant-")
-
-
-def _is_openai_oauth_token(value: str | None) -> bool:
-    if not value:
-        return False
-    parts = value.split(".")
-    return len(parts) == 3 and all(part for part in parts)
-
-
 def _resolve_api_key(default: str | None, provider: str) -> str | None:
+    if provider == "ymlx":
+        # YMLX serves an unauthenticated local endpoint; never send a key.
+        return default or ""
     env_key = _env_provider_key(provider)
     if env_key:
         return env_key
-
     agent_key = os.environ.get("AGENT_API_KEY")
-
-    if provider == "anthropic":
-        if _is_anthropic_key(agent_key):
-            return agent_key
-        if _is_anthropic_key(default):
-            return default
-        return None
-
-    if provider == "openai":
-        if agent_key and not _is_anthropic_key(agent_key):
-            return agent_key
-        if default and not _is_anthropic_key(default):
-            return default
-        return None
-
-    if provider == "openai-codex":
-        if _is_openai_oauth_token(agent_key):
-            return agent_key
-        if _is_openai_oauth_token(default):
-            return default
-        return None
-
     if agent_key:
         return agent_key
-    return default
+    return default or ""
 
 
 def _resolve_model(provider: str, model: str | None, fallback_model: str | None) -> str | None:
@@ -117,35 +84,15 @@ def resolve_provider_config(
         )
 
     default_configs = {
-        "openai": ResolvedProviderConfig(
-            base_url="https://api.openai.com",
-            model=default_model_for_provider("openai"),
-            api_key=api_key,
-        ),
-        "openai-codex": ResolvedProviderConfig(
-            base_url="https://chatgpt.com/backend-api",
-            model=default_model_for_provider("openai-codex"),
-            api_key=api_key,
-        ),
-        "anthropic": ResolvedProviderConfig(
-            base_url="https://api.anthropic.com",
-            model=default_model_for_provider("anthropic"),
-            api_key=api_key,
+        "ymlx": ResolvedProviderConfig(
+            base_url="http://localhost:11500",
+            model=None,
+            api_key="",
         ),
         "ollama": ResolvedProviderConfig(
             base_url="http://localhost:11434",
             model=None,
-            api_key="ollama",
-        ),
-        "openrouter": ResolvedProviderConfig(
-            base_url="https://openrouter.ai/api",
-            model=None,
-            api_key=api_key,
-        ),
-        "groq": ResolvedProviderConfig(
-            base_url="https://api.groq.com/openai/v1",
-            model=None,
-            api_key=api_key,
+            api_key="",
         ),
     }
 
@@ -158,7 +105,7 @@ def resolve_provider_config(
         )
 
     return ResolvedProviderConfig(
-        base_url=base_url or "https://api.openai.com",
+        base_url=base_url or "http://localhost:11500",
         model=_resolve_model(provider, model, None),
         api_key=_resolve_api_key(api_key, provider),
     )
@@ -184,6 +131,13 @@ def create_provider(
         base_url=base_url,
         provider_overrides=provider_overrides,
     )
+
+    # YMLX: when no model is configured, fall back to the currently-serving one.
+    if prov_config.model is None and provider in ("ymlx", "openai-compat", "ollama"):
+        from marv.llm.ymlx_models import running_model_id
+
+        prov_config.model = running_model_id(prov_config.base_url)
+
     if prov_config.model is None:
         raise ValueError(
             f"Model is required for provider '{provider}'. "
@@ -193,34 +147,15 @@ def create_provider(
     if not is_model_valid_for_provider(prov_config.model, provider):
         raise ValueError(f"Model '{prov_config.model}' is not valid for provider '{provider}'")
 
-    if provider == "anthropic":
-        from marv.llm.anthropic import AnthropicProvider
+    if provider == "ymlx":
+        from marv.llm.ymlx import YMLXProvider
 
-        return AnthropicProvider(
-            api_key=prov_config.api_key or "",
-            model=prov_config.model,
-            max_tokens=max_output_tokens,
-        )
-
-    if provider == "openai":
-        from marv.llm.openai import OpenAIProvider
-
-        return OpenAIProvider(
-            api_key=prov_config.api_key or "",
-            model=prov_config.model,
-            temperature=temperature,
-            max_tokens=max_output_tokens,
-        )
-
-    if provider == "openai-codex":
-        from marv.llm.openai_codex import OpenAICodexProvider
-
-        return OpenAICodexProvider(
-            api_key=prov_config.api_key or "",
-            model=prov_config.model,
-            temperature=temperature,
-            max_tokens=max_output_tokens,
+        return YMLXProvider(
             base_url=prov_config.base_url,
+            api_key=prov_config.api_key or "",
+            model=prov_config.model,
+            temperature=temperature,
+            max_tokens=max_output_tokens,
         )
 
     from marv.llm.openai_compat import OpenAICompatibleProvider

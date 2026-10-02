@@ -5,9 +5,9 @@ from __future__ import annotations
 import textwrap
 from typing import TYPE_CHECKING
 
-from marv import cli
 from typer.testing import CliRunner
 
+from marv import cli
 from marv.runtime.session import Session
 
 if TYPE_CHECKING:
@@ -130,6 +130,8 @@ def test_cli_run_headless_loads_explicit_session(temp_dir, monkeypatch):
             "--headless",
             "--session",
             str(session.path),
+            "-m",
+            "mlx-community/Qwen3.5-4B-MLX-4bit",
             "--extension",
             str(ext_path),
             "/dump-config",
@@ -150,7 +152,15 @@ def test_cli_run_errors_when_explicit_session_path_missing(temp_dir, monkeypatch
     runner = CliRunner()
     result = runner.invoke(
         cli.app,
-        ["run", "--headless", "hello", "--session", str(missing)],
+        [
+            "run",
+            "--headless",
+            "hello",
+            "-m",
+            "mlx-community/Qwen3.5-4B-MLX-4bit",
+            "--session",
+            str(missing),
+        ],
     )
 
     assert result.exit_code == 1
@@ -171,7 +181,16 @@ def test_cli_run_resume_without_previous_session_still_runs_headless(temp_dir, m
     runner = CliRunner()
     result = runner.invoke(
         cli.app,
-        ["run", "--resume", "--headless", "--extension", str(ext_path), "/dump-config"],
+        [
+            "run",
+            "--resume",
+            "--headless",
+            "-m",
+            "mlx-community/Qwen3.5-4B-MLX-4bit",
+            "--extension",
+            str(ext_path),
+            "/dump-config",
+        ],
     )
 
     assert result.exit_code == 0

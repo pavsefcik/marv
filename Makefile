@@ -15,26 +15,23 @@ can-release: lint test ## Run all checks
 
 ##@ Running
 run: ## Run the agent in interactive mode
-	@uv run agent run
+	@uv run marv run
 
 run-headless: ## Run the agent in headless mode (PROMPT="...")
 	@if [ -z "$(PROMPT)" ]; then \
 		echo "PROMPT is required. Example: make run-headless PROMPT=\"List all Python files\""; \
 		exit 1; \
 	fi
-	@uv run agent run --headless "$(PROMPT)"
-
-run-web: ## Run the local web delivery server
-	@uv run agent web
+	@uv run marv run --headless "$(PROMPT)"
 
 ##@ Linting
 lint: ## Run linters and type checks
-	@uv run ruff check src/agent tests examples
-	@uv run ruff format --check src/agent tests examples
-	@uv run mypy src/agent
+	@uv run ruff check src/marv tests examples
+	@uv run ruff format --check src/marv tests examples
+	@uv run mypy src/marv
 
 format: ## Format code
-	@uv run ruff format src/agent tests examples
+	@uv run ruff format src/marv tests examples
 
 ##@ Maintenance
 clean: ## Remove cache artifacts

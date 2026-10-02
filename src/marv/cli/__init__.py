@@ -7,25 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from marv.config import Config
-from marv.llm.anthropic.oauth import (
-    load_oauth_credentials as load_anthropic_oauth_credentials,
-)
-from marv.llm.anthropic.oauth import (
-    login_flow as anthropic_login_flow,
-)
-from marv.llm.anthropic.oauth import (
-    logout_flow as anthropic_logout_flow,
-)
 from marv.llm.factory import create_provider
-from marv.llm.openai_codex.oauth import (
-    load_oauth_credentials as load_openai_codex_oauth_credentials,
-)
-from marv.llm.openai_codex.oauth import (
-    login_flow as openai_codex_login_flow,
-)
-from marv.llm.openai_codex.oauth import (
-    logout_flow as openai_codex_logout_flow,
-)
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 
@@ -36,13 +18,10 @@ if TYPE_CHECKING:
     from marv.llm.provider import LLMProvider
 
 app = typer.Typer(
-    name="agent",
-    help="A Python AI coding agent",
+    name="marv",
+    help="A YMLX-powered coding agent TUI",
     no_args_is_help=False,
 )
-
-auth_app = typer.Typer(help="OAuth and API key management")
-app.add_typer(auth_app, name="auth")
 
 
 def main() -> None:
@@ -61,56 +40,6 @@ def _create_llm_provider(config: Config) -> LLMProvider:
         max_output_tokens=config.max_output_tokens,
         provider_overrides=config.provider_overrides(),
     )
-
-
-@auth_app.command("login")
-def auth_login(
-    provider: Annotated[
-        str,
-        typer.Argument(help="Provider name (anthropic|openai-codex)"),
-    ] = "anthropic",
-) -> None:
-    """Login to an OAuth provider."""
-    if provider == "anthropic":
-        anthropic_login_flow(typer.prompt, typer.echo)
-        return
-    if provider == "openai-codex":
-        openai_codex_login_flow(typer.prompt, typer.echo)
-        return
-    typer.echo("Unsupported provider. Use: anthropic or openai-codex.", err=True)
-    raise typer.Exit(1)
-
-
-@auth_app.command("logout")
-def auth_logout(
-    provider: Annotated[
-        str,
-        typer.Argument(help="Provider name (anthropic|openai-codex)"),
-    ] = "anthropic",
-) -> None:
-    """Logout from a provider."""
-    if provider == "anthropic":
-        anthropic_logout_flow(typer.echo)
-        return
-    if provider == "openai-codex":
-        openai_codex_logout_flow(typer.echo)
-        return
-    typer.echo("Unsupported provider. Use: anthropic or openai-codex.", err=True)
-    raise typer.Exit(1)
-
-
-@auth_app.command("status")
-def auth_status() -> None:
-    """Show stored credentials."""
-    found = False
-    if load_anthropic_oauth_credentials():
-        typer.echo("anthropic: oauth")
-        found = True
-    if load_openai_codex_oauth_credentials():
-        typer.echo("openai-codex: oauth")
-        found = True
-    if not found:
-        typer.echo("No OAuth credentials found")
 
 
 @app.command()
@@ -176,6 +105,10 @@ def run(
         append_system_prompt=config.append_system_prompt,
     )
 
+    if (prompt or headless) and not prompt:
+        typer.echo("Error: Prompt required in headless mode", err=True)
+        raise typer.Exit(1)
+
     llm_provider = _create_llm_provider(config)
 
     loaded_session: Session | None = None
@@ -194,9 +127,7 @@ def run(
             typer.echo("No previous session found", err=True)
 
     if prompt or headless:
-        if not prompt:
-            typer.echo("Error: Prompt required in headless mode", err=True)
-            raise typer.Exit(1)
+        assert prompt is not None  # guaranteed by the headless guard above
         asyncio.run(_run_headless(config, prompt, loaded_session, llm_provider))
     else:
         _run_tui(config, loaded_session, llm_provider)
@@ -208,13 +139,6 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
 
     app = AgentApp(config, provider=llm_provider, session=session)
     app.run()
-
-
-def _run_web(config: Config, host: str, port: int) -> None:
-    """Run the local web delivery server."""
-    from marv.web.server import run_web_server
-
-    run_web_server(config, host=host, port=port)
 
 
 @app.command()
@@ -259,22 +183,6 @@ def tree(
         create_llm_provider=_create_llm_provider,
         run_tui=_run_tui,
     )
-
-
-@app.command()
-def web(
-    host: Annotated[
-        str,
-        typer.Option("--host", help="Host interface for the local web server"),
-    ] = "127.0.0.1",
-    port: Annotated[
-        int,
-        typer.Option("--port", help="Port for the local web server"),
-    ] = 8000,
-) -> None:
-    """Run the local web delivery server."""
-    config = Config.load()
-    _run_web(config, host, port)
 
 
 @app.command()

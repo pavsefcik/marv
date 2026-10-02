@@ -31,6 +31,9 @@ from marv.llm.events import (
     TextDeltaEvent,
     TextEndEvent,
     TextStartEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndEvent,
+    ThinkingStartEvent,
     ToolCallBlock,
     ToolCallDeltaEvent,
     ToolCallEndEvent,
@@ -129,6 +132,9 @@ class OpenAICompatibleProvider:
     max_tokens: int = 4096
     retry_config: RetryConfig = field(default_factory=RetryConfig, repr=False)
     http_client: httpx.AsyncClient | None = field(default=None, repr=False)
+    enable_thinking: bool | None = field(default=None, repr=False)
+    thinking_start_token: str | None = field(default=None, repr=False)
+    thinking_end_token: str | None = field(default=None, repr=False)
     _client: httpx.AsyncClient | None = field(default=None, repr=False)
     _encoder: tiktoken.Encoding | None = field(default=None, repr=False)
     _compat: CompatSettings | None = field(default=None, repr=False)
@@ -141,12 +147,12 @@ class OpenAICompatibleProvider:
     def client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
         if self._client is None:
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
             self._client = httpx.AsyncClient(
                 base_url=self.base_url.rstrip("/"),
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 timeout=httpx.Timeout(120.0, connect=10.0),
             )
         return self._client
@@ -199,6 +205,15 @@ class OpenAICompatibleProvider:
             self.compat.max_tokens_field: max_tokens,
             "temperature": temp,
         }
+
+        # Thinking control for providers that pass it through (e.g. YMLX's
+        # mlx_vlm server honors enable_thinking and optional bracket markers).
+        if self.enable_thinking is not None:
+            payload["enable_thinking"] = bool(self.enable_thinking)
+        if self.thinking_start_token:
+            payload["thinking_start_token"] = self.thinking_start_token
+        if self.thinking_end_token:
+            payload["thinking_end_token"] = self.thinking_end_token
 
         if tools:
             # Apply tool ID length limit if needed
@@ -262,12 +277,24 @@ class OpenAICompatibleProvider:
         # Track state
         text_started = False
         text_content = ""
+        thinking_started = False
+        thinking_content = ""
         pending_tool_calls: dict[int, ToolCallBlock] = {}
         finish_reason: str | None = None
 
         def _check_cancelled() -> bool:
             """Check if request was cancelled."""
             return bool(options and options.cancel_event and options.cancel_event.is_set())
+
+        def _stream_thinking(text: str) -> None:
+            """Emit thinking events from a reasoning delta, if any."""
+            nonlocal thinking_started, thinking_content
+            if text:
+                if not thinking_started:
+                    thinking_started = True
+                    stream.push(ThinkingStartEvent(content_index=0))
+                thinking_content += text
+                stream.push(ThinkingDeltaEvent(content_index=0, delta=text))
 
         async def _do_stream() -> None:
             """Execute the streaming request (for retry)."""
@@ -329,6 +356,12 @@ class OpenAICompatibleProvider:
                     # Check finish reason
                     if choice.get("finish_reason"):
                         finish_reason = choice["finish_reason"]
+
+                    # YMLX/mlx_vlm route reasoning to `reasoning_content` (or
+                    # aliases). Emit it as thinking events independent of text.
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                    if reasoning:
+                        _stream_thinking(reasoning)
 
                     # Handle content tokens
                     if content := delta.get("content"):
@@ -407,6 +440,10 @@ class OpenAICompatibleProvider:
             # End text block if started
             if text_started:
                 stream.push(TextEndEvent(content_index=len(output.content) - 1, text=text_content))
+
+            # End thinking block if started
+            if thinking_started:
+                stream.push(ThinkingEndEvent(content_index=0, thinking=thinking_content))
 
             # Emit completed tool calls
             for idx in sorted(pending_tool_calls.keys()):

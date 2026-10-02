@@ -1,11 +1,17 @@
-# Default configuration for my-own-coding-agent
-# Copy this to ~/.agent/config.toml and customize
+# Marv configuration — a YMLX-powered local coding agent.
+#
+# Copy to ~/.marv/config.toml and customize, or set per-project in `./.marv/`.
 
-# Default provider to use
-provider = "openai"
+# YMLX is the model backend: models are managed by the ymlx CLI and served on
+# localhost:11500 (see config.marv for details).
+provider = "ymlx"
 
-# Default model
-model = "gpt-5.4"
+# Leave unset to use the currently-serving YMLX model, or set the model id of a
+# ymlx-managed model (e.g. "mlx-community/Qwen3.5-4B-MLX-4bit").
+model = ""
+
+# Local YMLX endpoint (no API key required).
+base_url = "http://localhost:11500"
 
 # Maximum tokens for context window
 context_max_tokens = 128000
@@ -16,31 +22,16 @@ max_output_tokens = 8192
 # Temperature for generation (0.0-1.0)
 temperature = 0.7
 
-# Directory for session files
-# session_dir = "~/.agent/sessions"
+# Thinking level: off, minimal, low, medium, high (model-family dependent)
+thinking_level = "off"
 
-# Additional directories to search for skills
-# skills_dirs = ["~/.agent/skills", "./skills"]
+# Session + state directories (defaults to ~/.cache/marv).
+# session_dir = "~/.cache/marv/sessions"
+# skills_dirs = ["~/.cache/marv/skills"]
+# context_file_paths = ["~/.cache/marv/context.md"]
 
-# Provider configurations
-# Uncomment and configure as needed
-
-[providers.openai]
-base_url = "https://api.openai.com"
-model = "gpt-5.4"
-# api_key set via OPENAI_API_KEY environment variable
-
-[providers.ollama]
-base_url = "http://localhost:11434/v1"
-model = "llama3.2"
-api_key = "ollama"
-
-[providers.openrouter]
-base_url = "https://openrouter.ai/api/v1"
-model = "anthropic/claude-sonnet-4.6"
-# api_key set via OPENROUTER_API_KEY environment variable
-
-[providers.groq]
-base_url = "https://api.groq.com/openai/v1"
-model = "llama-3.3-70b-versatile"
-# api_key set via GROQ_API_KEY environment variable
+[providers.ymlx]
+base_url = "http://localhost:11500"
+# hub_dir = "~/.cache/huggingface/hub"
+# primary_port = 11500
+# ymlx_command = "ymlx"
