@@ -1,5 +1,28 @@
 # MARV — YMLX-powered Coding Agent TUI: Build Plan
 
+> STATUS (2026-10-02): Phases 0–5 implemented, verified live against ymlx.
+> `make can-release` green (206 tests + lint + mypy). Remaining: TUI polish
+> tweaks (Phase 6) per your preferences.
+
+## 7. What shipped
+
+- **Name/license:** `marv`; MIT + upstream attribution (no upstream LICENSE file existed).
+- **Fork & strip:** renamed package `agent → marv`; removed `web/` server, OpenAI /
+  Anthropic / OpenAI-Codex providers, OAuth, pricing; kept TUI, skills, prompts,
+  extensions, sessions, compaction, approval gates.
+- **YMLX provider** (`src/marv/llm/ymlx.py`): local `:11500`, no auth header, on-demand
+  server lifecycle via `ymlx run/stop`, hub-scan model discovery (Ministral pair collapsed),
+  family-accurate thinking (`enable_thinking` for Qwen/Gemma, `[THINK]` markers for
+  Ministral-Reasoning, `reasoning_content` → thinking events).
+- **Defaults:** provider `ymlx`, `http://localhost:11500`; auto-resolves the running model
+  when none configured; config `~/.marv/`, sessions `~/.cache/marv/`.
+- **Rebrand:** banner + TUI title, CLI, paths, README, docs pruned of web/cloud references.
+- **Verified live:** headless chat + tool loop (ls) against Qwen3.5-4B; thinking trace
+  shown with `-t medium`; no -m fallback picks the running model.
+
+## 8. Execution phases (each ends in a green gate: `make test` + `make lint`)
+
+
 Status: proposal for review. Heavy lift verified against the real base repo
 (`~/.cache/huggingface/hub` has real models installed) and the real `mlx_vlm`
 server source on this machine.
