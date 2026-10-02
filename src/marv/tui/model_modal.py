@@ -1,4 +1,4 @@
-"""Model modal - configure model and thinking settings."""
+"""Model modal - pick a model and adjust thinking settings."""
 
 from __future__ import annotations
 
@@ -21,7 +21,12 @@ if TYPE_CHECKING:
 
 
 class ModelModal(ModalScreen[None]):
-    """Modal for configuring model and thinking settings."""
+    """Modal for picking a model and configuring thinking settings.
+
+    Options are built at construction time (the caller passes the discovered
+    model list) so nothing calls `set_options` after mount - that would fire a
+    spurious `Select.Changed` and close the modal immediately.
+    """
 
     BINDINGS = [
         Binding("escape", "close", "Close"),
@@ -31,43 +36,61 @@ class ModelModal(ModalScreen[None]):
         self,
         agent: Agent,
         on_change: Callable[[str | None, ThinkingLevel | None], None],
+        models: list[str] | None = None,
     ) -> None:
         super().__init__()
         self._agent = agent
         self._on_change = on_change
-        self._available_models: list[str] = []
+        self._available_models = sorted(models) if models else []
         self._pending_model: str | None = None
         self._pending_thinking: ThinkingLevel | None = None
+
+    def _model_options(self) -> list[tuple[str, str]]:
+        current = self._agent.model_name
+        models = list(self._available_models)
+        if current and current not in models:
+            models.insert(0, current)
+        return [(m, m) for m in models]
 
     def compose(self) -> ComposeResult:
         with Container(id="model-modal"):
             yield Static("Model Settings", id="model-title")
             with VerticalScroll(id="model-content"):
-                # Model selection section
                 yield Static("[bold cyan]SELECT MODEL[/]", classes="section-header")
-                yield Select(
-                    [(self._agent.model_name, self._agent.model_name)],
-                    value=self._agent.model_name,
-                    id="model-select",
-                    allow_blank=False,
-                )
+                options = self._model_options()
+                current = self._agent.model_name
+                if current:
+                    yield Select(
+                        options,
+                        value=current,
+                        id="model-select",
+                        allow_blank=False,
+                    )
+                else:
+                    # No model yet: start blank so the user must pick one.
+                    yield Select(
+                        options,
+                        prompt="choose a model…",
+                        id="model-select",
+                        allow_blank=True,
+                    )
 
-                # Thinking level section
                 yield Static("[bold cyan]THINKING LEVEL[/]", classes="section-header")
                 yield self._build_thinking_radio()
 
-                # Summary section
                 yield Static("[bold cyan]SUMMARY[/]", classes="section-header")
                 yield Static(self._build_summary(), id="summary-info")
 
-                # Save button
-                yield Button("Save", id="save-btn", variant="primary")
-
-            yield Static("Press [bold]ESC[/] to close", id="model-hint")
+            # Kept outside the scroll area so it is always reachable.
+            yield Button("Save", id="save-btn", variant="primary")
+            yield Static(
+                "Picking a model applies it · [bold]esc[/] cancel",
+                id="model-hint",
+            )
 
     async def on_mount(self) -> None:
-        """Fetch models on mount."""
-        await self._refresh_models()
+        """Focus the picker."""
+        self.query_one("#model-select", Select).focus()
 
     def _build_thinking_radio(self) -> RadioSet:
         """Build thinking level radio set."""
@@ -91,13 +114,8 @@ class ModelModal(ModalScreen[None]):
 
     def _build_summary(self) -> str:
         """Build summary of current and pending settings."""
-        lines = []
-
-        current_model = self._agent.model_name
-        current_thinking = self._agent.thinking_level
-
-        new_model = self._pending_model or current_model
-        new_thinking = self._pending_thinking or current_thinking
+        new_model = self._pending_model or self._agent.model_name
+        new_thinking = self._pending_thinking or self._agent.thinking_level
 
         model_info = get_model_info(new_model)
         if model_info:
@@ -109,33 +127,14 @@ class ModelModal(ModalScreen[None]):
             reasoning_support = "Yes" if reasoning else "No"
             max_tokens = "(unknown)"
 
-        lines.append(f"  Provider: {self._agent.provider_name}")
-        lines.append(f"  Model: {new_model}")
-        lines.append(f"  Thinking: {new_thinking.value}")
-        lines.append(f"  Supports Reasoning: {reasoning_support}")
-        lines.append(f"  Max Output Tokens: {max_tokens}")
-
+        lines = [
+            f"  Provider: {self._agent.provider_name}",
+            f"  Model: {new_model}",
+            f"  Thinking: {new_thinking.value}",
+            f"  Supports Reasoning: {reasoning_support}",
+            f"  Max Output Tokens: {max_tokens}",
+        ]
         return "\n".join(lines)
-
-    async def _refresh_models(self) -> None:
-        """Fetch available models from provider and update dropdown."""
-        select = self.query_one("#model-select", Select)
-
-        self._available_models = await self._agent.list_models()
-
-        current = self._agent.model_name
-        options: list[tuple[str, str]] = []
-
-        if self._available_models:
-            for model in sorted(self._available_models):
-                options.append((model, model))
-            if current not in self._available_models:
-                options.insert(0, (f"{current} (current)", current))
-        else:
-            options.append((current, current))
-
-        select.set_options(options)
-        select.value = current
 
     def _update_summary(self) -> None:
         """Update the summary display."""
@@ -168,33 +167,47 @@ class ModelModal(ModalScreen[None]):
         if len(headers) >= 2:
             await headers[1].mount(new_radio, after=headers[1])
 
+    def _close(self) -> None:
+        """Pop this modal, guarding against a duplicate pop."""
+        if self.app.screen is self:
+            self.app.pop_screen()
+
     def action_close(self) -> None:
-        """Close the modal."""
-        self.app.pop_screen()
+        """Close the modal without applying."""
+        self._close()
+
+    def action_save(self) -> None:
+        """Apply any pending thinking change and close."""
+        if self._pending_thinking:
+            self._on_change(None, self._pending_thinking)
+        self._close()
 
     async def on_select_changed(self, event: Select.Changed) -> None:
-        """Handle model selection change."""
-        if event.select.id == "model-select" and event.value:
-            new_model = str(event.value)
-            if new_model != self._agent.model_name:
-                self._pending_model = new_model
-            else:
-                self._pending_model = None
+        """Apply the picked model and close the picker immediately.
+
+        The blank/current value present at mount is ignored, so only a real
+        user choice switches the model and closes the modal.
+        """
+        if event.select.id != "model-select" or not event.value:
+            return
+        new_model = str(event.value)
+        if new_model == self._agent.model_name:
+            self._pending_model = None
             await self._rebuild_thinking_radio(new_model)
             self._update_summary()
+            return
+        self._on_change(new_model, self._pending_thinking)
+        self._close()
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """Handle thinking level change."""
         if event.radio_set.id == "thinking-radio" and event.pressed:
             level_name = event.pressed.name
             if level_name:
-                new_level = ThinkingLevel(level_name)
-                self._pending_thinking = new_level
+                self._pending_thinking = ThinkingLevel(level_name)
                 self._update_summary()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         if event.button.id == "save-btn":
-            if self._pending_model or self._pending_thinking:
-                self._on_change(self._pending_model, self._pending_thinking)
-            self.app.pop_screen()
+            self.action_save()

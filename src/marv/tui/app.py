@@ -163,7 +163,7 @@ class AgentApp(App[None]):
 
         # If no model is selected yet, prompt the user to pick one right away.
         if not self.agent.model_name:
-            self._open_model_modal()
+            await self._open_model_modal()
 
         # Load extensions if configured
         if self._bootstrap_config.extensions:
@@ -205,7 +205,7 @@ class AgentApp(App[None]):
 
         if not self.agent.model_name:
             chat.add_system_message("no model selected — pick one with the picker (or /model <id>)")
-            self._open_model_modal()
+            await self._open_model_modal()
             return
 
         # Start processing - show thinking indicator if thinking is enabled
@@ -218,9 +218,20 @@ class AgentApp(App[None]):
         # Run agent in background
         self._run_agent(prompt)
 
-    def _open_model_modal(self) -> None:
-        """Open the model picker modal."""
-        self.push_screen(ModelModal(self.agent, self._controller.on_model_modal_change))
+    def _restore_input_focus(self, _result: object = None) -> None:
+        """Focus the prompt input (used as a modal close callback)."""
+        self.query_one("#prompt-input", PromptInput).focus()
+
+    async def _open_model_modal(self) -> None:
+        """Open the model picker modal and restore input focus when it closes."""
+        try:
+            models = await self.agent.list_models()
+        except Exception:  # noqa: BLE001 - picker still works with the current model
+            models = []
+        self.push_screen(
+            ModelModal(self.agent, self._controller.on_model_modal_change, models=models),
+            callback=self._restore_input_focus,
+        )
 
     def _run_agent(self, prompt: str) -> None:
         """Run the agent loop."""

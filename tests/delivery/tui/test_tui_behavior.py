@@ -464,9 +464,21 @@ async def test_tui_runner_model_modal_updates_model_and_thinking(temp_dir):
         modal = app.screen
         assert isinstance(modal, ModelModal)
 
+        # Picking a model applies it and closes the picker immediately.
         select = modal.query_one("#model-select", Select)
         select.value = "gpt-5"
         await pilot.pause()
+
+        assert not isinstance(app.screen, ModelModal)
+        assert app.agent.provider.model == "gpt-5"
+        assert "gpt-5" in status_left_text(app)
+
+        # Reopen to change thinking only, then Save.
+        input_widget.value = "/model "
+        await pilot.press("enter")
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, ModelModal)
 
         radio = modal.query_one("#thinking-radio", RadioSet)
         target = None

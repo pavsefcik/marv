@@ -11,7 +11,6 @@ from marv.runtime.session import MessageEntry, Session
 from marv.runtime.settings import ThinkingLevel
 from marv.tui.chat import ChatView
 from marv.tui.context_modal import ContextModal
-from marv.tui.model_modal import ModelModal
 from marv.tui.session_modal import SessionForkModal, SessionLoadModal, SessionTreeModal
 from marv.tui.status import StatusBar
 
@@ -216,12 +215,7 @@ class TUIController:
             self._app.push_screen(ContextModal(self._app.agent))
             return True
         if prompt.lower() == "/model":
-            self._app.push_screen(
-                ModelModal(
-                    self._app.agent,
-                    self.on_model_modal_change,
-                )
-            )
+            await self._app._open_model_modal()
             return True
         if prompt.lower().startswith("/model "):
             model_name = prompt[7:].strip()
