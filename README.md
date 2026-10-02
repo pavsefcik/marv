@@ -47,6 +47,18 @@ uv run marv run --headless -m mlx-community/Qwen3.5-4B-MLX-4bit "Say hi"
 that model; otherwise the model picker lists every model ymlx manages (from the
 local HF hub) and selecting one starts/swaps it via `ymlx run <id>`.
 
+## Shell launcher
+
+To make `marv` available in any new shell, source the launcher from `~/.zshrc`:
+
+```sh
+echo 'test -f "'$PWD'/marv-launcher.zsh" && source "'$PWD'/marv-launcher.zsh"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+The launcher runs the marv CLI from this repo (using `.venv/bin/marv` when
+present, else `uv run`).
+
 ## Configuration
 
 Config is TOML, layered global → project → env:
