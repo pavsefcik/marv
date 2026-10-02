@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from marv.llm.events import StreamOptions
+    from marv.llm.stream import AssistantMessageEventStream
     from marv.runtime.message import Message
 
 
@@ -117,6 +118,16 @@ class YMLXProvider(OpenAICompatibleProvider):
             return
         self.model = model
         self._encoder = None
+
+    def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        options: StreamOptions | None = None,
+    ) -> AssistantMessageEventStream:
+        """Ensure the model is serving, then stream as normal."""
+        self.ensure_running()
+        return super().stream(messages, tools, options)
 
     def _build_payload(
         self,

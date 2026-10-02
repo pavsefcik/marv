@@ -132,7 +132,7 @@ def discover_yaml_model_ids(hub_dir: Path | None = None) -> list[str]:
         if not entry.is_dir():
             continue
         model_id = entry.name[len("models--") :].replace("--", "/", 2)
-        if model_id.endswith("-Reasoning-"):
+        if "-Reasoning-" in model_id:
             # Collapse to the Instruct half of a Ministral pair.
             sibling = ministral_sibling(model_id)
             if sibling and (hub_dir / f"models--{sibling.replace('/', '--')}").is_dir():
