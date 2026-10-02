@@ -16,6 +16,7 @@ No API key is required (YMLX is a local, unauthenticated endpoint).
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 from typing import TYPE_CHECKING
@@ -77,30 +78,63 @@ class YMLXProvider(OpenAICompatibleProvider):
             return ["zsh", "-ic", "ymlx"]
         return None
 
-    def ensure_running(self) -> None:
-        """Ensure the configured model is serving on the ymlx port.
+    def _run_cli(self, action: str, *args: str) -> subprocess.CompletedProcess[str] | None:
+        """Run a ymlx subcommand, capturing its output (no terminal clobber).
 
-        If a different model is loaded, `ymlx run <id>` stops it and starts the
-        requested one (blocking until the server is ready). If the ymlx CLI is
-        unavailable, the server state is left as-is (caller may already have a
-        server running).
+        Returns None when the ymlx CLI is unavailable.
         """
-        if not self.model:
-            return
-        if running_model_id(self.base_url) == self.model:
-            return
         argv = self._resolve_ymlx_invocation()
         if argv is None:
-            return
-        cmd = [*argv, "run", self.model]
-        subprocess.run(cmd, check=False, timeout=20 * 60)
+            return None
+        cmd = [*argv, action, *args]
+        try:
+            return subprocess.run(
+                cmd,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"timed out running `ymlx {action}` for {self.model}") from exc
+
+    def is_serving(self) -> bool:
+        """True when the configured model is already the one serving on the port."""
+        return bool(self.model) and running_model_id(self.base_url) == self.model
+
+    def ensure_running(self) -> bool:
+        """Ensure the configured model is serving on the ymlx port.
+
+        Returns True if the server was (re)started for this model, False if it
+        was already serving or the ymlx CLI is unavailable (nothing to do and
+        no feedback needed). If the model is different to what's running,
+        `ymlx run <id>` stops it and starts the requested one (blocking until
+        ready). Populated output is captured so it never writes to the
+        controlling terminal.
+        """
+        if not self.model:
+            return False
+        if running_model_id(self.base_url) == self.model:
+            return False
+        proc = self._run_cli("run", self.model)
+        if proc is None:
+            return False
+        if proc.returncode != 0 or running_model_id(self.base_url) != self.model:
+            detail = (proc.stdout or "").strip() or f"failed to start {self.model}"
+            raise RuntimeError(detail)
+        return True
+
+    async def ensure_running_async(self) -> bool:
+        """Ensure the model is serving without blocking the event loop.
+
+        Returns True if the model had to be (re)started.
+        """
+        started = await asyncio.to_thread(self.ensure_running)
+        return started
 
     def stop(self) -> None:
         """Stop the ymlx server (best-effort)."""
-        argv = self._resolve_ymlx_invocation()
-        if argv is None:
-            return
-        subprocess.run([*argv, "stop"], check=False, timeout=120)
+        self._run_cli("stop")
 
     async def list_models(self) -> list[str]:
         """List ymlx-managed models (hub scan + currently running model)."""

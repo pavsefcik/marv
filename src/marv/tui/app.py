@@ -228,7 +228,22 @@ class AgentApp(App[None]):
     async def _agent_worker(self, prompt: str) -> None:
         """Execute agent and handle events."""
         try:
+            # If the chosen model isn't serving yet, start it off the event loop
+            # (so the TUI stays responsive) and show progress. ymlx launches a
+            # detached server; we only wait for warm-up.
+            provider = self.agent.provider
+            ensure = getattr(provider, "ensure_running_async", None)
+            if ensure is not None and self.agent.model_name:
+                is_serving = getattr(provider, "is_serving", None)
+                if is_serving is None or not is_serving():
+                    chat = self.query_one("#chat-view", ChatView)
+                    chat.add_system_message(f"starting model {self.agent.model_name}…")
+                    await ensure()
             await self._renderer.render_agent_run(prompt, self._cancel_event)
+        except Exception as exc:  # noqa: BLE001 - surface startup errors to the user
+            chat = self.query_one("#chat-view", ChatView)
+            chat.end_assistant_message()
+            chat.add_system_message(f"error starting model: {exc}")
         finally:
             self.is_processing = False
             self._cancel_event = None
