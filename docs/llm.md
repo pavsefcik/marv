@@ -5,62 +5,43 @@ Providers implement a shared interface (`LLMProvider`) that exposes:
 - `stream(messages, tools, options)` — event‑based streaming
 - `count_tokens`, `count_messages_tokens` — for context budgeting
 - `supports_thinking()` — capability detection
-- `list_models()` — optional discovery
+- `list_models()` — model discovery
 
 ## Provider bootstrap
 
-- `src/agent/llm/factory.py` is the bootstrap boundary:
+- `src/marv/llm/factory.py` is the bootstrap boundary:
   - `resolve_provider_config(...)` resolves base URL/model/api key from flat inputs + optional provider overrides.
   - `create_provider(...)` validates provider/model compatibility and returns a concrete provider instance.
 - Delivery shells construct providers through the factory and inject them into the runtime `Agent`.
 
 ## Built‑in providers
 
-### OpenAI
+### YMLX (default)
 
-- Implementation: `src/agent/llm/openai/`
-- Uses OpenAI API keys for model access
-- Supports reasoning‑effort controls for supported models
-- Defaults to `gpt-5.4` when `model` is omitted
+- Implementation: `src/marv/llm/ymlx.py`, family classification in `src/marv/llm/ymlx_models.py`.
+- Talks to the local YMLX server on `http://localhost:11500` (no API key).
+- **Server lifecycle** — `YMLXProvider.ensure_running()` shells out to the `ymlx` CLI
+  (`ymlx run <id>` / `ymlx stop`) so selecting a model starts/swaps it on the ymlx port.
+- **Model discovery** — `list_models()` scans the local HF hub
+  (`~/.cache/huggingface/hub/models--*`) and collapses Ministral Instruct/Reasoning
+  pairs into a single entry.
+- **Thinking** — `enable_thinking` is sent for template families (Qwen/Gemma), `[THINK]`
+  bracket markers for Ministral Reasoning. The reasoning trace arrives in
+  `reasoning_content` and is surfaced as thinking events. `supports_thinking()` is
+  family-accurate.
 
-### OpenAI Codex
+### OpenAI-compatible
 
-- Implementation: `src/agent/llm/openai_codex/`
-- Uses ChatGPT Codex subscription auth (OAuth)
-- Calls `chatgpt.com/backend-api/codex/responses`
-- Defaults to `gpt-5.4` when `model` is omitted
-
-### Anthropic
-
-- Implementation: `src/agent/llm/anthropic/`
-- Uses Anthropic API keys or OAuth credentials
-- Uses Claude’s Messages API with extended thinking signatures
-- Claude Code emulation when using Anthropic OAuth tokens (`sk-ant-oat...`)
-- Defaults to `claude-opus-4-6` when `model` is omitted
-
-### OpenAI‑compatible
-
-- Implementation: `src/agent/llm/openai_compat.py`
-- Works with Ollama, OpenRouter, Groq, LM Studio, etc.
-- Requires an explicit `model` for compatible providers unless configured via provider override.
-
-#### OpenRouter
-
-- Available via `provider=openrouter`
-- Accepts OpenRouter model IDs such as `openrouter/free` or `meta-llama/llama-3.3-70b-instruct:free`
-- Defaults to `https://openrouter.ai/api`; request paths are appended by the OpenAI-compatible transport
-
-#### Ollama
-
-- Available via `provider=ollama`
-- Uses local base URL default `http://localhost:11434`
+- Implementation: `src/marv/llm/openai_compat.py`.
+- A generic transport for any OpenAI-compatible endpoint (Ollama, LM Studio, …).
+- Requires an explicit `model` unless the configured provider auto-resolves a running one.
 
 ## Model validation policy
 
 - Provider/model compatibility is enforced in the LLM module:
   - factory-time validation in `create_provider(...)`
   - runtime validation in provider `set_model(...)`
-- Invalid combinations fail with a `ValueError` (for example, Claude model on OpenAI provider).
+- Invalid combinations fail with a `ValueError`.
 
 ## Streaming events
 
@@ -72,3 +53,5 @@ The stream yields structured events:
 - `done` / `error`
 
 These events are consumed by the agent loop and TUI to render incremental updates.
+The OpenAI-compatible transport parses `reasoning_content`/`reasoning` deltas into the
+thinking events, so YMLX reasoning shows up in the TUI automatically.

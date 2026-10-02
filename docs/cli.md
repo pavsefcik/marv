@@ -1,6 +1,6 @@
 # CLI
 
-The CLI lives in `src/agent/cli/` and is the lighter delivery surface alongside the TUI and web shell.
+The CLI lives in `src/marv/cli/` and is the lighter delivery surface alongside the TUI.
 
 ## Structure
 
@@ -14,11 +14,11 @@ The CLI is split by role rather than by framework detail:
 
 ### Interactive handoff
 
-`agent run` with no prompt/headless flag creates config + provider + session state, then hands off to the Textual TUI.
+`marv run` with no prompt/headless flag creates config + provider + session state, then hands off to the Textual TUI.
 
 ### Headless mode
 
-`agent run --headless "..."` or `make run-headless` runs one prompt through the same runtime and renders:
+`marv run --headless "..."` or `make run-headless` runs one prompt through the same runtime and renders:
 
 - thinking markers
 - streamed text
@@ -33,7 +33,7 @@ The CLI also exposes delivery-level session utilities:
 
 - `agent fork`
 - `agent tree`
-- `agent sessions`
+- `marv sessions`
 - `agent config-show`
 
 These are delivery commands over the same JSONL session model used by the runtime and TUI.

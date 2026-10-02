@@ -1,6 +1,6 @@
 # Sessions
 
-Sessions are stored as JSONL files in `~/.agent/sessions` by default.
+Sessions are stored as JSONL files in `~/.cache/marv/sessions` by default.
 
 ## Format
 

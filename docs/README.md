@@ -3,9 +3,8 @@
 Start here if you’re new to the project.
 
 - [`architecture.md`](architecture.md) — system overview and module responsibilities
-- [`delivery.md`](delivery.md) — TUI, headless CLI, and web delivery surfaces over the same runtime
+- [`delivery.md`](delivery.md) — TUI and headless CLI delivery surfaces over the same runtime
 - [`cli.md`](cli.md) — Typer command surface, headless mode, and session utilities
-- [`web.md`](web.md) — FastAPI/WebSocket delivery shell and browser protocol
 - [`agent-loop.md`](agent-loop.md) — step‑by‑step loop walkthrough
 - [`tools.md`](tools.md) — tool schemas, registry, and built‑ins
 - [`skills.md`](skills.md) — skill format, validation rules, search paths
@@ -24,7 +23,6 @@ Use the Makefile targets where possible:
 make deps
 make run
 make run-headless PROMPT="List all Python files"
-make run-web
 make test
 make lint
 make format

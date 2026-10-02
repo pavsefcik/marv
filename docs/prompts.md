@@ -22,9 +22,9 @@ Template content with $1 $2 $@ substitutions.
 
 ## Discovery order
 
-1. `~/.agent/prompts/`
+1. `~/.marv/prompts/`
 2. `prompt_template_dirs` from config
-3. `.agent/prompts/` (project‑local)
+3. `.marv/prompts/` (project‑local)
 
 ## Execution
 
@@ -37,4 +37,4 @@ Template content with $1 $2 $@ substitutions.
 - [`examples/prompts/review.md`](../examples/prompts/review.md) — bug‑focused review template.
 - [`examples/prompts/summarize-changes.md`](../examples/prompts/summarize-changes.md) — change summary template.
 
-Copy any of these into `.agent/prompts/` or add `prompt_template_dirs` in config to load them.
+Copy any of these into `.marv/prompts/` or add `prompt_template_dirs` in config to load them.

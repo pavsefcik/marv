@@ -1,6 +1,6 @@
 # TUI (Textual)
 
-The interactive terminal UI is built with Textual (`src/agent/tui/*`).
+The interactive terminal UI is built with Textual (`src/marv/tui/*`).
 
 ## Internal structure
 

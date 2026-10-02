@@ -1,6 +1,6 @@
 # Tools
 
-Tools are Pydantic‑typed units of capability with OpenAI‑style JSON schemas. The registry lives in `src/agent/tools/registry.py`.
+Tools are Pydantic‑typed units of capability with OpenAI‑style JSON schemas. The registry lives in `src/marv/tools/registry.py`.
 
 ## Built‑in tools
 

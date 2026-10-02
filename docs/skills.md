@@ -19,9 +19,9 @@ Instructions and references...
 
 ## Discovery order (low → high priority)
 
-1. `~/.agent/skills/`
+1. `~/.marv/skills/`
 2. Any `skills_dirs` configured in `config.toml`
-3. `.agent/skills/` (project‑local)
+3. `.marv/skills/` (project‑local)
 
 If there are name collisions, higher‑priority sources win.
 
@@ -42,4 +42,4 @@ If there are name collisions, higher‑priority sources win.
 - [`examples/skills/repo-scan/SKILL.md`](../examples/skills/repo-scan/SKILL.md) — fast codebase orientation.
 - [`examples/skills/safe-refactor/SKILL.md`](../examples/skills/safe-refactor/SKILL.md) — refactor checklist.
 
-Note: the default loader looks in `.agent/skills` and `~/.agent/skills`, so copy any of these into one of those locations or add `skills_dirs` in config to load them.
+Note: the default loader looks in `.marv/skills` and `~/.marv/skills`, so copy any of these into one of those locations or add `skills_dirs` in config to load them.

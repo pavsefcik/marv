@@ -1,6 +1,6 @@
 # Agent Loop (Detailed)
 
-The agent loop is implemented in `src/agent/runtime/agent.py` and is built around streaming responses and tool execution.
+The agent loop is implemented in `src/marv/runtime/agent.py` and is built around streaming responses and tool execution.
 
 ## Step 1: Input intake & preprocessing
 

@@ -103,7 +103,7 @@ Handlers receive `ctx`, which exposes the host capability surface:
 ## Loading extensions
 
 - Config: `extensions = ["/path/to/ext.py", "./extensions/"]`
-- CLI: `agent run -e ./extensions/my_ext.py`
+- CLI: `marv run -e ./extensions/my_ext.py`
 
 ## Examples
 

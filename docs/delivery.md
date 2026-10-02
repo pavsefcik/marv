@@ -14,8 +14,8 @@ So the same agent can be delivered through multiple shells without changing the 
 
 ### TUI
 
-- Implementation: `src/agent/tui/`
-- Entry from CLI: `agent run` with no prompt/headless flag
+- Implementation: `src/marv/tui/`
+- Entry from CLI: `marv run` with no prompt/headless flag
 - Shape:
   - builds the interactive runtime stack
   - handles TUI-native commands and runtime actions
@@ -31,8 +31,8 @@ The TUI is the richest delivery surface because it supports:
 
 ### Headless CLI
 
-- Implementation: `src/agent/cli/headless.py`
-- Entry: `agent run --headless "..."` or `make run-headless`
+- Implementation: `src/marv/cli/headless.py`
+- Entry: `marv run --headless "..."` or `make run-headless`
 - Shape:
   - builds the same runtime stack
   - optionally attaches the extension host
@@ -46,18 +46,6 @@ It is useful for:
 - scripting
 - CI or automation flows
 - low-ceremony debugging of the runtime
-
-### Web
-
-- Implementation: `src/agent/web/`
-- Entry: `agent web` or `make run-web`
-- Shape:
-  - exposes HTTP endpoints for health, sessions, and models
-  - hosts a WebSocket session bound to one runtime stack
-  - streams runtime chunks to the browser
-  - hosts extension-owned UI surfaces through a web bridge
-
-The web shell is local-first and uses the same runtime and extension host as the TUI and CLI.
 
 ## Delivery contract
 
@@ -83,17 +71,15 @@ Those belong below delivery.
 
 ## Delivery shape
 
-The delivery layer exists in three places:
+The delivery layer exists in two places:
 
-- `src/agent/cli/`
-- `src/agent/tui/`
-- `src/agent/web/`
+- `src/marv/cli/`
+- `src/marv/tui/`
 
 The boundary is:
 
 - CLI owns command parsing, headless stdout delivery, and session utility commands
 - TUI owns interactive chat delivery, model/session controls, and extension-hosted UI
-- Web owns HTTP/WebSocket transport, browser-facing state snapshots, and extension-hosted UI transport
 
 ## Design rule
 

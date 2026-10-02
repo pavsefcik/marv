@@ -25,7 +25,6 @@ The same runtime stack can be exposed through multiple delivery shells:
 
 - Textual TUI
 - headless CLI
-- local web delivery
 
 See [`delivery.md`](delivery.md) for the delivery model.
 
@@ -101,10 +100,9 @@ They own:
 
 ## Delivery shells
 
-The system has three delivery shells:
+There are two delivery shells:
 
 - a Textual TUI
 - a Typer CLI with headless mode and session utilities
-- a FastAPI-backed web shell with a browser client
 
-All three sit on top of the same runtime and extension host.
+Both sit on top of the same runtime and extension host.
