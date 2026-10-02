@@ -26,8 +26,12 @@ if TYPE_CHECKING:
 
 # Startup banner
 BANNER = """
-█▀▄▀█ █▄█   █▀█ █ █ █ █▄ █   ▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀
-█ ▀ █  █    █▄█ ▀▄▀▄▀ █ ▀█   █▀█ █▄█ ██▄ █ ▀█  █
+██╗   ███╗ █████╗ ██████╗ ██╗   ██╗
+████╗ ████║██╔══██╗██╔══██╗██║   ██║
+██╔████╔██║███████║██████╔╝██║   ██║
+██║╚██╔╝██║██╔══██║██╔══██╗╚██╗ ██╔╝
+██║ ╚═╝ ██║██║  ██║██║  ██║ ╚████╔╝
+╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝
 """.strip()
 
 
@@ -45,7 +49,7 @@ class TUIRenderer:
         chat = self._app.query_one("#chat-view", ChatView)
         chat.mount(
             Static(
-                f"{BANNER}\n\nmy-own-coding-agent | {self._app.agent.model_name}",
+                f"{BANNER}\n\nmarv | {self._app.agent.model_name}",
                 classes="message-system",
             )
         )

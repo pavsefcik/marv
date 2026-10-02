@@ -236,7 +236,7 @@ def test_cli_sessions_reports_load_errors(temp_dir, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    session_dir = home / ".agent" / "sessions"
+    session_dir = home / ".cache" / "marv" / "sessions"
     session_dir.mkdir(parents=True)
     (session_dir / "broken-session.jsonl").write_text("not-json\n")
 
@@ -274,7 +274,7 @@ def test_cli_config_show_prints_provider_overrides_from_config_file(temp_dir, mo
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    agent_dir = project / ".agent"
+    agent_dir = project / ".marv"
     agent_dir.mkdir()
     (agent_dir / "config.toml").write_text(
         textwrap.dedent(

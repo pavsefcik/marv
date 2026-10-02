@@ -29,13 +29,13 @@ async def test_skill_loader_priority(temp_dir, monkeypatch):
 
     monkeypatch.setenv("HOME", str(home))
 
-    (home / ".agent" / "skills").mkdir(parents=True, exist_ok=True)
-    (cwd / ".agent" / "skills").mkdir(parents=True, exist_ok=True)
+    (home / ".marv" / "skills").mkdir(parents=True, exist_ok=True)
+    (cwd / ".marv" / "skills").mkdir(parents=True, exist_ok=True)
     extra.mkdir(parents=True, exist_ok=True)
 
-    write_skill(home / ".agent" / "skills", "deploy", "user")
+    write_skill(home / ".marv" / "skills", "deploy", "user")
     write_skill(extra, "deploy", "path")
-    write_skill(cwd / ".agent" / "skills", "deploy", "project")
+    write_skill(cwd / ".marv" / "skills", "deploy", "project")
 
     loader = SkillLoader.with_defaults(extra_dirs=[extra], cwd=cwd)
 

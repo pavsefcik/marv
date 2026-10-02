@@ -1,4 +1,4 @@
-"""my-own-coding-agent - A Python AI coding agent for learning."""
+"""marv - A YMLX-powered coding agent TUI for Apple Silicon."""
 
 __version__ = "0.1.0"
 

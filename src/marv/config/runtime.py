@@ -34,7 +34,7 @@ class Config:
     max_output_tokens: int = 8192
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
-    session_dir: Path = field(default_factory=lambda: Path.home() / ".agent" / "sessions")
+    session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
@@ -48,10 +48,10 @@ class Config:
         """Load config from files and environment variables."""
         config_data: dict[str, Any] = {}
 
-        global_config_dir = Path.home() / ".agent"
+        global_config_dir = Path.home() / ".marv"
         config_data = cls._merge_config(config_data, cls._load_config_file(global_config_dir))
 
-        project_config_dir = Path.cwd() / ".agent"
+        project_config_dir = Path.cwd() / ".marv"
         config_data = cls._merge_config(config_data, cls._load_config_file(project_config_dir))
 
         config_data = cls._apply_env_vars(config_data)
@@ -157,7 +157,7 @@ class Config:
         extensions = [Path(p) for p in data.get("extensions", [])]
         prompt_template_dirs = [Path(p) for p in data.get("prompt_template_dirs", [])]
         context_file_paths = [Path(p) for p in data.get("context_file_paths", [])]
-        session_dir = Path(data.get("session_dir", Path.home() / ".agent" / "sessions"))
+        session_dir = Path(data.get("session_dir", Path.home() / ".cache" / "marv" / "sessions"))
 
         thinking_str = data.get("thinking_level", "off")
         try:

@@ -60,9 +60,9 @@ class SkillLoader:
     """Loads skills from directories with validation and collision detection.
 
     Default search directories (in priority order, lowest to highest):
-    1. ~/.agent/skills/ (user skills)
+    1. ~/.marv/skills/ (user skills)
     2. Custom paths from config
-    3. .agent/skills/ (project skills - highest priority)
+    3. .marv/skills/ (project skills - highest priority)
     """
 
     __slots__ = ("_dirs", "_skills", "_diagnostics")
@@ -84,8 +84,8 @@ class SkillLoader:
         """Create a loader with default directories.
 
         Default directories:
-        - ~/.agent/skills/ (user skills)
-        - .agent/skills/ (project skills)
+        - ~/.marv/skills/ (user skills)
+        - .marv/skills/ (project skills)
         - Any extra_dirs provided (custom paths)
 
         Args:
@@ -99,7 +99,7 @@ class SkillLoader:
         cwd = cwd or Path.cwd()
 
         # User skills (lowest priority)
-        user_dir = Path.home() / ".agent" / "skills"
+        user_dir = Path.home() / ".marv" / "skills"
         if user_dir.exists():
             dirs.append((user_dir, SkillSource.USER))
 
@@ -110,7 +110,7 @@ class SkillLoader:
                     dirs.append((path, SkillSource.PATH))
 
         # Project skills (highest priority)
-        project_dir = cwd / ".agent" / "skills"
+        project_dir = cwd / ".marv" / "skills"
         if project_dir.exists():
             dirs.append((project_dir, SkillSource.PROJECT))
 

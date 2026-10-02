@@ -304,7 +304,7 @@ class McpStdioClient:
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
-                    "name": "my-own-coding-agent",
+                    "name": "marv",
                     "version": "0.1.0",
                 },
             },

@@ -51,7 +51,7 @@ class AgentApp(App[None]):
     """Minimal TUI application for the coding agent."""
 
     CSS_PATH = "styles.tcss"
-    TITLE = "my-own-coding-agent"
+    TITLE = "marv"
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),

@@ -91,7 +91,7 @@ def test_config_load_reads_yaml_when_toml_missing(temp_dir, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    global_dir = home / ".agent"
+    global_dir = home / ".marv"
     global_dir.mkdir()
     (global_dir / "config.yaml").write_text(
         textwrap.dedent(
@@ -117,7 +117,7 @@ def test_config_load_reads_yml_when_other_formats_missing(temp_dir, monkeypatch)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    global_dir = home / ".agent"
+    global_dir = home / ".marv"
     global_dir.mkdir()
     (global_dir / "config.yml").write_text(
         textwrap.dedent(
@@ -155,7 +155,7 @@ def test_config_invalid_thinking_level_falls_back_to_off(temp_dir, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    global_dir = home / ".agent"
+    global_dir = home / ".marv"
     global_dir.mkdir()
     (global_dir / "config.toml").write_text('thinking_level = "not-a-level"\n')
 
@@ -173,7 +173,7 @@ def test_config_provider_overrides_defaults_missing_provider_fields(temp_dir, mo
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    project_dir = project / ".agent"
+    project_dir = project / ".marv"
     project_dir.mkdir()
     (project_dir / "config.toml").write_text(
         textwrap.dedent(
@@ -200,8 +200,8 @@ def test_config_precedence_is_env_then_project_then_global(temp_dir, monkeypatch
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    global_dir = home / ".agent"
-    project_dir = project / ".agent"
+    global_dir = home / ".marv"
+    project_dir = project / ".marv"
     global_dir.mkdir()
     project_dir.mkdir()
 
@@ -258,7 +258,7 @@ def test_config_does_not_override_explicit_api_key_with_env_fallback(temp_dir, m
     monkeypatch.chdir(project)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
 
-    project_dir = project / ".agent"
+    project_dir = project / ".marv"
     project_dir.mkdir()
     (project_dir / "config.toml").write_text(
         textwrap.dedent(

@@ -46,9 +46,9 @@ class PromptTemplateLoader:
     """Loads prompt templates from directories.
 
     Default search directories (in priority order, lowest to highest):
-    1. ~/.agent/prompts/ (user templates)
+    1. ~/.marv/prompts/ (user templates)
     2. Custom paths from config
-    3. .agent/prompts/ (project templates - highest priority)
+    3. .marv/prompts/ (project templates - highest priority)
     """
 
     __slots__ = ("_dirs", "_templates", "_diagnostics")
@@ -72,8 +72,8 @@ class PromptTemplateLoader:
         """Create a loader with default directories.
 
         Default directories:
-        - ~/.agent/prompts/ (user templates)
-        - .agent/prompts/ (project templates)
+        - ~/.marv/prompts/ (user templates)
+        - .marv/prompts/ (project templates)
         - Any extra_dirs provided (custom paths)
 
         Args:
@@ -87,7 +87,7 @@ class PromptTemplateLoader:
         cwd = cwd or Path.cwd()
 
         # User templates (lowest priority)
-        user_dir = Path.home() / ".agent" / "prompts"
+        user_dir = Path.home() / ".marv" / "prompts"
         if user_dir.exists():
             dirs.append((user_dir, TemplateSource.USER))
 
@@ -98,7 +98,7 @@ class PromptTemplateLoader:
                     dirs.append((path, TemplateSource.PATH))
 
         # Project templates (highest priority)
-        project_dir = cwd / ".agent" / "prompts"
+        project_dir = cwd / ".marv" / "prompts"
         if project_dir.exists():
             dirs.append((project_dir, TemplateSource.PROJECT))
 

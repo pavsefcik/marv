@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 class TemplateSource(StrEnum):
     """Source location of a prompt template."""
 
-    USER = "user"  # ~/.agent/prompts/
-    PROJECT = "project"  # .agent/prompts/
+    USER = "user"  # ~/.marv/prompts/
+    PROJECT = "project"  # .marv/prompts/
     PATH = "path"  # Custom path from config
 
 

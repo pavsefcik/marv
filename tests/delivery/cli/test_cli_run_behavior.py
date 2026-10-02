@@ -40,7 +40,7 @@ def test_cli_preserves_prompt_and_context_fields(temp_dir, monkeypatch):
     project.mkdir()
     monkeypatch.chdir(project)
 
-    agent_dir = project / ".agent"
+    agent_dir = project / ".marv"
     agent_dir.mkdir()
 
     prompts_dir = project / "prompts"

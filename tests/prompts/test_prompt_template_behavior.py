@@ -25,8 +25,8 @@ def test_prompt_template_priority(temp_dir, monkeypatch):
 
     monkeypatch.setenv("HOME", str(home))
 
-    user_dir = home / ".agent" / "prompts"
-    project_dir = project / ".agent" / "prompts"
+    user_dir = home / ".marv" / "prompts"
+    project_dir = project / ".marv" / "prompts"
 
     write_template(
         user_dir,

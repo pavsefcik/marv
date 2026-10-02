@@ -82,7 +82,7 @@ class AgentSettings:
     max_output_tokens: int = 8192
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
-    session_dir: Path = field(default_factory=lambda: Path.home() / ".agent" / "sessions")
+    session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
     prompt_template_dirs: list[Path] = field(default_factory=list)
