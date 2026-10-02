@@ -228,6 +228,37 @@ def test_cli_run_dispatches_to_tui_when_not_headless(temp_dir, monkeypatch):
     assert calls["headless"] == 0
 
 
+def test_bare_cli_dispatches_to_tui_when_no_subcommand(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    calls: dict[str, int] = {"tui": 0, "headless": 0}
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    def fake_run_tui(config, session, llm_provider):
+        assert session is None
+        assert llm_provider is sentinel_provider
+        calls["tui"] += 1
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        calls["headless"] += 1
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_tui", fake_run_tui)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, [])
+
+    assert result.exit_code == 0
+    assert calls["tui"] == 1
+    assert calls["headless"] == 0
+
+
 def test_cli_run_dispatches_to_headless_when_prompt_or_headless_flag(temp_dir, monkeypatch):
     project = temp_dir / "project"
     project.mkdir()

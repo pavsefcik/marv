@@ -85,6 +85,8 @@ class YMLXProvider(OpenAICompatibleProvider):
         unavailable, the server state is left as-is (caller may already have a
         server running).
         """
+        if not self.model:
+            return
         if running_model_id(self.base_url) == self.model:
             return
         argv = self._resolve_ymlx_invocation()

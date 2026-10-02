@@ -132,11 +132,15 @@ def create_provider(
         provider_overrides=provider_overrides,
     )
 
-    # YMLX: when no model is configured, fall back to the currently-serving one.
+    # YMLX: when no model is configured, fall back to the currently-serving one;
+    # if none is serving either, still build the provider with an empty model so
+    # the TUI can open and the model picker can select one.
     if prov_config.model is None and provider in ("ymlx", "openai-compat", "ollama"):
         from marv.llm.ymlx_models import running_model_id
 
         prov_config.model = running_model_id(prov_config.base_url)
+        if prov_config.model is None and provider == "ymlx":
+            prov_config.model = ""
 
     if prov_config.model is None:
         raise ValueError(

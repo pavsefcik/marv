@@ -24,6 +24,13 @@ app = typer.Typer(
 )
 
 
+@app.callback(invoke_without_command=True)
+def _root(ctx: typer.Context) -> None:
+    """With no subcommand, launch the interactive TUI (like `ymlx`)."""
+    if ctx.invoked_subcommand is None:
+        run()
+
+
 def main() -> None:
     """Entry point for the CLI."""
     app()
