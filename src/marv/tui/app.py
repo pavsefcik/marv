@@ -18,6 +18,7 @@ from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tu
 from marv.tui.controller import TUIController
 from marv.tui.extension_bridge import TUIExtensionBridge
 from marv.tui.input import PromptInput
+from marv.tui.model_modal import ModelModal
 from marv.tui.renderer import TUIRenderer
 from marv.tui.status import StatusBar
 
@@ -158,6 +159,10 @@ class AgentApp(App[None]):
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
 
+        # If no model is selected yet, prompt the user to pick one right away.
+        if not self.agent.model_name:
+            self._open_model_modal()
+
         # Load extensions if configured
         if self._bootstrap_config.extensions:
             errors = await self.extension_host.load_extensions()
@@ -196,6 +201,11 @@ class AgentApp(App[None]):
         if not self._renderer.render_skill_invocation(prompt):
             chat.add_user_message(prompt)
 
+        if not self.agent.model_name:
+            chat.add_system_message("no model selected — pick one with the picker (or /model <id>)")
+            self._open_model_modal()
+            return
+
         # Start processing - show thinking indicator if thinking is enabled
         self.is_processing = True
         thinking_enabled = (
@@ -205,6 +215,10 @@ class AgentApp(App[None]):
 
         # Run agent in background
         self._run_agent(prompt)
+
+    def _open_model_modal(self) -> None:
+        """Open the model picker modal."""
+        self.push_screen(ModelModal(self.agent, self._controller.on_model_modal_change))
 
     def _run_agent(self, prompt: str) -> None:
         """Run the agent loop."""
