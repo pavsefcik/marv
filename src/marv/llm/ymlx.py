@@ -74,8 +74,10 @@ class YMLXProvider(OpenAICompatibleProvider):
         """Return argv head for the ymlx CLI, or None if unavailable."""
         if self._ymlx_command and shutil.which(self._ymlx_command):
             return [self._ymlx_command]
+        # Non-interactive only: an interactive `zsh -i` would enable job control
+        # and could take over the terminal's foreground process group.
         if shutil.which("zsh"):
-            return ["zsh", "-ic", "ymlx"]
+            return ["zsh", "-c", "source ~/.zshrc >/dev/null 2>&1; ymlx"]
         return None
 
     def _run_cli(self, action: str, *args: str) -> subprocess.CompletedProcess[str] | None:
@@ -88,12 +90,18 @@ class YMLXProvider(OpenAICompatibleProvider):
             return None
         cmd = [*argv, action, *args]
         try:
+            # start_new_session + DEVNULL stdin fully detach the child from the
+            # controlling terminal: it cannot read the TTY or call tcsetpgrp to
+            # steal the foreground process group (which would background marv
+            # and make it stop on the next terminal read/write).
             return subprocess.run(
                 cmd,
                 check=False,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                start_new_session=True,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"timed out running `ymlx {action}` for {self.model}") from exc
