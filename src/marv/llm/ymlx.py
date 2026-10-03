@@ -17,8 +17,10 @@ No API key is required (YMLX is a local, unauthenticated endpoint).
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from marv.llm.openai_compat import OpenAICompatibleProvider
@@ -31,7 +33,6 @@ from marv.llm.ymlx_models import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import Any
 
     from marv.llm.events import StreamOptions
@@ -71,16 +72,34 @@ class YMLXProvider(OpenAICompatibleProvider):
         return self._hub_dir
 
     def _resolve_ymlx_invocation(self) -> list[str] | None:
-        """Return argv head for the ymlx CLI, or None if unavailable."""
+        """Return argv head for the ymlx CLI, or None if unavailable.
+
+        Every candidate takes subcommands as real arguments (`[..., "run", id]`)
+        so ymlx runs headless. It must never be invoked with no arguments, which
+        would launch ymlx's interactive TUI menu over the top of marv.
+        """
         if self._ymlx_command and shutil.which(self._ymlx_command):
             return [self._ymlx_command]
-        # Non-interactive only: an interactive `zsh -i` would enable job control
-        # and could take over the terminal's foreground process group.
+        # Known wrapper locations (each execs `zsh ymlx.zsh "$@"`).
+        for candidate in (
+            Path.home() / ".pi" / "agent" / "bin" / "ymlx",
+            Path("/opt/homebrew/bin/ymlx"),
+            Path("/usr/local/bin/ymlx"),
+        ):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return [str(candidate)]
+        # Direct source of the TUI script (same thing the wrapper runs).
+        ymlx_zsh = Path.home() / ".ymlx" / "ymlx.zsh"
+        if ymlx_zsh.is_file() and shutil.which("zsh"):
+            return ["zsh", str(ymlx_zsh)]
+        # Last resort: source the shell rc and call the function, passing args.
         if shutil.which("zsh"):
-            return ["zsh", "-c", "source ~/.zshrc >/dev/null 2>&1; ymlx"]
+            return ["zsh", "-c", 'source ~/.zshrc >/dev/null 2>&1; ymlx "$@"', "zsh"]
         return None
 
-    def _run_cli(self, action: str, *args: str) -> subprocess.CompletedProcess[str] | None:
+    def _run_cli(
+        self, action: str, *args: str, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[str] | None:
         """Run a ymlx subcommand, capturing its output (no terminal clobber).
 
         Returns None when the ymlx CLI is unavailable.
@@ -102,6 +121,7 @@ class YMLXProvider(OpenAICompatibleProvider):
                 stderr=subprocess.STDOUT,
                 text=True,
                 start_new_session=True,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"timed out running `ymlx {action}` for {self.model}") from exc
@@ -124,7 +144,7 @@ class YMLXProvider(OpenAICompatibleProvider):
             return False
         if running_model_id(self.base_url) == self.model:
             return False
-        proc = self._run_cli("run", self.model)
+        proc = self._run_cli("run", self.model, timeout=20 * 60)
         if proc is None:
             return False
         if proc.returncode != 0 or running_model_id(self.base_url) != self.model:
@@ -142,7 +162,7 @@ class YMLXProvider(OpenAICompatibleProvider):
 
     def stop(self) -> None:
         """Stop the ymlx server (best-effort)."""
-        self._run_cli("stop")
+        self._run_cli("stop", timeout=120)
 
     async def list_models(self) -> list[str]:
         """List ymlx-managed models (hub scan + currently running model)."""
