@@ -98,10 +98,11 @@ class TUIExtensionBridge:
         self._render_slot(right_panel, self._widgets.get("right_panel"))
 
     def _render_slot(self, widget: Static, view: WidgetView | None) -> None:
-        """Render a single extension widget slot."""
+        """Render a single extension widget slot (idempotent)."""
         if view is None:
-            widget.update("")
-            widget.add_class("hidden")
+            if "hidden" not in widget.classes:
+                widget.update("")
+                widget.add_class("hidden")
             return
 
         try:

@@ -1,6 +1,7 @@
 """CLI entry point using Typer."""
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -145,7 +146,14 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     from marv.tui.app import AgentApp
 
     app = AgentApp(config, provider=llm_provider, session=session)
-    app.run()
+    # Clear any mouse-reporting mode a previously crashed app may have left on
+    # (otherwise the terminal leaks stray escape sequences on mouse movement).
+    if sys.stdout.isatty():
+        sys.stdout.write("\x1b[?1000l\x1b[?1003l\x1b[?1006l")
+        sys.stdout.flush()
+    # Mouse reporting is disabled: this is a keyboard-driven TUI, and enabling
+    # it makes some terminals leak mouse escape sequences (stray numbers).
+    app.run(mouse=False)
 
 
 @app.command()
