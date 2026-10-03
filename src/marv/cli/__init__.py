@@ -151,9 +151,7 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     if sys.stdout.isatty():
         sys.stdout.write("\x1b[?1000l\x1b[?1003l\x1b[?1006l")
         sys.stdout.flush()
-    # Mouse reporting is disabled: this is a keyboard-driven TUI, and enabling
-    # it makes some terminals leak mouse escape sequences (stray numbers).
-    app.run(mouse=False)
+    app.run()
 
 
 @app.command()
