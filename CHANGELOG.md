@@ -3,6 +3,23 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [0.105.1] - 2026-10-04
+
+### Fixed
+
+- **Local MLX runs no longer die silently under memory pressure.** The
+  `marv-mlx` backend now caps the output budget it asks the local server for
+  (2048 by default, matching ymlx's default, overridable with
+  `MARV_MLX_MAX_OUTPUT_TOKENS`). A large configured `max_output_tokens` raised
+  peak prefill allocation to the point where the Metal working-set limit could
+  be exceeded mid-response on unified-memory Macs.
+- **In-stream server errors are surfaced instead of swallowed.** The
+  OpenAI-compatible transport now raises on a top-level `error` payload in the
+  SSE body (how the mlx_vlm server reports a Metal OOM after HTTP 200) and
+  treats a stream that ends without a finish reason or `[DONE]` as an error.
+  Previously both looked like a successful, empty completion, so the turn ended
+  with nothing shown and no retry attempted.
+
 ## [0.105.0] - 2026-10-04
 
 ### Added

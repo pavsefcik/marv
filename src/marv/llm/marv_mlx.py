@@ -38,6 +38,27 @@ if TYPE_CHECKING:
     from marv.runtime.message import Message
 
 
+#: Conservative output cap for the local MLX server. Peak prefill memory
+#: scales with prompt + max_tokens, and on unified-memory Macs an oversized
+#: budget can push Metal past its working-set limit, surfacing mid-stream as
+#: "[METAL] ... Insufficient Memory". ymlx uses the same 2048 default. Override
+#: with MARV_MLX_MAX_OUTPUT_TOKENS (<= 0 disables the cap).
+DEFAULT_MAX_OUTPUT_TOKENS = 2048
+
+
+def resolve_max_output_tokens(requested: int) -> int:
+    """Clamp the requested output budget to the local server's safe ceiling."""
+    cap = DEFAULT_MAX_OUTPUT_TOKENS
+    if raw := os.environ.get("MARV_MLX_MAX_OUTPUT_TOKENS"):
+        try:
+            cap = int(raw)
+        except ValueError:
+            cap = DEFAULT_MAX_OUTPUT_TOKENS
+    if cap <= 0:
+        return requested
+    return min(requested, cap)
+
+
 def resolve_mlx_server_command(explicit: str | None = None) -> list[str] | None:
     """Locate the `mlx_vlm.server` entry point, or None when not installed."""
     if explicit:
@@ -76,7 +97,7 @@ class MarvMlxProvider(LocalServerProvider):
             api_key=api_key,
             model=model,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=resolve_max_output_tokens(max_tokens),
         )
         self._hub_dir = hub_dir or DEFAULT_HUB_DIR
         self._server_command = resolve_mlx_server_command(server_command)
@@ -134,6 +155,12 @@ class MarvMlxProvider(LocalServerProvider):
         options: StreamOptions | None,
     ) -> dict[str, Any]:
         payload = super()._build_payload(messages, tools, options)
+
+        # The agent forwards its configured output budget via StreamOptions;
+        # clamp whatever wins so a large config cannot ask the local server for
+        # more headroom than the GPU can wire down at once.
+        if "max_tokens" in payload:
+            payload["max_tokens"] = resolve_max_output_tokens(int(payload["max_tokens"]))
 
         # Remove any marker set by the base (we decide it below per family).
         payload.pop("enable_thinking", None)

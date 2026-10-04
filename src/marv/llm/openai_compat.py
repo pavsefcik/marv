@@ -70,6 +70,17 @@ def _parse_api_error(response: httpx.Response) -> str:
         return response.text or f"HTTP {response.status_code}"
 
 
+def _parse_stream_error(error: object) -> str:
+    """Normalize an error payload embedded in a streaming chunk.
+
+    OpenAI-style errors are ``{"message": ...}`` objects; the mlx_vlm server
+    emits a bare string. Both end up as a readable message.
+    """
+    if isinstance(error, dict):
+        return str(error.get("message") or error)
+    return str(error)
+
+
 def _map_stop_reason(openai_reason: str | None) -> StopReason:
     """Map OpenAI finish reason to our StopReason type."""
     mapping: dict[str | None, StopReason] = {
@@ -281,6 +292,7 @@ class OpenAICompatibleProvider:
         thinking_content = ""
         pending_tool_calls: dict[int, ToolCallBlock] = {}
         finish_reason: str | None = None
+        saw_done = False
 
         def _check_cancelled() -> bool:
             """Check if request was cancelled."""
@@ -298,7 +310,7 @@ class OpenAICompatibleProvider:
 
         async def _do_stream() -> None:
             """Execute the streaming request (for retry)."""
-            nonlocal text_started, text_content, pending_tool_calls, finish_reason
+            nonlocal text_started, text_content, pending_tool_calls, finish_reason, saw_done
 
             # Check cancellation before starting
             if _check_cancelled():
@@ -330,12 +342,21 @@ class OpenAICompatibleProvider:
 
                     data_str = line[6:]  # Remove "data: " prefix
                     if data_str == "[DONE]":
+                        saw_done = True
                         break
 
                     try:
                         chunk = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
+
+                    # A server can report a failure as a top-level `error` in
+                    # the SSE body after the HTTP 200 was already sent (the
+                    # mlx_vlm server does this on Metal OOM). Raise so it takes
+                    # the normal error path instead of looking like an empty,
+                    # successful completion.
+                    if chunk.get("error") is not None:
+                        raise LLMError(_parse_stream_error(chunk["error"]))
 
                     # Handle usage if present
                     if chunk.get("usage"):
@@ -436,6 +457,12 @@ class OpenAICompatibleProvider:
             # Skip done event if already aborted
             if stream.is_aborted:
                 return
+
+            # A stream that ends without a finish reason or a [DONE] sentinel
+            # was truncated (e.g. the server errored and closed mid-response).
+            # Surface it as an error rather than a successful empty completion.
+            if not saw_done and finish_reason is None:
+                raise LLMError("stream closed before completion")
 
             # End text block if started
             if text_started:

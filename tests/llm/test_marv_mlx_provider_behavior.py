@@ -66,6 +66,34 @@ def test_supports_thinking_matches_family():
     assert make_provider(MinistralReasoning).supports_thinking() is True
 
 
+def test_max_output_tokens_is_clamped_for_the_local_server():
+    from marv.llm.marv_mlx import DEFAULT_MAX_OUTPUT_TOKENS
+
+    provider = MarvMlxProvider(
+        base_url="http://localhost:11500", api_key="", model=Qwen, max_tokens=8192
+    )
+
+    assert provider.max_tokens == DEFAULT_MAX_OUTPUT_TOKENS == 2048
+
+
+def test_payload_clamps_stream_option_max_tokens():
+    provider = make_provider()
+
+    payload = provider._build_payload([_Msg()], None, StreamOptions(max_tokens=8192))
+
+    assert payload.get("max_tokens") == 2048
+
+
+def test_max_output_tokens_env_override(monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 4096
+    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "0")
+    assert marv_mlx.resolve_max_output_tokens(8192) == 8192
+
+
 def test_launch_argv_runs_mlx_vlm_server_for_the_model():
     provider = make_provider(server_command="mlx_vlm.server")
 

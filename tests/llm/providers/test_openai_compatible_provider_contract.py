@@ -177,6 +177,64 @@ async def test_openai_compatible_retries_on_transient_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_surfaces_in_stream_error_payload() -> None:
+    """A top-level `error` in the SSE body is not a successful empty stream.
+
+    The mlx_vlm server reports Metal OOM this way after an HTTP 200 was sent.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = b'data: {"error": "[METAL] Insufficient Memory"}\n\n'
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(base_url="http://127.0.0.1:11500", transport=transport)
+    provider = OpenAICompatibleProvider(
+        base_url="http://127.0.0.1:11500",
+        api_key="",
+        model="prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",
+        http_client=client,
+    )
+
+    stream = provider.stream([Message.user("hi")])
+    result = await stream.result()
+
+    await provider.client.aclose()
+
+    assert result.stop_reason == "error"
+    assert result.error_message is not None
+    assert "Insufficient Memory" in result.error_message
+    assert result.content == []
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_surfaces_truncated_stream() -> None:
+    """A stream with no finish reason and no [DONE] is an error, not a stop."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n'
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(base_url="http://127.0.0.1:11500", transport=transport)
+    provider = OpenAICompatibleProvider(
+        base_url="http://127.0.0.1:11500",
+        api_key="",
+        model="prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",
+        http_client=client,
+    )
+
+    stream = provider.stream([Message.user("hi")])
+    result = await stream.result()
+
+    await provider.client.aclose()
+
+    assert result.stop_reason == "error"
+    assert result.error_message is not None
+    assert "truncated" in result.error_message or "before completion" in result.error_message
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_cancels_before_request() -> None:
     cancel_event = asyncio.Event()
     cancel_event.set()
