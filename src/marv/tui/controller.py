@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from marv.config.state import LastUsedSelection
 from marv.runtime.message import Role
 from marv.runtime.session import MessageEntry, Session
 from marv.runtime.settings import ThinkingLevel
@@ -234,6 +235,15 @@ class TUIController:
         self._app._session = self._app.agent.session
         self._app._renderer.render_new_session()
 
+    def remember_selection(self) -> None:
+        """Persist the active model/thinking so the next start preselects it."""
+        agent = self._app.agent
+        LastUsedSelection(
+            provider=agent.provider_name,
+            model=agent.model_name or None,
+            thinking_level=agent.thinking_level.value,
+        ).save(agent.config.session_dir)
+
     def switch_model(self, model_name: str) -> None:
         """Switch to a different model."""
         chat = self._app.query_one("#chat-view", ChatView)
@@ -248,6 +258,7 @@ class TUIController:
         status.set_model(model_name)
         status.set_thinking(self._app.agent.thinking_level)
         chat.add_system_message(f"switched to {model_name}")
+        self.remember_selection()
 
         # Start warming the model up in the background so it's ready to answer.
         self._app.start_model()
@@ -273,6 +284,7 @@ class TUIController:
         self._app.agent.set_thinking_level(level)
         status.set_thinking(level)
         chat.add_system_message(f"thinking level: {level.value}")
+        self.remember_selection()
 
     def on_model_modal_change(
         self,

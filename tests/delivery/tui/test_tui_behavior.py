@@ -20,6 +20,7 @@ from textual.widgets import (
 )
 
 from marv.config import Config
+from marv.config.state import LastUsedSelection, load_last_used
 from marv.llm.events import (
     DoneEvent,
     ErrorEvent,
@@ -133,6 +134,23 @@ class CancelAwareProviderFake(LLMProviderFake):
 
         stream.attach_task(asyncio.create_task(_run()))
         return stream
+
+
+class ServerLifecycleProviderFake(LLMProviderFake):
+    """Provider double that records local-server warm-up calls."""
+
+    def __init__(self, *, name: str = "openai", model: str = "gpt-4o") -> None:
+        super().__init__([], name=name, model=model)
+        self.serving = False
+        self.ensure_calls = 0
+
+    def is_serving(self) -> bool:
+        return self.serving
+
+    async def ensure_running_async(self) -> bool:
+        self.ensure_calls += 1
+        self.serving = True
+        return True
 
 
 def status_left_text(app: AgentApp) -> str:
@@ -977,3 +995,118 @@ async def test_tui_runner_tree_modal_branch_view_updates_leaf(temp_dir):
         assert app.agent.session.leaf_id == target_entry_id
         assert any(f"branched to {target_entry_id}" in msg for msg in system_messages(app))
         assert not isinstance(app.screen, SessionTreeModal)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_switching_model_persists_last_used_selection(temp_dir):
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+    )
+    provider = LLMProviderFake(
+        [],
+        name="openai",
+        model="gpt-4o",
+        available_models=["gpt-4o", "gpt-5"],
+    )
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "/model gpt-5")
+        await pilot.pause()
+
+        remembered = load_last_used(temp_dir / "sessions")
+        assert remembered.provider == "openai"
+        assert remembered.model == "gpt-5"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_warms_model_server_on_startup(temp_dir):
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+    )
+    provider = ServerLifecycleProviderFake()
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        assert provider.ensure_calls == 1
+        assert any("model ready" in msg for msg in system_messages(app))
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_does_not_start_server_when_model_missing(temp_dir):
+    config = Config(
+        provider="openai",
+        model="",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+    )
+    provider = ServerLifecycleProviderFake()
+    provider.model = ""
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        assert provider.ensure_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_remembers_thinking_level(temp_dir):
+    config = Config(
+        provider="openai",
+        model="gpt-5",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+        thinking_level=ThinkingLevel.OFF,
+    )
+    provider = LLMProviderFake([], name="openai", model="gpt-5")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        app._controller.switch_thinking("low")
+        await pilot.pause()
+
+        remembered = load_last_used(temp_dir / "sessions")
+        assert remembered.model == "gpt-5"
+        assert remembered.thinking_level == "low"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_start_with_remembered_model_skips_picker(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    LastUsedSelection(provider="openai", model="gpt-5", thinking_level="low").save(
+        home / ".cache" / "marv" / "sessions"
+    )
+
+    config = Config.load()
+    provider = LLMProviderFake([], name=config.provider, model=config.model)
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        assert config.model == "gpt-5"
+        assert app.agent.model_name == "gpt-5"
+        assert not isinstance(app.screen, ModelModal)
+        assert "gpt-5" in status_left_text(app)

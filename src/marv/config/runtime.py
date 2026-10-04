@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from marv.config.state import load_last_used
 from marv.runtime.settings import AgentSettings, ThinkingLevel
 
 
@@ -55,6 +56,15 @@ class Config:
         config_data = cls._merge_config(config_data, cls._load_config_file(project_config_dir))
 
         config_data = cls._apply_env_vars(config_data)
+
+        # The last-used TUI selection is the weakest source: explicit config
+        # files, environment variables, and CLI flags all win over it.
+        session_dir = Path(
+            config_data.get("session_dir", Path.home() / ".cache" / "marv" / "sessions")
+        )
+        last_used = load_last_used(session_dir).as_config()
+        config_data = cls._merge_config(last_used, config_data)
+
         return cls._from_dict(config_data)
 
     def to_agent_settings(self) -> AgentSettings:

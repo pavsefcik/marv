@@ -164,6 +164,11 @@ class AgentApp(App[None]):
         # If no model is selected yet, prompt the user to pick one right away.
         if not self.agent.model_name:
             await self._open_model_modal()
+        else:
+            # A resumed/config model also counts as "last used", and its local
+            # server is warmed up now so the first prompt runs immediately.
+            self._controller.remember_selection()
+            self.start_model()
 
         # Load extensions if configured
         if self._bootstrap_config.extensions:
