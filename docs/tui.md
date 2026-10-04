@@ -52,6 +52,25 @@ markup strings, but **not** in `rich.text.Text` styles, and that `$text-muted` /
 `$text-disabled` carry alpha and therefore cannot be used as border colors (use
 `$foreground-muted`).
 
+### Snapshots
+
+The presentation is pinned by committed text snapshots in
+`tests/delivery/tui/snapshots/`. `test_snapshot_behavior.py` renders the whole
+screen through Textual's compositor and compares it against the committed frame,
+normalizing volatile values (version, session id, RAM). The styled snapshots also
+pin each line's resolved styles, so colour and weight regressions are caught, not
+just geometry.
+
+After an intentional visual change, review the diff and regenerate:
+
+```sh
+MARV_UPDATE_SNAPSHOTS=1 make test
+```
+
+Appearance is detected once at startup, before Textual owns the terminal. It is
+deliberately not re-probed mid-session: Textual's input parser has no OSC 11
+handler, so an unsolicited reply would be reissued as key input.
+
 ## Built‑in commands
 
 - `/clear` — clear chat

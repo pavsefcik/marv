@@ -127,6 +127,11 @@ want the explicit "this is what I'm about to load" moment.
 Completed — themes are configurable via `theme`, `AGENT_THEME`, and
 `marv run --theme`, with `auto` following the terminal. See `docs/tui.md`.
 
+Appearance is detected once at startup. It is deliberately not re-probed
+mid-session: Textual's input parser has no OSC 11 handler, so an unsolicited
+reply arrives as key input. Following a live light/dark switch would need a
+supported change signal (e.g. text-driven DEC mode 2031) from Textual.
+
 ### Tool-call diffs
 Editing tools show their raw result text. Render `edit`/`write` results as a
 syntax-highlighted diff with add/remove bands (and horizontal scroll for long

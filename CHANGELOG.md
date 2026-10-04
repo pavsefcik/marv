@@ -16,6 +16,10 @@ All notable changes to marv are documented here. The version in
   `AGENT_THEME`, or per run with `marv run --theme <name>`.
 - `src/marv/tui/theme.py` — theme resolution and startup appearance detection
   (bounded OSC-11 probe, then the system appearance, then dark).
+- **TUI snapshot guardrails.** The quiet layout and its resolved styles are now
+  pinned by committed screen snapshots (`tests/delivery/tui/snapshots/`), so a
+  CSS or theme regression shows up as a reviewable diff instead of slipping
+  through. Regenerate with `MARV_UPDATE_SNAPSHOTS=1 make test`.
 
 ### Changed
 

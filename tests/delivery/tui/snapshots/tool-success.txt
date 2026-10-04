@@ -1,0 +1,24 @@
+
+  marv <version>  ·  gpt-4o
+  Type /help for commands · ctrl+o to expand tool output
+
+    ✓ Reading  src/parser.py
+    def parse(source):
+        return source
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────
+   Type here...
+  ────────────────────────────────────────────────────────────────────────────
+  gpt-4o  session:<id>                                     /workspace/marv
