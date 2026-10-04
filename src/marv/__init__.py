@@ -1,6 +1,11 @@
 """marv - A local-first coding agent TUI for Apple Silicon."""
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("marv")
+except PackageNotFoundError:  # pragma: no cover - source tree without an install
+    __version__ = "0.0.0"
 
 from marv.config import Config
 from marv.runtime.agent import Agent
