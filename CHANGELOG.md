@@ -5,11 +5,31 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+### Added
+
+- **Terminal-native theming.** The TUI no longer hard-codes a Nord-ish
+  palette. `theme = "auto"` (the default) probes the terminal background and
+  applies Textual's built-in `ansi-dark`/`ansi-light` theme, so marv matches
+  the terminal it runs in. Any built-in Textual theme name (`nord`,
+  `tokyo-night`, `dracula`, …) works too, `minimal` keeps the old palette, and
+  an unknown name falls back to `auto` with a warning. Set it in config, with
+  `AGENT_THEME`, or per run with `marv run --theme <name>`.
+- `src/marv/tui/theme.py` — theme resolution and startup appearance detection
+  (bounded OSC-11 probe, then the system appearance, then dark).
+
 ### Changed
 
+- **TUI redesign: quiet, rule-based layout.** Filled panels and per-message
+  borders are gone. Tool calls render as a single `✓ Reading  src/parser.py`
+  row (`✓` success / `✕` error / spinner while running) with the output
+  indented beneath; thinking is a dim italic `▾ Thought` row; the input sits
+  between two rules; the startup header is a compact two-line summary instead
+  of the ASCII-art banner.
 - **Textual 6.6 → 8.2** (the TUI toolkit). Textual 8 ships the built-in
   `ansi-dark`/`ansi-light` themes and the newer CSS properties
-  (`text-opacity`, `text-overflow`) the TUI redesign needs.
+  (`text-opacity`, `text-overflow`) the redesign needs.
+- Tool results now carry `is_error`, so the tool row can show an honest `✕`
+  instead of inferring failure from the result text.
 
 ### Fixed
 

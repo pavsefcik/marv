@@ -305,3 +305,71 @@ def test_config_invalid_approval_mode_falls_back_to_off(temp_dir, monkeypatch):
     config = Config.load()
 
     assert config.approval_mode == ApprovalMode.OFF
+
+
+def test_config_theme_defaults_to_auto(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    assert Config.load().theme == "auto"
+
+
+def test_config_load_reads_theme_from_a_config_file(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text('theme = "tokyo-night"\n')
+
+    config = Config.load()
+
+    assert config.theme == "tokyo-night"
+
+
+def test_config_unknown_theme_is_carried_without_raising(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text('theme = "nonsense"\n')
+
+    assert Config.load().theme == "nonsense"
+
+
+def test_config_theme_from_env_overrides_the_config_file(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_THEME", "gruvbox")
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text('theme = "nord"\n')
+
+    assert Config.load().theme == "gruvbox"
+
+
+def test_config_theme_round_trips_through_construction():
+    assert Config(theme="dracula").theme == "dracula"
+    assert Config().theme == "auto"

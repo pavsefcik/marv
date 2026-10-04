@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.markup import escape
 from textual.widgets import Static
 
+from marv import __version__
 from marv.runtime.chunk import (
     MessageChunk,
     TextDeltaChunk,
@@ -25,15 +27,20 @@ if TYPE_CHECKING:
     from marv.tui.app import AgentApp
     from marv.tui.compose import TUILoaders
 
-# Startup banner
-BANNER = """
-██╗   ███╗ █████╗ ██████╗ ██╗   ██╗
-████╗ ████║██╔══██╗██╔══██╗██║   ██║
-██╔████╔██║███████║██████╔╝██║   ██║
-██║╚██╔╝██║██╔══██║██╔══██╗╚██╗ ██╔╝
-██║ ╚═╝ ██║██║  ██║██║  ██║ ╚████╔╝
-╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝
-""".strip()
+# Startup header is rendered by `banner_text` (a compact two-line summary).
+
+
+def banner_text(model: str, thinking: str) -> str:
+    """The compact startup header (Textual markup), replacing the ASCII banner."""
+    line = f"[bold $primary]marv[/] [$text-muted]{escape(__version__)}[/]"
+    line += f"  [$text-muted]\u00b7[/]  [$foreground]{escape(model)}[/]"
+    if thinking and thinking != "off":
+        line += f"  [$text-muted]\u00b7[/]  [$text-muted]thinking: {escape(thinking)}[/]"
+    hint = (
+        "[$text-muted]Type [/][$primary]/help[/]"
+        "[$text-muted] for commands \u00b7 ctrl+o to expand tool output[/]"
+    )
+    return f"{line}\n{hint}"
 
 
 class TUIRenderer:
@@ -47,12 +54,13 @@ class TUIRenderer:
         self._speed = TokenSpeedTracker(lambda text: self._app.agent.provider.count_tokens(text))
 
     def render_banner(self) -> None:
-        """Render the startup banner in chat."""
+        """Render the compact startup header in chat."""
         chat = self._app.query_one("#chat-view", ChatView)
         model = self._app.agent.model_name or "(no model downloaded)"
+        thinking = self._app.agent.thinking_level.value
         chat.mount(
             Static(
-                f"{BANNER}\n\nmarv | {model}",
+                banner_text(model, thinking),
                 classes="message-system",
             )
         )
@@ -165,7 +173,11 @@ class TUIRenderer:
                         chat.complete_tool_call(tool_call)
                         self._speed.reset()
                     case ToolResultChunk(payload=tool_result):
-                        chat.set_tool_result(tool_result.tool_call_id, tool_result.result)
+                        chat.set_tool_result(
+                            tool_result.tool_call_id,
+                            tool_result.result,
+                            is_error=tool_result.is_error,
+                        )
                     case MessageChunk(payload=message) if message.role.value == "system":
                         chat.add_system_message(message.content)
                     case _:

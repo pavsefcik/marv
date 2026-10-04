@@ -90,6 +90,13 @@ def run(
             help="Tool approval mode: off, destructive, all",
         ),
     ] = None,
+    theme: Annotated[
+        str | None,
+        typer.Option(
+            "--theme",
+            help="TUI theme: auto, minimal, or any built-in Textual theme",
+        ),
+    ] = None,
     extension: Annotated[
         list[Path] | None,
         typer.Option("-e", "--extension", help="Extension file(s) to load"),
@@ -140,6 +147,7 @@ def run(
         temperature=config.temperature,
         thinking_level=thinking_level,
         approval_mode=approval_mode,
+        theme=theme or config.theme,
         session_dir=config.session_dir,
         skills_dirs=config.skills_dirs,
         extensions=extensions,

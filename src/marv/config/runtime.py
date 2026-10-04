@@ -37,6 +37,7 @@ class Config:
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
     approval_mode: ApprovalMode = ApprovalMode.OFF
+    theme: str = "auto"
     session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
@@ -135,6 +136,7 @@ class Config:
             "AGENT_TEMPERATURE": "temperature",
             "AGENT_THINKING": "thinking_level",
             "AGENT_APPROVAL": "approval_mode",
+            "AGENT_THEME": "theme",
         }
 
         for env_var, config_key in env_mappings.items():
@@ -204,6 +206,7 @@ class Config:
             temperature=data.get("temperature", 0.7),
             thinking_level=thinking_level,
             approval_mode=approval_mode,
+            theme=str(data.get("theme") or "auto"),
             session_dir=session_dir,
             skills_dirs=skills_dirs,
             extensions=extensions,

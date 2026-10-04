@@ -127,6 +127,54 @@ def test_cli_run_propagates_approval_mode_to_config(temp_dir, monkeypatch):
     assert seen == [ApprovalMode.DESTRUCTIVE]
 
 
+def test_cli_run_propagates_theme_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.theme)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--theme", "nord"])
+
+    assert result.exit_code == 0
+    assert seen == ["nord"]
+
+
+def test_cli_run_keeps_the_configured_theme_without_the_flag(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.theme)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setenv("AGENT_THEME", "dracula")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert seen == ["dracula"]
+
+
 def test_cli_run_headless_requires_prompt():
     runner = CliRunner()
     result = runner.invoke(cli.app, ["run", "--headless"])

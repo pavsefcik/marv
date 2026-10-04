@@ -23,6 +23,7 @@ from marv.tui.memory import snapshot
 from marv.tui.model_modal import ModelModal
 from marv.tui.renderer import TUIRenderer
 from marv.tui.status import StatusBar
+from marv.tui.theme import resolve_theme_name
 
 if TYPE_CHECKING:
     from textual.timer import Timer
@@ -80,6 +81,10 @@ class AgentApp(App[None]):
         self._controller = TUIController(self)
         self._extension_bridge = TUIExtensionBridge(self)
         self._renderer = TUIRenderer(self, loaders=self._loaders)
+        # Appearance is probed here, before Textual owns the terminal, and the
+        # resolved name is applied in on_mount (built-in themes are registered
+        # by Textual already; MINIMAL_THEME is registered at mount).
+        self._theme_name, self._theme_warning = resolve_theme_name(config.theme)
         self._spinner_timer: Timer | None = None
         self._extension_widget_timer: Timer | None = None
         self._memory_timer: Timer | None = None
@@ -145,12 +150,15 @@ class AgentApp(App[None]):
         if self._session is None:
             self._session = self.agent.session
 
-        # Register and apply theme
+        # Register and apply theme (built-in themes are already registered)
         self.register_theme(MINIMAL_THEME)
-        self.theme = "minimal"
+        self.theme = self._theme_name
 
         # Show banner
         self._renderer.render_banner()
+
+        if self._theme_warning:
+            self.query_one("#chat-view", ChatView).add_system_message(self._theme_warning)
 
         # Update status bar
         status = self.query_one("#status-line", StatusBar)

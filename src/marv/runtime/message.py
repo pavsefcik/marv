@@ -55,6 +55,7 @@ class ToolResult(BaseModel):
     tool_call_id: str
     name: str
     result: str
+    is_error: bool = False
 
 
 class ToolCallStart(BaseModel):

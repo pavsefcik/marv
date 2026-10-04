@@ -124,10 +124,22 @@ want the explicit "this is what I'm about to load" moment.
 - Effort: S · Risk: low
 
 ### Theme config
-The theme is a single hard-coded "minimal" Nord-ish palette. Allow selecting or
-overriding a theme via config.
-- Where: `src/marv/tui/app.py`, `src/marv/config/runtime.py`
-- Effort: S–M · Risk: low
+Completed — themes are configurable via `theme`, `AGENT_THEME`, and
+`marv run --theme`, with `auto` following the terminal. See `docs/tui.md`.
+
+### Tool-call diffs
+Editing tools show their raw result text. Render `edit`/`write` results as a
+syntax-highlighted diff with add/remove bands (and horizontal scroll for long
+lines), like other modern terminal agents.
+- Where: `src/marv/tui/chat.py` (a new diff view), `src/marv/tools/edit.py`
+- Effort: L · Risk: medium
+
+### Elapsed-time and cost in the footer
+The footer shows tok/s but not how long a turn has taken or what it cost.
+Add a live elapsed timer to the waiting indicator and a turn cost estimate for
+providers that report pricing.
+- Where: `src/marv/tui/chat.py`, `src/marv/tui/status.py`
+- Effort: M · Risk: low
 
 ---
 

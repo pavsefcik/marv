@@ -820,6 +820,7 @@ class Agent:
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
                 result=result,
+                is_error=is_error,
             )
             state.tool_results.append(tr)
             yield ToolResultChunk(payload=tr)

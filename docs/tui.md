@@ -22,6 +22,36 @@ The widget and modal files sit underneath that split as the leaf UI components.
 - Model selector, model-download picker with live progress, and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
 
+## Appearance
+
+The TUI follows the terminal rather than imposing a palette. The default
+`theme = "auto"` probes the terminal background (OSC 11, then the system
+appearance) and applies Textual's built-in `ansi-dark` or `ansi-light` theme, so
+marv matches the terminal it runs in. Any built-in Textual theme name (`nord`,
+`tokyo-night`, `dracula`, …) can be selected instead, and `minimal` keeps the
+old Nord-ish palette available. An unknown name falls back to `auto` with a
+warning instead of failing to start.
+
+Set the theme in config (`theme = "nord"`), with `AGENT_THEME`, or per run with
+`marv run --theme <name>`.
+
+Layout is intentionally quiet, following the conventions of modern terminal
+agents:
+
+- transparent chrome, with thin rules rather than filled panels or per-message
+  borders
+- tool calls render as a single `✓ Reading  src/parser.py` row (`✓` on success,
+  `✕` on error, a braille spinner while running) with the output indented
+  beneath it
+- thinking renders as a dim italic `▾ Thought` row that can be collapsed
+- the startup header is a compact two-line summary instead of an ASCII banner
+
+Styling uses theme variables (`$primary`, `$text-muted`, …) so a theme swap
+needs no CSS change. Note that Textual resolves theme variables in CSS and in
+markup strings, but **not** in `rich.text.Text` styles, and that `$text-muted` /
+`$text-disabled` carry alpha and therefore cannot be used as border colors (use
+`$foreground-muted`).
+
 ## Built‑in commands
 
 - `/clear` — clear chat

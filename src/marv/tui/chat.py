@@ -4,6 +4,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.text import Text
 from textual.containers import ScrollableContainer
 from textual.widgets import Static
@@ -13,6 +14,11 @@ if TYPE_CHECKING:
 
 # Truncate long outputs for display
 MAX_DISPLAY_CHARS = 5000
+
+# Tool-row presentation glyphs. Kept here (not in CSS) because they are content.
+TOOL_SUCCESS_GLYPH = "\u2713"  # check
+TOOL_ERROR_GLYPH = "\u2715"  # cross
+TOOL_RUNNING_GLYPH = "\u25cb"  # ring, replaced by the spinner frames below
 
 
 def truncate(text: str, limit: int, message: str = "...") -> str:
@@ -74,10 +80,8 @@ class MessageWidget(Static):
 
     def _update_content(self) -> None:
         if self.role == "user":
-            # Use Text to avoid markup parsing issues with user input
-            text = Text("> ")
-            text.append(self._content)
-            self.update(text)
+            # User input is escaped: it must never be parsed as Textual markup.
+            self.update(f"[bold $primary]> [/][bold]{escape(self._content)}[/]")
         else:
             try:
                 self.update(Markdown(self._content))
@@ -87,9 +91,38 @@ class MessageWidget(Static):
 
 
 class ToolWidget(Static):
-    """Tool call display with collapsible output."""
+    """Tool call display as a glyph + verb + target row with a body.
 
-    SPINNER_FRAMES = [".", "..", "..."]
+    Presentation is a single quiet row (``✓ Reading  src/parser.py``) rather
+    than a bordered panel; the result is indented beneath it and can be
+    collapsed. All the state methods (``set_inputs``, ``set_result``,
+    ``has_result``, ``advance_spinner``, collapse/expand) are unchanged so the
+    renderer and tests keep working.
+    """
+
+    SPINNER_FRAMES = [
+        "\u280b",
+        "\u2819",
+        "\u2839",
+        "\u2838",
+        "\u283c",
+        "\u2834",
+        "\u2826",
+        "\u2827",
+        "\u2807",
+        "\u280f",
+    ]
+
+    # Human verbs for the row. Unknown tools fall back to the raw tool name.
+    VERBS = {
+        "read": "Reading",
+        "write": "Writing",
+        "edit": "Editing",
+        "bash": "Running",
+        "grep": "Searching",
+        "find": "Finding",
+        "ls": "Listing",
+    }
 
     def __init__(
         self, tool_id: str, name: str, inputs: dict[str, Any] | None = None, **kwargs: Any
@@ -99,64 +132,108 @@ class ToolWidget(Static):
         self.tool_name = name
         self.inputs = inputs or {}
         self._result = ""
+        self._is_error = False
         self._spinner_frame = 0
         self._collapsed = False
         self.add_class("tool-widget")
 
+    def _verb(self) -> str:
+        return self.VERBS.get(self.tool_name, self.tool_name)
+
+    def _format_target(self) -> str:
+        """A short, single-line summary of the tool arguments."""
+        if not self.inputs:
+            return ""
+        # Prefer well-known path-ish arguments for a clean, familiar target.
+        for key in ("path", "file_path", "pattern", "command", "query"):
+            value = self.inputs.get(key)
+            if isinstance(value, str) and value:
+                return value if len(value) <= 60 else value[:57] + "..."
+        parts = []
+        for key, value in self.inputs.items():
+            display = value if len(str(value)) <= 30 else "..." + str(value)[-27:]
+            parts.append(f"{key}: {display}")
+        summary = ", ".join(parts)
+        return summary if len(summary) <= 60 else summary[:57] + "..."
+
     def _format_title(self) -> str:
-        """Format title with tool name and arguments."""
+        """Kept for compatibility: the tool name and arguments as one string."""
         if not self.inputs:
             return f"{self.tool_name}(...)"
         parts = []
         for key, value in self.inputs.items():
             if isinstance(value, str):
-                # Truncate long strings
                 display_val = value if len(value) <= 30 else "..." + value[-27:]
                 parts.append(f"{key}: {display_val}")
             else:
                 parts.append(f"{key}: {value}")
-        args_str = ", ".join(parts)
-        return f"{self.tool_name}({args_str})"
+        return f"{self.tool_name}({', '.join(parts)})"
+
+    def _row(self) -> str:
+        """The single-line header row: glyph + verb + target (Textual markup)."""
+        if self._result:
+            glyph, glyph_style = (
+                (TOOL_ERROR_GLYPH, "$error") if self._is_error else (TOOL_SUCCESS_GLYPH, "$success")
+            )
+        else:
+            glyph, glyph_style = self.SPINNER_FRAMES[self._spinner_frame], "$text-muted"
+        target = self._format_target()
+        row = f"[{glyph_style}]{escape(glyph)}[/] [bold $primary]{escape(self._verb())}[/]"
+        if target:
+            row += f"  [$text-muted]{escape(target)}[/]"
+        return row
+
+    def _body(self) -> str:
+        """The (possibly collapsed) result body beneath the row."""
+        if not self._result:
+            return ""
+        if self._collapsed:
+            return "[$text-muted]\u25b6 click to expand[/]"
+        return f"[$text-muted]{escape(truncate(self._result, MAX_DISPLAY_CHARS))}[/]"
+
+    def _refresh_display(self) -> None:
+        row = self._row()
+        body = self._body()
+        self.update(f"{row}\n{body}" if body else row)
 
     def on_mount(self) -> None:
         self.border_title = self._format_title()
-        # Show waiting indicator initially
-        self.update(self.SPINNER_FRAMES[self._spinner_frame])
+        self._refresh_display()
 
     def set_inputs(self, inputs: dict[str, Any]) -> None:
-        """Update the tool inputs and refresh title."""
+        """Update the tool inputs and refresh the row."""
         self.inputs = inputs
         self.border_title = self._format_title()
+        self._refresh_display()
 
     def advance_spinner(self) -> None:
         """Advance the spinner animation."""
         if not self._result:
             self._spinner_frame = (self._spinner_frame + 1) % len(self.SPINNER_FRAMES)
-            self.update(self.SPINNER_FRAMES[self._spinner_frame])
+            self._refresh_display()
 
-    def set_result(self, result: str) -> None:
+    def set_result(self, result: str, is_error: bool = False) -> None:
         """Set the result and display it."""
         self._result = result
-        result_display = truncate(result, MAX_DISPLAY_CHARS)
-        self.update(Text(result_display))
+        self._is_error = is_error
+        self._refresh_display()
 
     def has_result(self) -> bool:
         """Whether the tool has completed and produced output."""
         return bool(self._result)
 
     def collapse_output(self) -> None:
-        """Collapse the tool output to show only the title."""
+        """Collapse the tool output to show only the row."""
         if not self._collapsed and self._result:
             self._collapsed = True
-            self.update("[dim]▶ click to expand[/]")
+            self._refresh_display()
             self.add_class("tool-collapsed")
 
     def expand_output(self) -> None:
         """Expand to show full result."""
         if self._collapsed and self._result:
             self._collapsed = False
-            result_display = truncate(self._result, MAX_DISPLAY_CHARS)
-            self.update(Text(result_display))
+            self._refresh_display()
             self.remove_class("tool-collapsed")
 
     def toggle(self) -> None:
@@ -223,7 +300,6 @@ class ThinkingWidget(Static):
         self.add_class("thinking-widget")
 
     def on_mount(self) -> None:
-        self.border_title = "Thinking"
         self._update_display()
 
     def append_text(self, text: str) -> None:
@@ -235,19 +311,25 @@ class ThinkingWidget(Static):
         """Return the current plain text content."""
         return self._content
 
+    def _header(self) -> str:
+        """The dim italic 'Thought' row that prefixes the reasoning body."""
+        triangle = "\u25b8" if self._collapsed else "\u25be"
+        return f"[$text-muted]{triangle}[/] [italic $text-muted]Thought[/]"
+
     def _update_display(self) -> None:
         """Update the display with current content."""
         display = truncate(self._content, MAX_DISPLAY_CHARS, "...[truncated]")
+        header = self._header()
         if self._collapsed and display.strip():
             self.add_class("thinking-collapsed")
-            self.update("[dim]▶ click to expand[/]")
+            self.update(f"{header}\n[$text-muted]click to expand[/]")
             return
 
         self.remove_class("thinking-collapsed")
         if not display.strip():
-            self.update(Text("thinking..."))
+            self.update(f"{header}\n[italic $text-muted]thinking...[/]")
             return
-        self.update(Text(display))
+        self.update(f"{header}\n[italic $text-muted]{escape(display)}[/]")
 
     def toggle(self) -> None:
         """Toggle collapsed state."""
@@ -276,8 +358,19 @@ class ThinkingWidget(Static):
 class WaitingIndicator(Static):
     """Animated waiting indicator."""
 
-    FRAMES = [".", "..", "..."]
-    THINKING_FRAMES = ["thinking.", "thinking..", "thinking..."]
+    FRAMES = [
+        "\u280b",
+        "\u2819",
+        "\u2839",
+        "\u2838",
+        "\u283c",
+        "\u2834",
+        "\u2826",
+        "\u2827",
+        "\u2807",
+        "\u280f",
+    ]
+    THINKING_FRAMES = FRAMES
 
     def __init__(self, thinking: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -291,7 +384,8 @@ class WaitingIndicator(Static):
     def _update_display(self) -> None:
         """Update display based on current mode."""
         frames = self.THINKING_FRAMES if self._thinking else self.FRAMES
-        self.update(frames[self._frame])
+        label = "thinking" if self._thinking else "working"
+        self.update(f"[$primary]{frames[self._frame]}[/] [$text-muted]{label}\u2026[/]")
 
     def advance(self) -> None:
         """Advance to the next animation frame."""
@@ -416,17 +510,18 @@ class ChatView(ScrollableContainer):
         result: str,
         show_waiting: bool = True,
         create_if_missing: bool = False,
+        is_error: bool = False,
     ) -> None:
         """Set the result on the tool widget and show waiting."""
         self._hide_waiting()
         widget = self._tool_widgets.get(tool_call_id)
         if widget:
-            widget.set_result(result)
+            widget.set_result(result, is_error=is_error)
         elif create_if_missing:
             widget = ToolWidget(tool_call_id, "tool")
             self._tool_widgets[tool_call_id] = widget
             self.mount(widget)
-            widget.set_result(result)
+            widget.set_result(result, is_error=is_error)
         # Show waiting indicator after tool completes
         if show_waiting:
             self._show_waiting()
