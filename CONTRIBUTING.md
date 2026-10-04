@@ -49,9 +49,12 @@ and `marv.__version__` comes from package metadata. To bump: edit `VERSION`, add
 
 ## Releases
 
-Releases are cut from `main` by pushing a tag that matches `VERSION`
-(`v<VERSION>`). The `Release` workflow builds the wheel/sdist, smoke-tests it,
-and attaches the artifacts to the GitHub release.
+Releases are cut from `main` by publishing a GitHub Release whose tag is
+`v<VERSION>`, e.g. `v0.104.0` (the tag can be created as part of publishing).
+Publishing triggers the `Release` workflow, which verifies the tag matches
+`VERSION`, builds the wheel/sdist, smoke-tests the built wheel, and attaches the
+artifacts to the release. Pushing a tag on its own does **not** trigger it — the
+workflow listens for `release: published`.
 
 ## Pull requests
 

@@ -41,7 +41,26 @@ yours_.
   (the `setproctitle` extra is optional and only affects the process name)
 - For `apple-fm`: macOS 27+ with the `fm` CLI licensed (`sudo fm license`)
 
+## Install
+
+marv is distributed as GitHub release artifacts (there is no PyPI package yet).
+Download the wheel from the [latest release](https://github.com/pavsefcik/marv/releases/latest)
+and install it with `uv`:
+
+```sh
+uv tool install "./marv-X.Y.Z-py3-none-any.whl"
+marv --version
+```
+
+Or install straight from the release URL (replace `X.Y.Z` with the version):
+
+```sh
+uv tool install "marv @ https://github.com/pavsefcik/marv/releases/download/vX.Y.Z/marv-X.Y.Z-py3-none-any.whl"
+```
+
 ## Quickstart
+
+From a repository checkout:
 
 ```sh
 make deps      # uv sync
