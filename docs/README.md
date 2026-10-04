@@ -15,6 +15,8 @@ Start here if you’re new to the project.
 - [`configuration.md`](configuration.md) — config files, env vars, context files
 - [`sessions.md`](sessions.md) — JSONL sessions, forking, compaction
 
+See [`../ROADMAP.md`](../ROADMAP.md) for planned next work.
+
 ## Common commands
 
 Use the Makefile targets where possible:

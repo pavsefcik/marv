@@ -36,6 +36,7 @@ Prefer Makefile targets over direct commands. Run `make help` to list them.
 - `src/marv/tui/` — Textual UI; `src/marv/cli/` — Typer surface + headless
 - `src/marv/extensions/`, `skills/`, `prompts/`
 - `docs/` — source of truth for behaviour. `PLAN.md` is archived/historical.
+- `ROADMAP.md` — candidate next work (a menu, not committed scope).
 - `tests/` — mirrors `src/`, with fakes in `tests/test_doubles/`.
 
 Layering is `llm/` → `runtime/` → delivery (`tui/`, `cli/`). Do not leak
