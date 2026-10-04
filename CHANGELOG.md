@@ -3,6 +3,17 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [0.104.0] - 2026-10-04
+
+### Added
+
+- The TUI status bar now shows host memory usage: RAM held by marv and its
+  model server, installed RAM, and memory currently available. The model
+  server is counted even when it was started outside marv (read from the port
+  listener).
+- The TUI status bar shows a live generation speed in tokens per second,
+  estimated from the streamed output and smoothed across samples.
+
 ## [0.103.0] - 2025-10-04
 
 ### Added
@@ -53,6 +64,7 @@ First tagged release.
 
 - Local-first backends only: `marv-mlx` (default) and `apple-fm`.
 
+[0.104.0]: https://github.com/pavsefcik/marv/releases/tag/v0.104.0
 [0.103.0]: https://github.com/pavsefcik/marv/releases/tag/v0.103.0
 [0.102.0]: https://github.com/pavsefcik/marv/releases/tag/v0.102.0
 [0.101.0]: https://github.com/pavsefcik/marv/releases/tag/v0.101.0
