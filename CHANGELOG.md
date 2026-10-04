@@ -5,6 +5,8 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-10-04
+
 ### Added
 
 - **Terminal-native theming.** The TUI no longer hard-codes a Nord-ish
@@ -138,6 +140,7 @@ First tagged release.
 
 - Local-first backends only: `marv-mlx` (default) and `apple-fm`.
 
+[0.106.0]: https://github.com/pavsefcik/marv/releases/tag/v0.106.0
 [0.104.0]: https://github.com/pavsefcik/marv/releases/tag/v0.104.0
 [0.103.0]: https://github.com/pavsefcik/marv/releases/tag/v0.103.0
 [0.102.0]: https://github.com/pavsefcik/marv/releases/tag/v0.102.0

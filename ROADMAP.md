@@ -4,7 +4,7 @@ Candidate work, roughly ordered by value. Sizes are rough: **S** < 1h,
 **M** ~ half a day, **L** > a day. Nothing here is committed scope — it is a
 menu, not a promise.
 
-Current state: `v0.104.0`. See [`CHANGELOG.md`](CHANGELOG.md) for what shipped.
+Current state: `v0.106.0`. See [`CHANGELOG.md`](CHANGELOG.md) for what shipped.
 
 ---
 
@@ -173,3 +173,5 @@ first extension" tutorial. The examples are good reference material.
   picker instead of downloading silently; the picker shows live progress and
   offers curated per-RAM-tier suggestions.
 - Status bar shows model RAM usage and generation speed.
+- Terminal-native theming (`auto` follows the terminal background) with a quiet,
+  rule-based TUI layout, plus screen snapshots guarding it against regressions.
