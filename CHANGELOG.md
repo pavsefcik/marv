@@ -3,6 +3,21 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [Unreleased]
+
+### Changed
+
+- **Textual 6.6 → 8.2** (the TUI toolkit). Textual 8 ships the built-in
+  `ansi-dark`/`ansi-light` themes and the newer CSS properties
+  (`text-opacity`, `text-overflow`) the TUI redesign needs.
+
+### Fixed
+
+- **Presented extension views no longer crash on close.** `Screen.dismiss()` is
+  synchronous as of Textual 8, so a queued refresh tick or a trailing key event
+  could pop the base screen and raise `ScreenStackError`. The modal now
+  dismisses at most once.
+
 ## [0.105.1] - 2026-10-04
 
 ### Fixed

@@ -145,6 +145,7 @@ class PresentedViewModal[T](ModalScreen[T | None]):
         self._view = view
         self._controls = view.controls()
         self._timer: Timer | None = None
+        self._dismissed = False
 
     def compose(self) -> ComposeResult:
         with Container(id="extension-modal"):
@@ -191,6 +192,9 @@ class PresentedViewModal[T](ModalScreen[T | None]):
             self.query_one(f"#{self._control_id(first)}", Button).focus()
 
     def action_close(self) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
         self.dismiss(None)
 
     @on(Input.Submitted)
@@ -246,12 +250,26 @@ class PresentedViewModal[T](ModalScreen[T | None]):
         return None
 
     def _refresh(self) -> None:
+        if self._dismissed:
+            return
         self.query_one("#extension-presented-content", Static).update(self._view.render())
         self._finish_if_done()
 
     def _finish_if_done(self) -> None:
         if self._view.is_done():
-            if self._timer is not None:
-                self._timer.stop()
-                self._timer = None
-            self.dismiss(self._view.result())
+            self._dismiss()
+
+    def _dismiss(self) -> None:
+        """Dismiss once, guarding against repeated ticks/events after the pop.
+
+        `dismiss()` is synchronous as of Textual 8, so a second call (from a
+        queued interval tick or a trailing key event) would pop the base screen
+        and raise `ScreenStackError`.
+        """
+        if self._dismissed:
+            return
+        self._dismissed = True
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+        self.dismiss(self._view.result())
