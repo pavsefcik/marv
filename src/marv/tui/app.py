@@ -18,6 +18,7 @@ from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tu
 from marv.tui.controller import TUIController
 from marv.tui.extension_bridge import TUIExtensionBridge
 from marv.tui.input import PromptInput
+from marv.tui.memory import snapshot
 from marv.tui.model_modal import ModelModal
 from marv.tui.renderer import TUIRenderer
 from marv.tui.status import StatusBar
@@ -79,6 +80,7 @@ class AgentApp(App[None]):
         self._renderer = TUIRenderer(self, loaders=self._loaders)
         self._spinner_timer: Timer | None = None
         self._extension_widget_timer: Timer | None = None
+        self._memory_timer: Timer | None = None
 
         self._cancel_event: asyncio.Event | None = None
         self._model_start_task: asyncio.Task[None] | None = None
@@ -187,6 +189,15 @@ class AgentApp(App[None]):
             0.2,
             self._extension_bridge.render_widgets,
         )
+        self._memory_timer = self.set_interval(2.0, self._refresh_memory)
+        await self._refresh_memory()
+
+    async def _refresh_memory(self) -> None:
+        """Refresh the RAM reading in the status bar from host helpers."""
+        provider = self.agent.provider
+        server_pid = await asyncio.to_thread(lambda: getattr(provider, "server_pid", None))
+        usage = await asyncio.to_thread(snapshot, server_pid)
+        self.query_one("#status-line", StatusBar).set_memory(usage)
 
     @on(PromptInput.Submitted, "#prompt-input")
     async def on_input_submitted(self, event: PromptInput.Submitted) -> None:
@@ -319,6 +330,8 @@ class AgentApp(App[None]):
         """Clean up on exit."""
         if self._extension_widget_timer:
             self._extension_widget_timer.stop()
+        if self._memory_timer:
+            self._memory_timer.stop()
         if self._runtime:
             await self._runtime.agent.close()
 

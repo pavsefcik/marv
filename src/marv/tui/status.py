@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
     from marv.runtime.settings import ThinkingLevel
+    from marv.tui.memory import MemoryUsage
 
 
 class StatusBar(Horizontal):
@@ -23,9 +24,11 @@ class StatusBar(Horizontal):
         self._thinking = "off"
         self._tokens = 0
         self._max_tokens = 0
+        self._speed = 0.0
         self._extension_status: str | None = None
         self._session_id: str | None = None
         self._session_parent: str | None = None
+        self._memory: MemoryUsage | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(id="status-left")
@@ -53,6 +56,12 @@ class StatusBar(Horizontal):
         elif self._tokens > 0:
             left += f"  {self._tokens:,} tokens"
 
+        if self._speed > 0:
+            left += f"  {self._speed:.0f} tok/s"
+
+        if self._memory is not None and self._memory.total > 0:
+            left += f"  {self._memory.label()}"
+
         if self._extension_status:
             left += f"  status:{self._extension_status}"
 
@@ -75,6 +84,11 @@ class StatusBar(Horizontal):
         self._max_tokens = max_tokens
         self._update_display()
 
+    def set_speed(self, tokens_per_second: float) -> None:
+        """Set the estimated generation speed in tokens per second."""
+        self._speed = tokens_per_second
+        self._update_display()
+
     def set_session(self, session_id: str, parent_id: str | None = None) -> None:
         """Set the session display."""
         self._session_id = session_id
@@ -84,4 +98,9 @@ class StatusBar(Horizontal):
     def set_extension_status(self, text: str | None) -> None:
         """Set extension-provided status text."""
         self._extension_status = text
+        self._update_display()
+
+    def set_memory(self, usage: MemoryUsage | None) -> None:
+        """Set the host memory reading shown in the status bar."""
+        self._memory = usage
         self._update_display()

@@ -18,7 +18,7 @@ The widget and modal files sit underneath that split as the leaf UI components.
 
 - Streaming assistant output + tool calls
 - Skill and slash‑command autocomplete
-- Status bar showing model + token usage + thinking level + extension status
+- Status bar showing model + token usage + generation speed + thinking level + RAM usage + extension status
 - Model selector and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
 

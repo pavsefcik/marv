@@ -15,6 +15,7 @@ from marv.runtime.chunk import (
     ToolResultChunk,
 )
 from marv.tui.chat import ChatView, MessageWidget, ThinkingWidget
+from marv.tui.speed import TokenSpeedTracker
 from marv.tui.status import StatusBar
 
 if TYPE_CHECKING:
@@ -38,11 +39,12 @@ BANNER = """
 class TUIRenderer:
     """Render runtime output and session state into Textual widgets."""
 
-    __slots__ = ("_app", "_loaders")
+    __slots__ = ("_app", "_loaders", "_speed")
 
     def __init__(self, app: AgentApp, *, loaders: TUILoaders) -> None:
         self._app = app
         self._loaders = loaders
+        self._speed = TokenSpeedTracker(lambda text: self._app.agent.provider.count_tokens(text))
 
     def render_banner(self) -> None:
         """Render the startup banner in chat."""
@@ -127,6 +129,7 @@ class TUIRenderer:
         """Stream agent output into chat widgets."""
         chat = self._app.query_one("#chat-view", ChatView)
         in_thinking = False
+        self._speed.reset()
 
         try:
             async for chunk in self._app.agent.run(prompt, cancel_event=cancel_event):
@@ -139,23 +142,27 @@ class TUIRenderer:
                             await chat.start_thinking()
                             in_thinking = True
                         chat.append_to_thinking(thinking.text)
+                        self._track_speed(thinking.text)
                     case TextDeltaChunk(payload=text):
                         if in_thinking:
                             chat.end_thinking()
                             in_thinking = False
                         await chat.append_to_assistant(text)
+                        self._track_speed(text)
                     case ToolCallStartChunk(payload=tool_call_start):
                         if in_thinking:
                             chat.end_thinking()
                             in_thinking = False
                         chat.end_assistant_message()
                         await chat.start_tool_call(tool_call_start.id, tool_call_start.name)
+                        self._speed.reset()
                     case ToolCallChunk(payload=tool_call):
                         if in_thinking:
                             chat.end_thinking()
                             in_thinking = False
                         chat.end_assistant_message()
                         chat.complete_tool_call(tool_call)
+                        self._speed.reset()
                     case ToolResultChunk(payload=tool_result):
                         chat.set_tool_result(tool_result.tool_call_id, tool_result.result)
                     case MessageChunk(payload=message) if message.role.value == "system":
@@ -174,6 +181,14 @@ class TUIRenderer:
         finally:
             status = self._app.query_one("#status-line", StatusBar)
             status.set_tokens(self._app.agent.total_tokens, self._app.agent.context_max_tokens)
+
+    def _track_speed(self, text: str) -> None:
+        """Update the status bar when the speed estimate advances."""
+        if not text:
+            return
+        rate = self._speed.add(text)
+        if rate is not None:
+            self._app.query_one("#status-line", StatusBar).set_speed(rate)
 
     def clear_chat(self) -> None:
         """Clear the chat view and show confirmation."""

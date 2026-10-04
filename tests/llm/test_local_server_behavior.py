@@ -6,6 +6,7 @@ import asyncio
 import socket
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from marv.llm.local_server import LocalServerProvider
 
@@ -89,3 +90,26 @@ def test_single_server_provider_serves_any_selected_model(tmp_path: Path):
         assert provider.ensure_running() is False
     finally:
         provider.stop()
+
+
+def test_server_pid_prefers_the_process_marv_launched(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    provider._server_proc = SimpleNamespace(pid=111, poll=lambda: None)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 111
+
+
+def test_server_pid_falls_back_to_the_port_listener(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 222
+
+
+def test_server_pid_ignores_an_exited_process(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    provider._server_proc = SimpleNamespace(pid=111, poll=lambda: 1)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 222
