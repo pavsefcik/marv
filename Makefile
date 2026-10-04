@@ -5,7 +5,7 @@ SHELL := /bin/bash
 
 ##@ Setup
 deps: ## Install dependencies
-	@uv sync
+	@uv sync --reinstall-package marv
 
 ##@ Testing
 test: ## Run tests
