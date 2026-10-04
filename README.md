@@ -58,7 +58,9 @@ uv run marv run --headless -p apple-fm "Say hi"
 
 marv starts the model server itself and stops it when it exits. The model picker
 lists every MLX model downloaded in `~/.cache/huggingface/hub` (or the `system` /
-`pcc` models for `apple-fm`), and selecting one starts/swaps the server.
+`pcc` models for `apple-fm`), and selecting one starts/swaps the server. If a
+model is already selected — from config, a resumed session, or the last-used
+state — marv starts its server on launch instead of waiting for the first prompt.
 
 ## Shell launcher
 
@@ -80,7 +82,15 @@ Config is TOML, layered global → project → env:
 - Project: `./.marv/config.toml`
 - Env: `AGENT_*` variables (`AGENT_MAX_OUTPUT_TOKENS`, `AGENT_TEMPERATURE`, …)
 
-State (sessions, skills, prompt templates) lives under `~/.cache/marv/`.
+State (sessions, skills, prompt templates) lives under `~/.cache/marv/`. The
+last-used provider/model/thinking selection is remembered in
+`~/.cache/marv/state.toml` and reapplied on the next start; explicit config files,
+`AGENT_*` variables, and CLI flags still win over it.
+
+Set `approval_mode` (or `AGENT_APPROVAL`, or `marv run --approval`) to
+`destructive` or `all` to confirm risky tool calls before they run. In headless
+mode there is no one to ask, so an unapproved tool is denied. This is a
+guardrail, not a sandbox — see [SECURITY.md](SECURITY.md).
 
 A commented template ships at `config/default.toml`. The default provider is
 `marv-mlx` on `http://localhost:11500`; `apple-fm` uses

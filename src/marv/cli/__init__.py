@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+from marv import __version__
 from marv.config import Config
 from marv.llm.factory import create_provider
+from marv.runtime.approval import ApprovalMode
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 
@@ -25,8 +27,26 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    """Print the version and exit when ``--version`` is passed."""
+    if value:
+        typer.echo(f"marv {__version__}")
+        raise typer.Exit()
+
+
 @app.callback(invoke_without_command=True)
-def _root(ctx: typer.Context) -> None:
+def _root(
+    ctx: typer.Context,
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ] = False,
+) -> None:
     """With no subcommand, launch the interactive TUI."""
     if ctx.invoked_subcommand is None:
         run()
@@ -63,6 +83,13 @@ def run(
             help="Thinking level: off, minimal, low, medium, high",
         ),
     ] = None,
+    approval: Annotated[
+        str | None,
+        typer.Option(
+            "--approval",
+            help="Tool approval mode: off, destructive, all",
+        ),
+    ] = None,
     extension: Annotated[
         list[Path] | None,
         typer.Option("-e", "--extension", help="Extension file(s) to load"),
@@ -90,6 +117,15 @@ def run(
             typer.echo("Valid values: off, minimal, low, medium, high", err=True)
             raise typer.Exit(1) from err
 
+    approval_mode = config.approval_mode
+    if approval:
+        try:
+            approval_mode = ApprovalMode(approval.lower())
+        except ValueError as err:
+            typer.echo(f"Invalid approval mode: {approval}", err=True)
+            typer.echo("Valid values: off, destructive, all", err=True)
+            raise typer.Exit(1) from err
+
     extensions = list(config.extensions)
     if extension:
         extensions.extend(Path(ext) for ext in extension)
@@ -103,6 +139,7 @@ def run(
         max_output_tokens=config.max_output_tokens,
         temperature=config.temperature,
         thinking_level=thinking_level,
+        approval_mode=approval_mode,
         session_dir=config.session_dir,
         skills_dirs=config.skills_dirs,
         extensions=extensions,

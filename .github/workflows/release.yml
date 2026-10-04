@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Verify VERSION matches the release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(cat VERSION)"
+          if [ "v${version}" != "${TAG}" ]; then
+            echo "VERSION (${version}) does not match release tag (${TAG})" >&2
+            exit 1
+          fi
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Smoke-test the built wheel
+        run: |
+          uv venv --python 3.14 /tmp/marv-smoke
+          uv pip install --python /tmp/marv-smoke/bin/python dist/*.whl
+          /tmp/marv-smoke/bin/marv --version
+
+      - name: Upload distributions to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber

@@ -31,16 +31,19 @@ from marv.llm.events import (
     ThinkingDeltaEvent,
 )
 from marv.llm.stream import AssistantMessageEventStream
+from marv.runtime.approval import ApprovalMode
 from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 from marv.tui.app import AgentApp
 from marv.tui.chat import MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
 from marv.tui.context_modal import ContextModal
+from marv.tui.extension_ui import ConfirmModal
 from marv.tui.input import PromptInput
 from marv.tui.model_modal import ModelModal
 from marv.tui.session_modal import SessionForkModal, SessionLoadModal, SessionTreeModal
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
+from tests.test_doubles.llm_stream_builders import make_text_events, make_tool_call_events
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1110,3 +1113,69 @@ async def test_tui_runner_start_with_remembered_model_skips_picker(temp_dir, mon
         assert app.agent.model_name == "gpt-5"
         assert not isinstance(app.screen, ModelModal)
         assert "gpt-5" in status_left_text(app)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_confirms_before_destructive_tool(temp_dir):
+    target = temp_dir / "note.txt"
+    scripts = [
+        make_tool_call_events("c1", "write", {"path": str(target), "content": "hi"}),
+        make_text_events("done"),
+    ]
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+        approval_mode=ApprovalMode.DESTRUCTIVE,
+    )
+    provider = LLMProviderFake(scripts, name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await submit(app, pilot, "write it")
+        for _ in range(20):
+            if isinstance(app.screen, ConfirmModal):
+                break
+            await pilot.pause()
+
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("y")
+        await pilot.pause()
+        await wait_for_idle(app, pilot)
+
+    assert target.read_text() == "hi"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_denies_destructive_tool_on_reject(temp_dir):
+    target = temp_dir / "note.txt"
+    scripts = [
+        make_tool_call_events("c1", "write", {"path": str(target), "content": "hi"}),
+        make_text_events("done"),
+    ]
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+        approval_mode=ApprovalMode.DESTRUCTIVE,
+    )
+    provider = LLMProviderFake(scripts, name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await submit(app, pilot, "write it")
+        for _ in range(20):
+            if isinstance(app.screen, ConfirmModal):
+                break
+            await pilot.pause()
+
+        assert isinstance(app.screen, ConfirmModal)
+        await pilot.press("n")
+        await pilot.pause()
+        await wait_for_idle(app, pilot)
+
+    assert not target.exists()

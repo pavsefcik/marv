@@ -9,6 +9,7 @@ from marv.extensions.host import ExtensionHost
 from marv.prompts.loader import PromptTemplateLoader
 from marv.runtime.agent import Agent
 from marv.skills.loader import SkillLoader
+from marv.tui.approval import TUIApprover
 
 if TYPE_CHECKING:
     from marv.config import Config
@@ -56,6 +57,7 @@ def build_tui_runtime(
         session,
         skill_loader=loaders.skill_loader,
         template_loader=loaders.template_loader,
+        approver=TUIApprover(extension_bridge),
     )
     extension_host = ExtensionHost(agent, paths=config.extensions)
     extension_host.bind_ui(extension_bridge.bindings())

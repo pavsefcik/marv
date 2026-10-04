@@ -21,3 +21,21 @@ jobs:
 
       - name: Run tests and linting
         run: make can-release
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Smoke-test the built wheel
+        run: |
+          uv venv --python 3.14 /tmp/marv-smoke
+          uv pip install --python /tmp/marv-smoke/bin/python dist/*.whl
+          /tmp/marv-smoke/bin/marv --version

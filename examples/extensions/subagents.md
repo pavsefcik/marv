@@ -24,10 +24,10 @@ The parent thread can then inspect that result, keep it in the side panel, or ap
 One-off in the TUI:
 
 ```bash
-uv run agent run -e examples/extensions/subagents.py
+uv run marv run -e examples/extensions/subagents.py
 ```
 
-Or load it by default in `.agent/config.toml`:
+Or load it by default in `.marv/config.toml`:
 
 ```toml
 extensions = ["examples/extensions/subagents.py"]

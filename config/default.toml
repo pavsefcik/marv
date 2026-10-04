@@ -26,6 +26,10 @@ temperature = 0.7
 # Thinking level: off, minimal, low, medium, high (model-family dependent)
 thinking_level = "off"
 
+# Tool approval: off (run everything), destructive (ask before write/edit/risky
+# shell commands), or all (ask before every tool call).
+approval_mode = "off"
+
 # Session + state directories (defaults to ~/.cache/marv).
 # session_dir = "~/.cache/marv/sessions"
 # skills_dirs = ["~/.cache/marv/skills"]

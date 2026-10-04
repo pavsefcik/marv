@@ -12,6 +12,7 @@ from marv.llm.events import StreamEvent, StreamOptions, ToolCallBlock
 from marv.llm.events import ThinkingLevel as StreamThinkingLevel
 from marv.prompts.loader import PromptTemplateLoader
 from marv.prompts.parser import ParsedCommand, expand_template, parse_command
+from marv.runtime.approval import requires_approval
 from marv.runtime.chunk import (
     AgentChunk,
     MessageChunk,
@@ -80,6 +81,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from marv.llm.provider import LLMProvider
+    from marv.runtime.approval import ToolApprover
     from marv.tools.base import BaseTool
 
 
@@ -121,6 +123,7 @@ class Agent:
         "_in_loop",
         "_cwd",
         "_context_files",
+        "_approver",
     )
 
     def __init__(
@@ -133,6 +136,7 @@ class Agent:
         template_loader: PromptTemplateLoader | None = None,
         summarization_provider: LLMProvider | None = None,
         hooks: AgentHooks | None = None,
+        approver: ToolApprover | None = None,
     ) -> None:
         """Initialize the agent.
 
@@ -161,6 +165,7 @@ class Agent:
         )
         self._total_tokens = 0
         self._hooks: AgentHooks = hooks or NullHooks()
+        self._approver = approver
         self._in_loop = False
         self._context_files: list[ContextFile] = []
 
@@ -767,6 +772,14 @@ class Agent:
             if block_result and block_result.block:
                 result = f"Tool blocked: {block_result.reason or 'blocked by policy'}"
                 is_error = True
+            elif requires_approval(self.config.approval_mode, tool_call.name, tool_call.arguments):
+                if await self._approve_tool_call(tool_call):
+                    exec_result = await self._execute_tool_with_retry(tool_call)
+                    result = exec_result.content
+                    is_error = exec_result.is_error
+                else:
+                    result = self._approval_denied_message(tool_call)
+                    is_error = True
             else:
                 exec_result = await self._execute_tool_with_retry(tool_call)
                 result = exec_result.content
@@ -810,6 +823,28 @@ class Agent:
             )
             state.tool_results.append(tr)
             yield ToolResultChunk(payload=tr)
+
+    async def _approve_tool_call(self, tool_call: ToolCall) -> bool:
+        """Ask the approver whether a tool call may proceed."""
+        if self._approver is None:
+            return False
+        return await self._approver.approve(
+            ToolCallRequest(
+                tool_name=tool_call.name,
+                tool_call_id=tool_call.id,
+                input=tool_call.arguments,
+            )
+        )
+
+    def _approval_denied_message(self, tool_call: ToolCall) -> str:
+        """Build the tool result shown when approval is required but not granted."""
+        if self._approver is None:
+            return (
+                f"Tool denied: '{tool_call.name}' requires approval "
+                f"(approval_mode={self.config.approval_mode.value}) "
+                "but no approver is available"
+            )
+        return f"Tool denied: '{tool_call.name}' was not approved"
 
     async def _execute_tool_with_retry(
         self,

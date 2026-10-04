@@ -16,7 +16,7 @@ It also helps with context management: the plan is condensed into a structured a
 One-off:
 
 ```bash
-uv run agent run -e examples/extensions/plan-mode.py
+uv run marv run -e examples/extensions/plan-mode.py
 ```
 
 Project config:

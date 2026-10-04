@@ -1,8 +1,20 @@
 [project]
 name = "marv"
 dynamic = ["version"]
-description = "A YMLX-powered local coding agent TUI for Apple Silicon"
+description = "A local-first coding agent TUI for Apple Silicon"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pavelsefcik", email = "187490479+pavsefcik@users.noreply.github.com" }]
+keywords = ["coding-agent", "llm", "mlx", "apple-silicon", "tui", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Code Generators",
+]
 requires-python = ">=3.14"
 dependencies = [
     "textual>=6.6.0",
@@ -15,6 +27,12 @@ dependencies = [
 
 [project.scripts]
 marv = "marv.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pavsefcik/marv"
+Repository = "https://github.com/pavsefcik/marv"
+Issues = "https://github.com/pavsefcik/marv/issues"
+Changelog = "https://github.com/pavsefcik/marv/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

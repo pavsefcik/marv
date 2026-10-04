@@ -35,7 +35,7 @@ In practical terms:
 ## Load it
 
 ```bash
-uv run agent run -e examples/extensions/mcp-adapter.py
+uv run marv run -e examples/extensions/mcp-adapter.py
 ```
 
 ## Config

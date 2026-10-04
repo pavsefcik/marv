@@ -31,10 +31,10 @@ directly to stdout.
 
 The CLI also exposes delivery-level session utilities:
 
-- `agent fork`
-- `agent tree`
+- `marv fork`
+- `marv tree`
 - `marv sessions`
-- `agent config-show`
+- `marv config-show`
 
 These are delivery commands over the same JSONL session model used by the runtime and TUI.
 

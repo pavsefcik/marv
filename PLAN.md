@@ -1,8 +1,11 @@
-# MARV — YMLX-powered Coding Agent TUI: Build Plan
+# MARV — Build Plan (historical)
 
-> STATUS (2026-10-02): Phases 0–5 implemented, verified live against ymlx.
-> `make can-release` green (206 tests + lint + mypy). Remaining: TUI polish
-> tweaks (Phase 6) per your preferences.
+> **Archived.** This is the original pre-build plan, kept for context. It predates
+> the current `marv-mlx` / `apple-fm` backends and the removal of the YMLX CLI
+> dependency, so parts of it no longer match the code (e.g. it references a
+> `ymlx` provider and `src/marv/llm/ymlx.py`, which do not exist). For current
+> behavior see [`README.md`](README.md), [`docs/`](docs/), and
+> [`CHANGELOG.md`](CHANGELOG.md).
 
 ## 7. What shipped
 

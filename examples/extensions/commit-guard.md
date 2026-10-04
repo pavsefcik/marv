@@ -9,7 +9,7 @@ It combines two extension patterns:
 ## Load it
 
 ```bash
-uv run agent run -e examples/extensions/commit-guard.py
+uv run marv run -e examples/extensions/commit-guard.py
 ```
 
 ## Commands

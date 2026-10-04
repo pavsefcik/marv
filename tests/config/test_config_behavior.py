@@ -5,6 +5,7 @@ from __future__ import annotations
 import textwrap
 
 from marv.config import Config, ProviderConfig
+from marv.runtime.approval import ApprovalMode
 from marv.runtime.settings import ThinkingLevel
 
 
@@ -271,3 +272,36 @@ def test_config_does_not_override_explicit_api_key_with_env_fallback(temp_dir, m
     config = Config.load()
 
     assert config.api_key == "sk-config"
+
+
+def test_config_approval_mode_from_env(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_APPROVAL", "destructive")
+
+    config = Config.load()
+
+    assert config.approval_mode == ApprovalMode.DESTRUCTIVE
+
+
+def test_config_invalid_approval_mode_falls_back_to_off(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text('approval_mode = "nonsense"\n')
+
+    config = Config.load()
+
+    assert config.approval_mode == ApprovalMode.OFF

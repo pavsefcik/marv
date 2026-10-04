@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from marv.config.state import load_last_used
+from marv.runtime.approval import ApprovalMode
 from marv.runtime.settings import AgentSettings, ThinkingLevel
 
 
@@ -35,6 +36,7 @@ class Config:
     max_output_tokens: int = 8192
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
+    approval_mode: ApprovalMode = ApprovalMode.OFF
     session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
@@ -74,6 +76,7 @@ class Config:
             max_output_tokens=self.max_output_tokens,
             temperature=self.temperature,
             thinking_level=self.thinking_level,
+            approval_mode=self.approval_mode,
             session_dir=self.session_dir,
             skills_dirs=list(self.skills_dirs),
             extensions=list(self.extensions),
@@ -131,6 +134,7 @@ class Config:
             "AGENT_MAX_OUTPUT_TOKENS": "max_output_tokens",
             "AGENT_TEMPERATURE": "temperature",
             "AGENT_THINKING": "thinking_level",
+            "AGENT_APPROVAL": "approval_mode",
         }
 
         for env_var, config_key in env_mappings.items():
@@ -175,6 +179,12 @@ class Config:
         except ValueError:
             thinking_level = ThinkingLevel.OFF
 
+        approval_str = str(data.get("approval_mode", "off")).lower()
+        try:
+            approval_mode = ApprovalMode(approval_str)
+        except ValueError:
+            approval_mode = ApprovalMode.OFF
+
         legacy_max_tokens = data.get("max_tokens")
         context_max_tokens = data.get("context_max_tokens")
         if context_max_tokens is None:
@@ -193,6 +203,7 @@ class Config:
             max_output_tokens=max_output_tokens,
             temperature=data.get("temperature", 0.7),
             thinking_level=thinking_level,
+            approval_mode=approval_mode,
             session_dir=session_dir,
             skills_dirs=skills_dirs,
             extensions=extensions,

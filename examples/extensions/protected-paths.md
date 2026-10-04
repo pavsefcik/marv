@@ -10,7 +10,7 @@ It is intentionally small and shows the classic guard-style extension pattern:
 ## Load it
 
 ```bash
-uv run agent run -e examples/extensions/protected-paths.py
+uv run marv run -e examples/extensions/protected-paths.py
 ```
 
 ## What it blocks

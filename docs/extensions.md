@@ -6,7 +6,7 @@ Extensions are Python files that expose a `setup(api: ExtensionAPI)` function. T
 
 ```python
 # my_extension.py
-from agent.extensions import ExtensionAPI, ToolCallResult
+from marv.extensions import ExtensionAPI, ToolCallResult
 
 def setup(api: ExtensionAPI):
     async def block_rm(event, ctx):
@@ -87,7 +87,7 @@ Handlers receive `ctx`, which exposes the host capability surface:
   - `set_active(names)`
   - `register(tool)`
 - `ctx.ui`
-  - bound by the active delivery shell, such as the TUI or web host
+  - bound by the active delivery shell, such as the TUI
   - `notify(message, level="info")`
   - `set_status(text)`
   - `input(prompt, default=None)`

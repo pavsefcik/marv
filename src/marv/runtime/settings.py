@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from marv.runtime.approval import ApprovalMode
+
 
 class ThinkingLevel(StrEnum):
     """Thinking/reasoning effort level for supported models."""
@@ -82,6 +84,7 @@ class AgentSettings:
     max_output_tokens: int = 8192
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
+    approval_mode: ApprovalMode = ApprovalMode.OFF
     session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)

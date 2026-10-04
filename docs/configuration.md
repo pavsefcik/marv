@@ -50,6 +50,35 @@ Any OpenAI-compatible server can be used by setting `provider` to a custom name 
 provider override (e.g. Ollama, LM Studio). Set `model` explicitly unless the provider
 auto-resolves a running one.
 
+## Last-used selection
+
+The provider, model, and thinking level you used most recently are remembered in
+`state.toml`, written beside the session directory (`~/.cache/marv/state.toml` by
+default). On the next start marv reapplies them and begins loading that model's
+server immediately, so a fresh session does not have to stop at the model picker.
+
+This file is the weakest configuration source: an explicit config file value, an
+`AGENT_*` environment variable, or a CLI flag (`-m`/`-p`/`-t`) always overrides it.
+Delete the file to forget the selection.
+
+## Tool approval
+
+`approval_mode` controls whether tool calls need explicit confirmation before they
+run. It is `off` by default, so marv behaves as before unless you opt in.
+
+- `off` — every tool call runs without asking.
+- `destructive` — ask before `write`/`edit` and before risky shell commands
+  (file redirection, `rm`/`mv`/`chmod`, `git push`/`reset`/`clean`, piping into a
+  shell, and similar). Read-only tools run freely.
+- `all` — ask before every tool call.
+
+Set it in config, via `AGENT_APPROVAL`, or with `marv run --approval <mode>`.
+
+In the TUI a `destructive` or `all` decision opens a Yes/No confirmation. In
+headless mode there is no one to ask, so a tool that needs approval is denied
+with a message rather than run. This is a guardrail, not a sandbox — see
+[SECURITY.md](../SECURITY.md).
+
 ## Context files
 
 `AGENTS.md` and `CLAUDE.md` are auto‑loaded from the project and its ancestors to seed the system prompt.

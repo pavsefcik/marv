@@ -4,8 +4,8 @@ Delivery is the outermost layer of the system.
 
 The important architectural point is:
 
-- `agent.runtime` owns the agent loop and session/model/tool behavior
-- `agent.extensions` is an optional hook host on top of the runtime
+- `marv.runtime` owns the agent loop and session/model/tool behavior
+- `marv.extensions` is an optional hook host on top of the runtime
 - delivery layers decide how users interact with that runtime
 
 So the same agent can be delivered through multiple shells without changing the runtime itself.

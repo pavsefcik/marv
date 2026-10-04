@@ -93,6 +93,40 @@ def test_cli_run_rejects_invalid_thinking_level():
     assert "Invalid thinking level" in result.stderr
 
 
+def test_cli_run_rejects_invalid_approval_mode():
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--approval", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Invalid approval mode" in result.stderr
+
+
+def test_cli_run_propagates_approval_mode_to_config(temp_dir, monkeypatch):
+    from marv.runtime.approval import ApprovalMode
+
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[ApprovalMode] = []
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.approval_mode)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--approval", "destructive"])
+
+    assert result.exit_code == 0
+    assert seen == [ApprovalMode.DESTRUCTIVE]
+
+
 def test_cli_run_headless_requires_prompt():
     runner = CliRunner()
     result = runner.invoke(cli.app, ["run", "--headless"])
@@ -291,3 +325,13 @@ def test_cli_run_dispatches_to_headless_when_prompt_or_headless_flag(temp_dir, m
     assert calls["tui"] == 0
     assert calls["headless"] == 1
     assert seen_prompt == ["hello"]
+
+
+def test_cli_version_flag_prints_package_version():
+    from marv import __version__
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"marv {__version__}"

@@ -14,7 +14,7 @@ Each session is a JSONL file. The first line is the session header, the rest are
 **Entry types**
 ```json
 {"type":"message","id":"m1","parentId":null,"timestamp":"2026-02-06T12:00:01Z","message":{"role":"user","content":"hello"}}
-{"type":"model_change","id":"m2","parentId":"m1","timestamp":"2026-02-06T12:00:02Z","provider":"openai","modelId":"gpt-5.4"}
+{"type":"model_change","id":"m2","parentId":"m1","timestamp":"2026-02-06T12:00:02Z","provider":"marv-mlx","modelId":"mlx-community/Qwen3.5-4B-MLX-4bit"}
 {"type":"session_state","id":"m3","parentId":"m2","timestamp":"2026-02-06T12:00:03Z","leafId":"m1"}
 {"type":"compaction","id":"m4","parentId":"m3","timestamp":"2026-02-06T12:00:04Z","summary":"...","firstKeptEntryId":"m1","tokensBefore":50000,"tokensAfter":12000}
 ```
