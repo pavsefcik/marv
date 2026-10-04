@@ -1,17 +1,28 @@
 # marv
 
-A YMLX-powered coding agent TUI for Apple Silicon. **marv** is a lean, hackable
-agent harness that runs entirely on local MLX models via
-[YMLX](https://github.com/pavsefcik/ymlx) — no cloud accounts, no API keys.
+A local-first coding agent TUI for Apple Silicon. **marv** is a lean, hackable
+agent harness that runs entirely on-device — no cloud accounts, no API keys.
+
+Backends:
+
+- **`marv-mlx`** (default) — marv launches [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm)'s
+  `mlx_vlm.server` itself and runs any MLX model downloaded in the local Hugging
+  Face hub, with family-accurate thinking support. Models can be downloaded and
+  managed with [YMLX](https://github.com/pavsefcik/ymlx) — marv reads the same
+  hub but has **no runtime dependency** on it.
+- **`apple-fm`** — Apple's built-in Foundation Model via the macOS 27+ `fm` CLI
+  (`system` on-device, or `pcc` on Private Cloud Compute). Chat-only: the
+  endpoint has no function/tool calling.
 
 It is a fork of
 [eddmann/my-own-coding-agent](https://github.com/eddmann/my-own-coding-agent)
-(MIT), stripped down to a single local backend and rebranded:
+(MIT), stripped down to local backends and rebranded:
 
 - **Removed:** `web/` FastAPI delivery, the OpenAI / Anthropic / OpenAI-Codex
   cloud providers, OAuth flows, and pricing tables.
-- **Added:** a YMLX provider (local MLX models), ymlx-aware model discovery and
-  server lifecycle, and family-accurate thinking support.
+- **Added:** the `marv-mlx` and `apple-fm` backends, self-managed server
+  lifecycle (start/swap/unload, including on crash), and family-accurate
+  thinking support.
 - **Kept:** the readable agent loop, Textual TUI, skills, prompt templates,
   extensions, JSONL sessions (fork/resume), context compaction, and the
   read/write/edit/bash tool suite.
@@ -19,33 +30,35 @@ It is a fork of
 ## Why this exists
 
 To own the whole agent harness end-to-end — and to run it on the models you
-already manage locally with ymlx. It is not the best agent; it is _readable,
-hackable, and yours_.
+already have locally. It is not the best agent; it is _readable, hackable, and
+yours_.
 
 ## Requirements
 
 - Apple Silicon Mac
 - Python 3.14+ and `uv`
-- [YMLX](https://github.com/pavsefcik/ymlx) installed (manages the MLX models
-  and serves them on `localhost:11500`)
+- For `marv-mlx`: the `mlx-vlm` tool — `uv tool install mlx-vlm --with jinja2 --with setproctitle`
+  (the `setproctitle` extra is optional and only affects the process name)
+- For `apple-fm`: macOS 27+ with the `fm` CLI licensed (`sudo fm license`)
 
 ## Quickstart
 
 ```sh
 make deps      # uv sync
-make run       # start the TUI (picks up the running ymlx model, or pick one)
+make run       # start the TUI; pick a model, marv loads it for you
 ```
 
-Headless (single prompt against a running ymlx model):
+Headless (single prompt, model loaded on demand):
 
 ```sh
 make run-headless PROMPT="List all Python files"
 uv run marv run --headless -m mlx-community/Qwen3.5-4B-MLX-4bit "Say hi"
+uv run marv run --headless -p apple-fm "Say hi"
 ```
 
-`make run` connects to YMLX. If a ymlx server is already running, marv targets
-that model; otherwise the model picker lists every model ymlx manages (from the
-local HF hub) and selecting one starts/swaps it via `ymlx run <id>`.
+marv starts the model server itself and stops it when it exits. The model picker
+lists every MLX model downloaded in `~/.cache/huggingface/hub` (or the `system` /
+`pcc` models for `apple-fm`), and selecting one starts/swaps the server.
 
 ## Shell launcher
 
@@ -70,7 +83,8 @@ Config is TOML, layered global → project → env:
 State (sessions, skills, prompt templates) lives under `~/.cache/marv/`.
 
 A commented template ships at `config/default.toml`. The default provider is
-`ymlx` at `http://localhost:11500`; no API key is needed.
+`marv-mlx` on `http://localhost:11500`; `apple-fm` uses
+`http://127.0.0.1:1976`. Neither needs an API key.
 
 ## The agent loop
 
@@ -84,7 +98,7 @@ A commented template ships at `config/default.toml`. The default provider is
 
 ```
 runtime/     Agent loop, sessions, context compaction, prompts
-llm/         Provider adapters (YMLX + OpenAI-compatible) + streaming events
+llm/         Provider adapters (mlx-vlm + Apple FM + OpenAI-compatible) + streaming events
 config/      Runtime config loading
 tools/       Built-in tool registry + implementations
 skills/      Skill discovery + validation

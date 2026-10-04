@@ -16,19 +16,45 @@ Providers implement a shared interface (`LLMProvider`) that exposes:
 
 ## Built‑in providers
 
-### YMLX (default)
+Providers that own a local server process share `LocalServerProvider`
+(`src/marv/llm/local_server.py`), which handles start-on-demand, model switching,
+readiness polling, process naming, and unload-on-exit. Subclasses only describe
+how to launch their server and how to tell it is ready.
 
-- Implementation: `src/marv/llm/ymlx.py`, family classification in `src/marv/llm/ymlx_models.py`.
-- Talks to the local YMLX server on `http://localhost:11500` (no API key).
-- **Server lifecycle** — `YMLXProvider.ensure_running()` shells out to the `ymlx` CLI
-  (`ymlx run <id>` / `ymlx stop`) so selecting a model starts/swaps it on the ymlx port.
+### marv-mlx (default)
+
+- Implementation: `src/marv/llm/marv_mlx.py`, family classification in `src/marv/llm/mlx_models.py`.
+- **Server lifecycle** — marv launches `mlx_vlm.server` itself
+  (`mlx_vlm.server --host 127.0.0.1 --model <id> --port 11500`), located via
+  `resolve_mlx_server_command()`. No external model-manager CLI is involved.
 - **Model discovery** — `list_models()` scans the local HF hub
   (`~/.cache/huggingface/hub/models--*`) and collapses Ministral Instruct/Reasoning
-  pairs into a single entry.
+  pairs into a single entry. Models can be downloaded with YMLX or `hf`; marv reads
+  the same hub either way.
 - **Thinking** — `enable_thinking` is sent for template families (Qwen/Gemma), `[THINK]`
   bracket markers for Ministral Reasoning. The reasoning trace arrives in
   `reasoning_content` and is surfaced as thinking events. `supports_thinking()` is
   family-accurate.
+- **Process naming** — the server is launched with `MARV_PROCTITLE` and a bundled
+  `_proctitle/sitecustomize.py` hook, so Activity Monitor / `ps` show the model id
+  instead of "Python".
+
+### apple-fm
+
+- Implementation: `src/marv/llm/apple_fm.py`.
+- Launches `fm serve --port 1976` (macOS 27+) and talks to its OpenAI-compatible
+  endpoint. One server serves every model, so switching between `system` and `pcc`
+  does not restart anything.
+- **Chat-only** — `fm serve` has no OpenAI function/tool calling, so the provider
+  declares `supports_tools = False`; the agent hides its tool suite and answers in
+  plain text. `supports_thinking()` is `False`.
+
+### Teardown (all local servers)
+
+- `LocalServerProvider.close()` unloads the model. `atexit` plus `SIGTERM`/`SIGHUP`
+  handlers (`llm/server_lifecycle.py`) cover crashes and abrupt exits; `SIGKILL`
+  cannot be intercepted. A server marv attached to (rather than launched) is found
+  via `lsof` on the port and stopped too.
 
 ### OpenAI-compatible
 
@@ -54,4 +80,4 @@ The stream yields structured events:
 
 These events are consumed by the agent loop and TUI to render incremental updates.
 The OpenAI-compatible transport parses `reasoning_content`/`reasoning` deltas into the
-thinking events, so YMLX reasoning shows up in the TUI automatically.
+thinking events, so MLX reasoning shows up in the TUI automatically.

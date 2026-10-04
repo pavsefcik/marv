@@ -28,6 +28,7 @@ class SystemPromptOptions:
     custom_prompt: str | None = None
     selected_tools: list[str] | None = None
     append_system_prompt: str | None = None
+    tools_available: bool = True
     cwd: Path | None = None
     context_files: list[ContextFile] = field(default_factory=list)
     skills: list[Skill] = field(default_factory=list)
@@ -43,6 +44,19 @@ BASE_PROMPT = (
     "- Debugging and fixing issues\n"
     "- Running commands and scripts\n"
     "- Answering technical questions"
+)
+
+
+# Base prompt for providers with no tool support (e.g. Apple's Foundation Model).
+BASE_PROMPT_NO_TOOLS = (
+    "You are a helpful coding assistant. You help users with software engineering "
+    "tasks including:\n"
+    "- Understanding and navigating codebases\n"
+    "- Writing and reviewing code\n"
+    "- Debugging and fixing issues\n"
+    "- Answering technical questions\n\n"
+    "You cannot read files, run commands, or apply edits in this mode. When a change "
+    "is needed, describe the exact edits or commands for the user to apply."
 )
 
 
@@ -213,15 +227,25 @@ def build_system_prompt(options: SystemPromptOptions | None = None) -> str:
     # 1. Base or custom prompt
     if options.custom_prompt:
         sections.append(options.custom_prompt)
-    else:
+    elif options.tools_available:
         sections.append(BASE_PROMPT)
+    else:
+        sections.append(BASE_PROMPT_NO_TOOLS)
 
     # 2. Tool descriptions
-    if options.selected_tools and (tool_section := _build_tool_section(options.selected_tools)):
+    if (
+        options.tools_available
+        and options.selected_tools
+        and (tool_section := _build_tool_section(options.selected_tools))
+    ):
         sections.append(tool_section)
 
     # 3. Dynamic guidelines
-    if options.selected_tools and (guidelines := _build_guidelines_section(options.selected_tools)):
+    if (
+        options.tools_available
+        and options.selected_tools
+        and (guidelines := _build_guidelines_section(options.selected_tools))
+    ):
         sections.append(guidelines)
 
     # 4. Context files
@@ -231,6 +255,7 @@ def build_system_prompt(options: SystemPromptOptions | None = None) -> str:
     # 5. Skills (only if read tool is available)
     if (
         options.skills
+        and options.tools_available
         and (not options.selected_tools or "read" in options.selected_tools)
         and (skills_section := _build_skills_section(options.skills))
     ):

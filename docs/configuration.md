@@ -21,18 +21,28 @@ Configuration is layered and merged in this order (lowest → highest):
 - `custom_system_prompt`, `append_system_prompt`
 - `providers.<name>.base_url`, `providers.<name>.model`, `providers.<name>.api_key`
 
-`model` can be omitted for the `ymlx` provider: when unset, marv auto-selects the
-currently-serving model on the ymlx port (or you can pick from the TUI model list,
-which enumerates every model ymlx manages).
+`model` can be omitted for the `marv-mlx` provider: when unset, marv auto-selects the
+currently-loaded MLX model (or you can pick from the TUI model list, which enumerates
+every model downloaded in the local HF hub).
 
-## YMLX (default)
+Leave `base_url` unset to use the backend's default; a top-level `base_url` overrides
+the per-backend default for whichever provider is active.
 
-- Default `provider` is `ymlx` and default `base_url` is `http://localhost:11500`.
-- No API key is required — YMLX serves a local, unauthenticated endpoint.
-- Selecting a model starts/swaps it via the `ymlx` CLI (`ymlx run <id>`).
+## marv-mlx (default)
+
+- Default `base_url` is `http://localhost:11500`.
+- No API key is required — the endpoint is local and unauthenticated.
+- marv launches `mlx_vlm.server` itself and stops it on exit; no external model
+  manager is required. Models can be downloaded with YMLX or `hf`.
 - Model discovery reads the local HF hub (`~/.cache/huggingface/hub`).
 
-Optional `[providers.ymlx]` overrides: `base_url`, `hub_dir`, `primary_port`, `ymlx_command`.
+## apple-fm (macOS 27+)
+
+- Set `provider = "apple-fm"`; default `base_url` is `http://127.0.0.1:1976`.
+- `model` is `system` (on-device) or `pcc` (Private Cloud Compute); default `system`.
+- Run `sudo fm license` once to accept the Foundation Models CLI terms.
+- Chat-only: `fm serve` has no function/tool calling, so marv's tool suite is disabled
+  while this provider is active.
 
 ## OpenAI-compatible (generic)
 

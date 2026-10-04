@@ -240,8 +240,8 @@ class AgentApp(App[None]):
 
     def start_model(self) -> asyncio.Task[None] | None:
         """Kick off (or return) the single-flight task that starts the selected
-        model via ymlx. Returns None if there is nothing to start (no model,
-        already serving, or a provider without ymlx lifecycle)."""
+        model's local server. Returns None if there is nothing to start (no
+        model, already serving, or a provider without a server lifecycle)."""
         provider = self.agent.provider
         ensure = getattr(provider, "ensure_running_async", None)
         model = self.agent.model_name
@@ -275,7 +275,7 @@ class AgentApp(App[None]):
         """Execute agent and handle events."""
         try:
             # Wait for the selected model to be serving (non-blocking event loop;
-            # ymlx launches a detached server and we just poll).
+            # the provider launches a detached server and we just poll).
             task = self.start_model()
             if task is not None:
                 await task

@@ -46,3 +46,17 @@ def test_system_prompt_sections_in_order(temp_dir):
     assert "- read: Read file contents with line numbers" in prompt
     assert "When exploring files" in prompt
     assert "Working Directory" in prompt
+
+
+def test_system_prompt_omits_tools_for_a_tool_less_provider(temp_dir):
+    options = SystemPromptOptions(
+        selected_tools=["read", "bash"],
+        cwd=temp_dir,
+        tools_available=False,
+    )
+
+    prompt = build_system_prompt(options)
+
+    assert "Available tools:" not in prompt
+    assert "- read: Read file contents" not in prompt
+    assert "cannot read files, run commands, or apply edits" in prompt

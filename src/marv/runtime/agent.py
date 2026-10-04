@@ -197,6 +197,11 @@ class Agent:
             self._init_system_prompt()
 
     @property
+    def _supports_tools(self) -> bool:
+        """Whether the active provider can call tools (some local models cannot)."""
+        return bool(getattr(self.provider, "supports_tools", True))
+
+    @property
     def cwd(self) -> Path:
         """Active working directory for the runtime."""
         return self._cwd
@@ -303,6 +308,7 @@ class Agent:
             cwd=self._cwd,
             context_files=context_files,
             skills=skills,
+            tools_available=self._supports_tools,
         )
 
         # Build the system prompt
@@ -333,6 +339,7 @@ class Agent:
             cwd=self._cwd,
             context_files=context_files,
             skills=self._skill_loader.get_invocable_skills(),
+            tools_available=self._supports_tools,
         )
         self.session.replace_message(
             first_message.id,
@@ -855,7 +862,7 @@ class Agent:
                 options = self._build_stream_options(cancel_event=cancel_event)
                 stream = self.provider.stream(
                     messages_for_llm,
-                    tools=self.tools.get_schemas(),
+                    tools=self.tools.get_schemas() if self._supports_tools else None,
                     options=options,
                 )
 

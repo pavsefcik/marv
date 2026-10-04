@@ -1,4 +1,4 @@
-"""marv - A YMLX-powered coding agent TUI for Apple Silicon."""
+"""marv - A local-first coding agent TUI for Apple Silicon."""
 
 __version__ = "0.1.0"
 

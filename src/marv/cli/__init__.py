@@ -20,14 +20,14 @@ if TYPE_CHECKING:
 
 app = typer.Typer(
     name="marv",
-    help="A YMLX-powered coding agent TUI",
+    help="A local-first coding agent TUI",
     no_args_is_help=False,
 )
 
 
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context) -> None:
-    """With no subcommand, launch the interactive TUI (like `ymlx`)."""
+    """With no subcommand, launch the interactive TUI."""
     if ctx.invoked_subcommand is None:
         run()
 
@@ -119,6 +119,11 @@ def run(
 
     llm_provider = _create_llm_provider(config)
 
+    from marv.llm.server_lifecycle import install_handlers
+
+    # Main thread: enables SIGTERM/SIGHUP teardown of the model server.
+    install_handlers()
+
     loaded_session: Session | None = None
     if session:
         if session.exists():
@@ -141,17 +146,30 @@ def run(
         _run_tui(config, loaded_session, llm_provider)
 
 
+def _stop_provider_server(llm_provider: LLMProvider) -> None:
+    """Unload the model server, if the provider owns one."""
+    stop = getattr(llm_provider, "stop_if_serving", None)
+    if callable(stop):
+        stop()
+
+
 def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
     """Run the interactive TUI."""
+    from marv.llm.server_lifecycle import install_handlers
     from marv.tui.app import AgentApp
 
+    install_handlers()
     app = AgentApp(config, provider=llm_provider, session=session)
     # Clear any mouse-reporting mode a previously crashed app may have left on
     # (otherwise the terminal leaks stray escape sequences on mouse movement).
     if sys.stdout.isatty():
         sys.stdout.write("\x1b[?1000l\x1b[?1003l\x1b[?1006l")
         sys.stdout.flush()
-    app.run()
+    try:
+        app.run()
+    finally:
+        # Unload the model even if the TUI crashed before its own cleanup ran.
+        _stop_provider_server(llm_provider)
 
 
 @app.command()

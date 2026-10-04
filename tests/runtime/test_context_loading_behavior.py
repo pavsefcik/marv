@@ -41,6 +41,21 @@ def test_load_all_context_orders_sources(temp_dir, monkeypatch):
     assert contexts[2].content == "explicit"
 
 
+def test_symlinked_context_file_is_injected_only_once(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = home / "work" / "project"
+    project.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+
+    write_ctx(project / "AGENTS.md", "shared guidance")
+    (project / "CLAUDE.md").symlink_to(project / "AGENTS.md")
+
+    contexts = load_all_context(cwd=project, include_ancestors=False)
+
+    assert len(contexts) == 1
+    assert contexts[0].content == "shared guidance"
+
+
 def test_load_ancestor_context_closest_wins(temp_dir, monkeypatch):
     home = temp_dir / "home"
     project = home / "work" / "project" / "sub"

@@ -206,8 +206,8 @@ class OpenAICompatibleProvider:
             "temperature": temp,
         }
 
-        # Thinking control for providers that pass it through (e.g. YMLX's
-        # mlx_vlm server honors enable_thinking and optional bracket markers).
+        # Thinking control for providers that pass it through (the mlx_vlm
+        # server honors enable_thinking and optional bracket markers).
         if self.enable_thinking is not None:
             payload["enable_thinking"] = bool(self.enable_thinking)
         if self.thinking_start_token:
@@ -357,7 +357,7 @@ class OpenAICompatibleProvider:
                     if choice.get("finish_reason"):
                         finish_reason = choice["finish_reason"]
 
-                    # YMLX/mlx_vlm route reasoning to `reasoning_content` (or
+                    # mlx_vlm routes reasoning to `reasoning_content` (or
                     # aliases). Emit it as thinking events independent of text.
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
                     if reasoning:

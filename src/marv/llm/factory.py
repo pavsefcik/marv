@@ -33,9 +33,14 @@ class ResolvedProviderConfig:
     api_key: str | None = None
 
 
+#: Providers that serve a local, unauthenticated endpoint.
+_LOCAL_PROVIDERS = ("marv-mlx", "apple-fm")
+
+
 def _env_provider_key(provider: str) -> str | None:
     mapping = {
-        "ymlx": "YMLX_BASE_URL",
+        "marv-mlx": "MARV_MLX_BASE_URL",
+        "apple-fm": "APPLE_FM_BASE_URL",
         "openai-compat": "OPENAI_COMPAT_BASE_URL",
         "ollama": "OLLAMA_BASE_URL",
     }
@@ -46,8 +51,8 @@ def _env_provider_key(provider: str) -> str | None:
 
 
 def _resolve_api_key(default: str | None, provider: str) -> str | None:
-    if provider == "ymlx":
-        # YMLX serves an unauthenticated local endpoint; never send a key.
+    if provider in _LOCAL_PROVIDERS:
+        # Local endpoints are unauthenticated; never send a key.
         return default or ""
     env_key = _env_provider_key(provider)
     if env_key:
@@ -84,9 +89,14 @@ def resolve_provider_config(
         )
 
     default_configs = {
-        "ymlx": ResolvedProviderConfig(
+        "marv-mlx": ResolvedProviderConfig(
             base_url="http://localhost:11500",
             model=None,
+            api_key="",
+        ),
+        "apple-fm": ResolvedProviderConfig(
+            base_url="http://127.0.0.1:1976",
+            model="system",
             api_key="",
         ),
         "ollama": ResolvedProviderConfig(
@@ -132,14 +142,14 @@ def create_provider(
         provider_overrides=provider_overrides,
     )
 
-    # YMLX: when no model is configured, fall back to the currently-serving one;
-    # if none is serving either, still build the provider with an empty model so
-    # the TUI can open and the model picker can select one.
-    if prov_config.model is None and provider in ("ymlx", "openai-compat", "ollama"):
-        from marv.llm.ymlx_models import running_model_id
+    # marv-mlx: when no model is configured, fall back to the currently-serving
+    # one; if none is serving either, still build the provider with an empty
+    # model so the TUI can open and the model picker can select one.
+    if prov_config.model is None and provider in ("marv-mlx", "openai-compat", "ollama"):
+        from marv.llm.mlx_models import running_model_id
 
         prov_config.model = running_model_id(prov_config.base_url)
-        if prov_config.model is None and provider == "ymlx":
+        if prov_config.model is None and provider == "marv-mlx":
             prov_config.model = ""
 
     if prov_config.model is None:
@@ -151,10 +161,21 @@ def create_provider(
     if not is_model_valid_for_provider(prov_config.model, provider):
         raise ValueError(f"Model '{prov_config.model}' is not valid for provider '{provider}'")
 
-    if provider == "ymlx":
-        from marv.llm.ymlx import YMLXProvider
+    if provider == "marv-mlx":
+        from marv.llm.marv_mlx import MarvMlxProvider
 
-        return YMLXProvider(
+        return MarvMlxProvider(
+            base_url=prov_config.base_url,
+            api_key=prov_config.api_key or "",
+            model=prov_config.model,
+            temperature=temperature,
+            max_tokens=max_output_tokens,
+        )
+
+    if provider == "apple-fm":
+        from marv.llm.apple_fm import AppleFMProvider
+
+        return AppleFMProvider(
             base_url=prov_config.base_url,
             api_key=prov_config.api_key or "",
             model=prov_config.model,

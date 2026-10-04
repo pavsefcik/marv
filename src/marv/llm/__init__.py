@@ -1,5 +1,6 @@
 """LLM provider components."""
 
+from marv.llm.apple_fm import AppleFMProvider
 from marv.llm.events import (
     ContentBlock,
     Cost,
@@ -26,18 +27,19 @@ from marv.llm.events import (
     Usage,
 )
 from marv.llm.factory import create_provider, resolve_provider_config
+from marv.llm.marv_mlx import MarvMlxProvider
 from marv.llm.openai_compat import LLMError, OpenAICompatibleProvider
 from marv.llm.provider import LLMProvider
 from marv.llm.retry import RetryConfig, with_retry
 from marv.llm.stream import AssistantMessageEventStream, EventStream
-from marv.llm.ymlx import YMLXProvider
 
 __all__ = [
     # Providers
+    "AppleFMProvider",
     "LLMError",
     "LLMProvider",
+    "MarvMlxProvider",
     "OpenAICompatibleProvider",
-    "YMLXProvider",
     "create_provider",
     "resolve_provider_config",
     # Event stream

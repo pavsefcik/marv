@@ -110,6 +110,30 @@ def _load_explicit_context(paths: list[Path]) -> list[ContextFile]:
     return context_files
 
 
+def _dedupe_by_file_identity(context_files: list[ContextFile]) -> list[ContextFile]:
+    """Drop files that are the same underlying file (e.g. CLAUDE.md -> AGENTS.md).
+
+    Identity is the device/inode pair, so symlinks and hardlinks to an
+    already-loaded file are collapsed. The first occurrence wins, preserving
+    the project > ancestor > explicit priority order.
+    """
+    seen: set[tuple[int, int]] = set()
+    unique: list[ContextFile] = []
+
+    for ctx_file in context_files:
+        try:
+            stat = ctx_file.path.stat()
+            identity = (stat.st_dev, stat.st_ino)
+        except OSError:
+            identity = (0, hash(ctx_file.path))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(ctx_file)
+
+    return unique
+
+
 def load_all_context(
     cwd: Path | None = None,
     explicit_paths: list[Path] | None = None,
@@ -121,6 +145,9 @@ def load_all_context(
     1. Project context (cwd)
     2. Ancestor context (parent directories up to home)
     3. Explicit paths (additional files specified in config)
+
+    Files that resolve to the same underlying file (e.g. a `CLAUDE.md`
+    symlink pointing at `AGENTS.md`) are injected only once.
 
     Args:
         cwd: Current working directory
@@ -143,4 +170,4 @@ def load_all_context(
     if explicit_paths:
         context_files.extend(_load_explicit_context(explicit_paths))
 
-    return context_files
+    return _dedupe_by_file_identity(context_files)

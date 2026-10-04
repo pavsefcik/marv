@@ -1,4 +1,4 @@
-# marv — a YMLX-powered coding agent TUI
+# marv — a local-first coding agent TUI
 # Add this line to ~/.zshrc:
 #   source "/path/to/marv-launcher.zsh"
 # Then reload your shell:  source ~/.zshrc

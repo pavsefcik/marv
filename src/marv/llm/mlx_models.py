@@ -1,12 +1,12 @@
-"""YMLX model-family classification and hub discovery.
+"""MLX model-family classification and hub discovery.
 
-Mirrors the logic in ymlx's `ymlx-helpers.zsh` (`_ymlx_model_family`,
-`_ymlx_thinking_spec`, `_ymlx_ministral_base`) so the agent reasons about
-MLX models the same way the ymlx TUI does: thinking support and markers are
+Mirrors the logic in YMLX's `ymlx-helpers.zsh` (`_model_family`,
+`_model_thinking_spec`, `_ymlx_ministral_base`) so the agent reasons about
+MLX models the same way the YMLX TUI does: thinking support and markers are
 per family, and Ministral ships as an Instruct+Reasoning pair.
 
 Kept dependency-free so both the capability registry (`models.py`) and the
-provider (`ymlx.py`) can import it without cycles.
+provider (`marv_mlx.py`) can import it without cycles.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _read_model_type(hub_dir: Path, model_id: str) -> str | None:
     return m.group(1) if m else None
 
 
-def ymlx_model_family(model_id: str, hub_dir: Path | None = None) -> str:
+def model_family(model_id: str, hub_dir: Path | None = None) -> str:
     """Classify a model into a thinking family.
 
     Returns one of: qwen | gemma | ministral-reasoning | ministral-instruct |
@@ -75,13 +75,13 @@ def ymlx_model_family(model_id: str, hub_dir: Path | None = None) -> str:
     return "generic"
 
 
-def ymlx_supports_thinking(model_id: str, hub_dir: Path | None = None) -> bool:
+def model_supports_thinking(model_id: str, hub_dir: Path | None = None) -> bool:
     """Whether the model can emit a reasoning trace (even display-only)."""
-    return ymlx_model_family(model_id, hub_dir) in _THINKING_FAMILIES
+    return model_family(model_id, hub_dir) in _THINKING_FAMILIES
 
 
-def ymlx_thinking_spec(model_id: str, hub_dir: Path | None = None) -> tuple[str, str, bool]:
-    """Return (control, markers, reasoning_first) for a model, ymlx-style.
+def model_thinking_spec(model_id: str, hub_dir: Path | None = None) -> tuple[str, str, bool]:
+    """Return (control, markers, reasoning_first) for a model, YMLX-style.
 
     control: enable_thinking (template bool) | variant (id decides) | none
     markers: think | channel | bracket | none
@@ -94,7 +94,7 @@ def ymlx_thinking_spec(model_id: str, hub_dir: Path | None = None) -> tuple[str,
         "ministral-instruct": ("variant", "none", False),
         "lfm": ("none", "think", False),
     }
-    family = ymlx_model_family(model_id, hub_dir)
+    family = model_family(model_id, hub_dir)
     return spec.get(family, ("enable_thinking", "think", False))
 
 
@@ -117,8 +117,8 @@ def ministral_base(model_id: str) -> str:
     return re.sub(r"-([Ii]nstruct|[Rr]easoning)-[^-]+-", "-", base)
 
 
-def discover_yaml_model_ids(hub_dir: Path | None = None) -> list[str]:
-    """Enumerate ymlx-managed model ids from the local HF hub directory.
+def discover_model_ids(hub_dir: Path | None = None) -> list[str]:
+    """Enumerate downloaded MLX model ids from the local HF hub directory.
 
     Scans `models--org--name` folders and normalizes to `org/name`. Ministral
     Instruct+Reasoning halves are collapsed into a single logical entry (the
@@ -142,7 +142,7 @@ def discover_yaml_model_ids(hub_dir: Path | None = None) -> list[str]:
 
 
 def running_model_id(base_url: str) -> str | None:
-    """Return the currently loaded model id reported by a ymlx server, if any."""
+    """Return the currently loaded model id reported by the local server, if any."""
     import urllib.error
     import urllib.request
 

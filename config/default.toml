@@ -1,17 +1,18 @@
-# Marv configuration — a YMLX-powered local coding agent.
+# Marv configuration — a local, MLX-first coding agent.
 #
 # Copy to ~/.marv/config.toml and customize, or set per-project in `./.marv/`.
 
-# YMLX is the model backend: models are managed by the ymlx CLI and served on
-# localhost:11500 (see config.marv for details).
-provider = "ymlx"
+# Backend: "marv-mlx" (local MLX models via mlx-vlm) or "apple-fm"
+# (Apple's built-in Foundation Model on macOS 27+).
+provider = "marv-mlx"
 
-# Leave unset to use the currently-serving YMLX model, or set the model id of a
-# ymlx-managed model (e.g. "mlx-community/Qwen3.5-4B-MLX-4bit").
+# Leave unset to use the currently-loaded MLX model, or set a model id
+# (e.g. "mlx-community/Qwen3.5-4B-MLX-4bit").
 model = ""
 
-# Local YMLX endpoint (no API key required).
-base_url = "http://localhost:11500"
+# Local model server endpoint. Leave unset to use the backend's default
+# (marv-mlx: http://localhost:11500, apple-fm: http://127.0.0.1:1976).
+# base_url = "http://localhost:11500"
 
 # Maximum tokens for context window
 context_max_tokens = 128000
@@ -30,8 +31,12 @@ thinking_level = "off"
 # skills_dirs = ["~/.cache/marv/skills"]
 # context_file_paths = ["~/.cache/marv/context.md"]
 
-[providers.ymlx]
+[providers.marv-mlx]
 base_url = "http://localhost:11500"
-# hub_dir = "~/.cache/huggingface/hub"
-# primary_port = 11500
-# ymlx_command = "ymlx"
+# model = "mlx-community/Qwen3.5-4B-MLX-4bit"
+
+# Apple Foundation Model (macOS 27+). Run `sudo fm license` once to enable it.
+# provider = "apple-fm"
+# model = "system"          # "system" (on-device) or "pcc" (Private Cloud Compute)
+[providers.apple-fm]
+base_url = "http://127.0.0.1:1976"
