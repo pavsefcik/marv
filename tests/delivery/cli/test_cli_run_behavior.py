@@ -335,3 +335,131 @@ def test_cli_version_flag_prints_package_version():
 
     assert result.exit_code == 0
     assert result.stdout.strip() == f"marv {__version__}"
+
+
+class HeadlessHubProvider:
+    """Provider double that reports a model as missing and records downloads."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "mlx-community/Qwen3.5-4B-MLX-4bit",
+        downloaded: bool = False,
+        fail: bool = False,
+    ) -> None:
+        self.name = "marv-mlx"
+        self.model = model
+        self._downloaded = downloaded
+        self._fail = fail
+        self.started = 0
+        self.polls = 0
+
+    def is_model_downloaded(self, model: str) -> bool:
+        return self._downloaded
+
+    def download_model(self, model: str) -> object:
+        outer = self
+
+        class _Download:
+            model_id = model
+            state = "running"
+            progress = _progress(512 * 1024**2, 4 * 1024**3)
+            error = "gated repo" if outer._fail else None
+            local_path = None
+
+            @property
+            def finished(self) -> bool:
+                return outer.polls >= 2
+
+            def start(self) -> None:
+                outer.started += 1
+
+            def poll(self) -> list[object]:
+                outer.polls += 1
+                if self.finished:
+                    self.state = "failed" if outer._fail else "done"
+                return []
+
+            def wait(self, timeout: float | None = None) -> None: ...
+
+            def cancel(self) -> None: ...
+
+        return _Download()
+
+
+def _progress(downloaded: int, total: int):
+    from marv.llm.model_download import DownloadProgress
+
+    return DownloadProgress(downloaded_bytes=downloaded, total_bytes=total)
+
+
+def run_headless_with_provider(
+    monkeypatch, provider: HeadlessHubProvider, *extra_args: str
+) -> tuple[int, str, str]:
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(prompt)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", *extra_args])
+    return result.exit_code, result.stdout, result.stderr
+
+
+def test_cli_headless_downloads_a_missing_model_with_visible_progress(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=False)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 0
+    assert provider.started == 1
+    assert "Downloading mlx-community/Qwen3.5-4B-MLX-4bit" in stderr
+    assert "512M / 4.0G (12%)" in stderr
+
+
+def test_cli_headless_skips_download_when_the_model_is_present(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=True)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 0
+    assert provider.started == 0
+    assert "Downloading" not in stderr
+
+
+def test_cli_headless_fails_when_the_model_download_fails(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=False, fail=True)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 1
+    assert "Download failed: gated repo" in stderr
+
+
+def test_cli_does_not_touch_providers_without_a_hub(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+
+    class CloudProvider:
+        name = "openai"
+        model = "gpt-5.4"
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        return None
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: CloudProvider())
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "-m", "gpt-5.4", "-p", "openai"])
+
+    assert result.exit_code == 0
+    assert "Downloading" not in result.stderr

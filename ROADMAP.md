@@ -57,11 +57,14 @@ or archiving.
 ## P2 — Model and server management
 
 ### In-app model management
-Today downloading MLX models needs YMLX or the `hf` CLI. A `marv models` command
-(list / download / delete / show size) would make marv self-sufficient.
-- Where: `src/marv/llm/mlx_models.py`, `src/marv/llm/marv_mlx.py`,
+Downloading a missing model in the TUI and in headless runs now works
+(`src/marv/llm/model_download.py`, `src/marv/tui/download_modal.py`), with
+curated suggestions per RAM tier. Still missing: a `marv models` command
+(list / download / delete / show size) so marv is self-sufficient outside the
+TUI, and delete/size accounting.
+- Where: `src/marv/llm/model_download.py`, `src/marv/llm/mlx_models.py`,
   `src/marv/cli/__init__.py`
-- Effort: L · Risk: medium (HF hub interaction)
+- Effort: M · Risk: medium (HF hub interaction)
 
 ### Server swap UX
 Make model switching explicit: a clear "swapping model…" progress state, and an
@@ -149,4 +152,7 @@ first extension" tutorial. The examples are good reference material.
 - `pyproject.toml` metadata (license, authors, keywords, classifiers, URLs).
 - Docs drift fixes; `PLAN.md` archived.
 - Last-used model/thinking persistence + model server auto-start on launch.
+- Visible, opt-in model downloads: a missing remembered model opens the download
+  picker instead of downloading silently; the picker shows live progress and
+  offers curated per-RAM-tier suggestions.
 - Status bar shows model RAM usage and generation speed.

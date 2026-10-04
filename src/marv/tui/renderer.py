@@ -49,9 +49,10 @@ class TUIRenderer:
     def render_banner(self) -> None:
         """Render the startup banner in chat."""
         chat = self._app.query_one("#chat-view", ChatView)
+        model = self._app.agent.model_name or "(no model downloaded)"
         chat.mount(
             Static(
-                f"{BANNER}\n\nmarv | {self._app.agent.model_name}",
+                f"{BANNER}\n\nmarv | {model}",
                 classes="message-system",
             )
         )
@@ -93,7 +94,7 @@ class TUIRenderer:
         self.render_session_messages(session)
 
         status = self._app.query_one("#status-line", StatusBar)
-        status.set_model(self._app.agent.model_name)
+        status.set_model(self._app.agent.model_name or "(no model)")
         status.set_thinking(self._app.agent.thinking_level)
         status.set_session(session.metadata.id, session.metadata.parent_session_id)
         status.set_tokens(self._app.agent.total_tokens, self._app.agent.context_max_tokens)

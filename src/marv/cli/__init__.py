@@ -178,9 +178,45 @@ def run(
 
     if prompt or headless:
         assert prompt is not None  # guaranteed by the headless guard above
+        _ensure_model_downloaded(llm_provider=llm_provider)
         asyncio.run(_run_headless(config, prompt, loaded_session, llm_provider))
     else:
         _run_tui(config, loaded_session, llm_provider)
+
+
+def _ensure_model_downloaded(llm_provider: LLMProvider) -> None:
+    """Fetch a missing model for non-interactive runs, showing progress.
+
+    Headless runs have no picker, so downloading is the only way a remembered
+    model can work. Unlike the old silent startup download, the transfer is
+    reported on stderr so the run is never invisibly stalled.
+    """
+    model = getattr(llm_provider, "model", None)
+    if not model:
+        return
+    is_downloaded = getattr(llm_provider, "is_model_downloaded", None)
+    factory = getattr(llm_provider, "download_model", None)
+    if not callable(is_downloaded) or not callable(factory):
+        return
+    if is_downloaded(model):
+        return
+
+    download = factory(model)
+    typer.echo(f"Downloading {model} (not present in the local Hugging Face hub)…", err=True)
+    download.start()
+    last = ""
+    while not download.finished:
+        download.poll()
+        label = download.progress.label()
+        if label != last:
+            last = label
+            typer.echo(f"  {label}", err=True)
+        download.wait(0.25)
+    download.poll()
+    if download.state == "failed":
+        typer.echo(f"Download failed: {download.error}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Downloaded {model}", err=True)
 
 
 def _stop_provider_server(llm_provider: LLMProvider) -> None:

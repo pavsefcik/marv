@@ -16,6 +16,7 @@ from textual.widgets import Static
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
+from marv.tui.download_modal import DownloadModal
 from marv.tui.extension_bridge import TUIExtensionBridge
 from marv.tui.input import PromptInput
 from marv.tui.memory import snapshot
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
     from marv.config import Config
     from marv.extensions.host import ExtensionHost
+    from marv.llm.model_download import DownloadHandle
     from marv.llm.provider import LLMProvider
     from marv.runtime.agent import Agent
     from marv.runtime.session import Session
@@ -152,7 +154,7 @@ class AgentApp(App[None]):
 
         # Update status bar
         status = self.query_one("#status-line", StatusBar)
-        status.set_model(self.agent.model_name)
+        status.set_model(self.agent.model_name or "(no model)")
         status.set_thinking(self.agent.thinking_level)
         status.set_session(
             self.agent.session_id,
@@ -163,9 +165,20 @@ class AgentApp(App[None]):
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
 
-        # If no model is selected yet, prompt the user to pick one right away.
+        # No model is selected/downloaded yet: offer whatever is already in the
+        # local hub, or ask which one to fetch when the hub is empty. Either way
+        # nothing is downloaded without the user asking for it.
         if not self.agent.model_name:
-            await self._open_model_modal()
+            if await self._installed_models():
+                await self._open_model_modal()
+            else:
+                await self._open_download_modal()
+        elif self._model_is_absent():
+            # A model is remembered but is not in the local hub — this is the
+            # case that used to trigger an invisible download on startup.
+            chat = self.query_one("#chat-view", ChatView)
+            chat.add_system_message(f"model {self.agent.model_name} is not downloaded locally")
+            await self._open_download_modal(remembered=True)
         else:
             # A resumed/config model also counts as "last used", and its local
             # server is warmed up now so the first prompt runs immediately.
@@ -221,7 +234,10 @@ class AgentApp(App[None]):
 
         if not self.agent.model_name:
             chat.add_system_message("no model selected — pick one with the picker (or /model <id>)")
-            await self._open_model_modal()
+            if await self._installed_models():
+                await self._open_model_modal()
+            else:
+                await self._open_download_modal()
             return
 
         # Start processing - show thinking indicator if thinking is enabled
@@ -238,12 +254,88 @@ class AgentApp(App[None]):
         """Focus the prompt input (used as a modal close callback)."""
         self.query_one("#prompt-input", PromptInput).focus()
 
+    async def _installed_models(self) -> list[str]:
+        """Models already available locally (empty when the scan fails)."""
+        try:
+            return await self.agent.list_models()
+        except Exception:  # noqa: BLE001 - the pickers work without the scan
+            return []
+
+    def _model_is_absent(self) -> bool:
+        """Whether the selected model is missing from the local hub.
+
+        Providers without a hub (cloud backends, generic OpenAI-compatible
+        endpoints) always report the model as present, so they keep the
+        existing behaviour.
+        """
+        provider = self.agent.provider
+        model = self.agent.model_name
+        if not model:
+            return False
+        is_downloaded = getattr(provider, "is_model_downloaded", None)
+        if not callable(is_downloaded):
+            return False
+        try:
+            return not is_downloaded(model)
+        except Exception:  # noqa: BLE001 - a hub read failure must not block startup
+            return False
+
+    def model_is_available(self, model: str) -> bool:
+        """Whether ``model`` can be run right now (i.e. it is downloaded)."""
+        if not model:
+            return False
+        is_downloaded = getattr(self.agent.provider, "is_model_downloaded", None)
+        if not callable(is_downloaded):
+            return True
+        try:
+            return bool(is_downloaded(model))
+        except Exception:  # noqa: BLE001 - unknown providers stay permissive
+            return True
+
+    def request_model_download(self, model: str) -> None:
+        """Ask the user to download ``model`` before switching to it."""
+        asyncio.create_task(self._open_download_modal(preselected=model))
+
+    def _create_download(self, model: str) -> DownloadHandle:
+        """Create (but do not start) a download for ``model``."""
+        provider = self.agent.provider
+        factory = getattr(provider, "download_model", None)
+        if not callable(factory):
+            raise RuntimeError(f"provider {self.agent.provider_name!r} cannot download models")
+        return factory(model)  # type: ignore[no-any-return]
+
+    async def _open_download_modal(
+        self,
+        *,
+        remembered: bool = False,
+        preselected: str | None = None,
+    ) -> None:
+        """Open the download picker; the chosen model is applied on dismiss.
+
+        The modal is callback-driven (rather than awaited) so it can be opened
+        from ``on_mount`` without stalling startup.
+        """
+        installed = set(await self._installed_models())
+
+        self.push_screen(
+            DownloadModal(
+                create_download=self._create_download,
+                installed=installed,
+                preselected=preselected if preselected is not None else self.agent.model_name,
+                remembered=remembered,
+            ),
+            callback=self._on_download_modal_closed,
+        )
+
+    def _on_download_modal_closed(self, model: str | None) -> None:
+        """Apply the model chosen in the download picker, then refocus input."""
+        if model:
+            self._controller.switch_model(model)
+        self._restore_input_focus()
+
     async def _open_model_modal(self) -> None:
         """Open the model picker modal and restore input focus when it closes."""
-        try:
-            models = await self.agent.list_models()
-        except Exception:  # noqa: BLE001 - picker still works with the current model
-            models = []
+        models = await self._installed_models()
         self.push_screen(
             ModelModal(self.agent, self._controller.on_model_modal_change, models=models),
             callback=self._restore_input_focus,

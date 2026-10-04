@@ -3,6 +3,24 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [0.105.0] - 2026-10-04
+
+### Added
+
+- **Model downloads are explicit and visible.** When the remembered/configured
+  MLX model is not in the local Hugging Face hub, marv no longer starts
+  fetching it silently in the background. The TUI opens a download picker,
+  offering the curated suggestions for this Mac's RAM tier plus any Hugging
+  Face id, and shows live progress (bytes, percentage, progress bar) while
+  downloading. Cancelling leaves the previous model untouched.
+- The TUI model picker (`/model`) now downloads a model that is not present
+  locally before switching to it, using the same progress modal.
+- `marv run --headless` downloads a missing model too, reporting progress on
+  stderr instead of stalling invisibly; a failed download exits non-zero.
+- `src/marv/llm/model_download.py` — a download worker (`ModelDownload`) that
+  runs `huggingface_hub.snapshot_download` in the `mlx-vlm` interpreter and
+  streams JSON progress back to marv.
+
 ## [0.104.0] - 2026-10-04
 
 ### Added

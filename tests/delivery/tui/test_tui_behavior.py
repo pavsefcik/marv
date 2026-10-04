@@ -12,6 +12,7 @@ from textual.widgets import (
     Input,
     ListView,
     OptionList,
+    ProgressBar,
     RadioButton,
     RadioSet,
     Select,
@@ -30,6 +31,7 @@ from marv.llm.events import (
     TextStartEvent,
     ThinkingDeltaEvent,
 )
+from marv.llm.model_download import DownloadProgress, hub_model_present
 from marv.llm.stream import AssistantMessageEventStream
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.message import Message, ThinkingContent, ToolCall
@@ -38,10 +40,12 @@ from marv.runtime.settings import ThinkingLevel
 from marv.tui.app import AgentApp
 from marv.tui.chat import MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
 from marv.tui.context_modal import ContextModal
+from marv.tui.download_modal import DownloadModal
 from marv.tui.extension_ui import ConfirmModal
 from marv.tui.input import PromptInput
 from marv.tui.model_modal import ModelModal
 from marv.tui.session_modal import SessionForkModal, SessionLoadModal, SessionTreeModal
+from tests.test_doubles.download_fake import DownloadFake
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 from tests.test_doubles.llm_stream_builders import make_text_events, make_tool_call_events
 
@@ -146,6 +150,57 @@ class ServerLifecycleProviderFake(LLMProviderFake):
         super().__init__([], name=name, model=model)
         self.serving = False
         self.ensure_calls = 0
+
+    def is_serving(self) -> bool:
+        return self.serving
+
+    async def ensure_running_async(self) -> bool:
+        self.ensure_calls += 1
+        self.serving = True
+        return True
+
+
+class HubProviderFake(LLMProviderFake):
+    """Provider double with a local model hub and scripted download progress."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "mlx-community/Remembered-4bit",
+        hub_dir: Path | None = None,
+        installed: list[str] | None = None,
+        snapshots: list[DownloadProgress] | None = None,
+        download_state: str = "done",
+        download_error: str | None = None,
+    ) -> None:
+        super().__init__([], name="marv-mlx", model=model)
+        self.hub_dir = hub_dir
+        self.installed = set(installed or [])
+        self.downloads: list[DownloadFake] = []
+        self._snapshots = list(snapshots or [])
+        self._download_state = download_state
+        self._download_error = download_error
+        self.serving = False
+        self.ensure_calls = 0
+
+    async def list_models(self) -> list[str]:
+        return sorted(self.installed)
+
+    def is_model_downloaded(self, model: str) -> bool:
+        if model in self.installed:
+            return True
+        return self.hub_dir is not None and hub_model_present(self.hub_dir, model)
+
+    def download_model(self, model: str) -> DownloadFake:
+        download = DownloadFake(
+            model_id=model,
+            snapshots=list(self._snapshots),
+            final_state=self._download_state,
+            error=self._download_error,
+            hub_dir=self.hub_dir,
+        )
+        self.downloads.append(download)
+        return download
 
     def is_serving(self) -> bool:
         return self.serving
@@ -1179,3 +1234,241 @@ async def test_tui_runner_denies_destructive_tool_on_reject(temp_dir):
         await wait_for_idle(app, pilot)
 
     assert not target.exists()
+
+
+def make_hub_config(temp_dir: Path, model: str = "") -> Config:
+    return Config(
+        provider="marv-mlx",
+        model=model,
+        api_key="",
+        session_dir=temp_dir / "sessions",
+    )
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_offers_the_download_picker_when_no_model_is_available(temp_dir):
+    provider = HubProviderFake(model="", hub_dir=temp_dir, installed=[])
+    app = AgentApp(make_hub_config(temp_dir, model=""), provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+        options = modal.query_one("#download-options", OptionList)
+        assert options.option_count > 0
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_asks_before_downloading_a_missing_remembered_model(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit", hub_dir=temp_dir, installed=[]
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        assert isinstance(app.screen, DownloadModal)
+        assert provider.downloads == []
+        assert provider.ensure_calls == 0
+        assert any("not downloaded locally" in msg for msg in system_messages(app))
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_starts_the_remembered_model_when_it_is_downloaded(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit",
+        hub_dir=temp_dir,
+        installed=["mlx-community/Remembered-4bit"],
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        assert not isinstance(app.screen, DownloadModal)
+        assert provider.ensure_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_shows_live_download_progress_then_applies_the_model(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit",
+        hub_dir=temp_dir,
+        installed=[],
+        snapshots=[
+            DownloadProgress(downloaded_bytes=100 * 1024**2, total_bytes=400 * 1024**2),
+            DownloadProgress(downloaded_bytes=300 * 1024**2, total_bytes=400 * 1024**2),
+        ],
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+
+        # Selecting the remembered entry starts the download and streams progress.
+        options = modal.query_one("#download-options", OptionList)
+        options.action_select()
+        await pilot.pause()
+
+        download = provider.downloads[0]
+        assert download.started
+
+        for _ in range(40):
+            if download.finished:
+                break
+            await pilot.pause()
+
+        assert download.finished
+        assert any("switched to mlx-community/Remembered-4bit" in m for m in system_messages(app))
+        assert provider.model == "mlx-community/Remembered-4bit"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_download_progress_is_visible_in_the_modal(temp_dir):
+    half = DownloadProgress(downloaded_bytes=200 * 1024**2, total_bytes=400 * 1024**2)
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit",
+        hub_dir=temp_dir,
+        installed=[],
+        snapshots=[half] * 20,
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+
+        modal.query_one("#download-options", OptionList).action_select()
+
+        progress = modal.query_one("#download-progress", Static)
+        bar = modal.query_one("#download-bar", ProgressBar)
+        for _ in range(40):
+            await asyncio.sleep(0.02)
+            await pilot.pause()
+            if "200M" in render_text(progress):
+                break
+
+        assert "200M" in render_text(progress)
+        assert bar.progress == 200 * 1024**2
+        assert provider.downloads[0].started
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_reports_a_failed_download_and_stays_open(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit",
+        hub_dir=temp_dir,
+        installed=[],
+        download_state="failed",
+        download_error="gated repo",
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+
+        options = modal.query_one("#download-options", OptionList)
+        options.action_select()
+
+        for _ in range(40):
+            progress = modal.query_one("#download-progress", Static)
+            if "failed" in render_text(progress).lower():
+                break
+            await pilot.pause()
+
+        assert "gated repo" in render_text(modal.query_one("#download-progress", Static))
+        assert isinstance(app.screen, DownloadModal)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_cancelling_the_download_leaves_the_model_unset(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Remembered-4bit",
+        hub_dir=temp_dir,
+        installed=[],
+        snapshots=[DownloadProgress(downloaded_bytes=10, total_bytes=100)],
+    )
+    app = AgentApp(
+        make_hub_config(temp_dir, model="mlx-community/Remembered-4bit"), provider=provider
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+
+        modal.query_one("#download-options", OptionList).action_select()
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert provider.downloads[0].cancelled
+        assert provider.model == "mlx-community/Remembered-4bit"  # unchanged
+        assert not any("switched to" in m for m in system_messages(app))
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_switching_to_a_missing_model_opens_the_download_modal(temp_dir):
+    provider = HubProviderFake(
+        model="mlx-community/Present-4bit",
+        hub_dir=temp_dir,
+        installed=["mlx-community/Present-4bit"],
+    )
+    app = AgentApp(make_hub_config(temp_dir, model="mlx-community/Present-4bit"), provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        await submit(app, pilot, "/model mlx-community/Absent-4bit")
+        await pilot.pause()
+        await pilot.pause()
+
+        modal = app.screen
+        assert isinstance(modal, DownloadModal)
+        assert provider.downloads == []
+        # The missing model is offered as the preselected entry.
+        options = modal.query_one("#download-options", OptionList)
+        option_ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
+        assert "mlx-community/Absent-4bit" in option_ids
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_offers_the_model_picker_when_models_are_already_downloaded(temp_dir):
+    provider = HubProviderFake(
+        model="",
+        hub_dir=temp_dir,
+        installed=["mlx-community/Present-4bit", "mlx-community/Other-4bit"],
+    )
+    app = AgentApp(make_hub_config(temp_dir, model=""), provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        modal = app.screen
+        assert isinstance(modal, ModelModal)

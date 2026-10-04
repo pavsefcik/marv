@@ -19,7 +19,7 @@ The widget and modal files sit underneath that split as the leaf UI components.
 - Streaming assistant output + tool calls
 - Skill and slash‑command autocomplete
 - Status bar showing model + token usage + generation speed + thinking level + RAM usage + extension status
-- Model selector and context viewer
+- Model selector, model-download picker with live progress, and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
 
 ## Built‑in commands
@@ -37,6 +37,11 @@ The widget and modal files sit underneath that split as the leaf UI components.
 - `/quit` — exit
 
 Model switching is routed through `Agent.set_model(...)` and provider `set_model(...)`. Invalid provider/model pairs are rejected and shown as a system message.
+
+If the requested model is not present in the local HF hub, `/model <id>` opens the
+download picker instead of switching, and the switch happens once the download
+finishes. On startup, a remembered model that is missing from the hub also opens
+the picker (with that model preselected) rather than downloading silently.
 
 These commands are delivery-level commands owned by the TUI controller. They are handled before input enters the runtime hook/LLM path.
 

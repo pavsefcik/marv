@@ -23,14 +23,21 @@ how to launch their server and how to tell it is ready.
 
 ### marv-mlx (default)
 
-- Implementation: `src/marv/llm/marv_mlx.py`, family classification in `src/marv/llm/mlx_models.py`.
+- Implementation: `src/marv/llm/marv_mlx.py`, family classification in `src/marv/llm/mlx_models.py`,
+  downloads in `src/marv/llm/model_download.py`.
 - **Server lifecycle** — marv launches `mlx_vlm.server` itself
   (`mlx_vlm.server --host 127.0.0.1 --model <id> --port 11500`), located via
   `resolve_mlx_server_command()`. No external model-manager CLI is involved.
 - **Model discovery** — `list_models()` scans the local HF hub
   (`~/.cache/huggingface/hub/models--*`) and collapses Ministral Instruct/Reasoning
-  pairs into a single entry. Models can be downloaded with YMLX or `hf`; marv reads
-  the same hub either way.
+  pairs into a single entry. Models can also be downloaded with YMLX or `hf`; marv
+  reads the same hub either way.
+- **Model downloads** — `src/marv/llm/model_download.py` fetches a missing model
+  into the hub (running `huggingface_hub.snapshot_download` in the `mlx-vlm`
+  interpreter, since marv itself has no HF dependency) and streams progress
+  events back; `src/marv/tui/download_modal.py` renders them. The TUI asks before
+  downloading a missing remembered model, and `/model <id>` downloads before
+  switching. Curated per-RAM-tier suggestions ship in `model_download.py`.
 - **Thinking** — `enable_thinking` is sent for template families (Qwen/Gemma), `[THINK]`
   bracket markers for Ministral Reasoning. The reasoning trace arrives in
   `reasoning_content` and is surfaced as thinking events. `supports_thinking()` is

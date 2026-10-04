@@ -100,3 +100,32 @@ def test_list_models_scans_the_local_hub(tmp_path: Path, monkeypatch):
         "mlx-community/Gemma-3-4B-it",
         "mlx-community/Qwen3.5-4B-MLX-4bit",
     ]
+
+
+def test_is_model_downloaded_reads_the_hub(tmp_path: Path, monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setattr(marv_mlx, "running_model_id", lambda base_url: None)
+    (tmp_path / "models--mlx-community--Qwen3.5-4B-MLX-4bit" / "snapshots" / "rev").mkdir(
+        parents=True
+    )
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded("mlx-community/Qwen3.5-4B-MLX-4bit") is True
+    assert provider.is_model_downloaded("mlx-community/Absent-4bit") is False
+
+
+def test_is_model_downloaded_keeps_the_currently_served_model(tmp_path: Path, monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setattr(marv_mlx, "running_model_id", lambda base_url: Qwen)
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded(Qwen) is True
+
+
+def test_is_model_downloaded_treats_non_hub_ids_as_present(tmp_path: Path):
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded("/opt/models/local") is True
+    assert provider.is_model_downloaded("just-a-name") is True

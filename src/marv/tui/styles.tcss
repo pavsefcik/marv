@@ -535,3 +535,68 @@ SessionTreeModal {
     text-align: center;
     color: $foreground-muted;
 }
+
+/* Model Download Modal */
+DownloadModal {
+    align: center middle;
+}
+
+#download-modal {
+    width: 90%;
+    height: 80%;
+    max-width: 84;
+    background: $surface;
+    border: solid $primary;
+    padding: 1 2;
+}
+
+#download-title {
+    dock: top;
+    height: 1;
+    text-align: center;
+    text-style: bold;
+    color: $primary;
+    padding: 0 0 1 0;
+}
+
+#download-content {
+    height: 1fr;
+    scrollbar-size: 1 1;
+}
+
+#download-intro {
+    color: $foreground-muted;
+    margin: 0 0 1 0;
+}
+
+#download-options {
+    height: auto;
+    max-height: 12;
+    margin: 0 0 1 0;
+    border: solid $panel;
+}
+
+#download-custom {
+    width: 100%;
+    margin: 0 0 1 0;
+}
+
+#download-progress {
+    color: $secondary;
+    margin: 1 0 0 0;
+}
+
+#download-bar {
+    width: 100%;
+    margin: 0 0 1 0;
+}
+
+#download-actions {
+    dock: bottom;
+    height: auto;
+    align-horizontal: right;
+}
+
+#download-actions Button {
+    margin-left: 1;
+}

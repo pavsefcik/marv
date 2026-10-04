@@ -33,8 +33,11 @@ the per-backend default for whichever provider is active.
 - Default `base_url` is `http://localhost:11500`.
 - No API key is required — the endpoint is local and unauthenticated.
 - marv launches `mlx_vlm.server` itself and stops it on exit; no external model
-  manager is required. Models can be downloaded with YMLX or `hf`.
-- Model discovery reads the local HF hub (`~/.cache/huggingface/hub`).
+  manager is required. Models can also be downloaded with YMLX or `hf`.
+- Model discovery reads the local HF hub (`~/.cache/huggingface/hub`). A model that
+  is not in the hub is downloaded only after you ask: the TUI opens a download
+  picker (curated suggestions for your RAM tier, or any Hugging Face id) and shows
+  live progress. Downloads run in the `mlx-vlm` interpreter and land in the same hub.
 
 ## apple-fm (macOS 27+)
 

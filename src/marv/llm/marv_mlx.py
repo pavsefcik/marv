@@ -29,6 +29,7 @@ from marv.llm.mlx_models import (
     model_thinking_spec,
     running_model_id,
 )
+from marv.llm.model_download import ModelDownload, hub_model_present, is_hub_repo_id
 
 if TYPE_CHECKING:
     from typing import Any
@@ -99,6 +100,28 @@ class MarvMlxProvider(LocalServerProvider):
         if running:
             models.add(running)
         return sorted(models)
+
+    def is_model_downloaded(self, model: str) -> bool:
+        """Whether ``model`` can be run without downloading it first.
+
+        Non-hub model ids (bare names, local paths) report as present so the
+        auto-download path never fetches something that is not a hub repo. A
+        model the server is already serving also counts, so a hub-cache mismatch
+        cannot trigger a needless re-download.
+        """
+        if not is_hub_repo_id(model):
+            return True
+        if hub_model_present(self._hub_dir, model):
+            return True
+        return running_model_id(self.base_url) == model
+
+    def download_model(self, model: str) -> ModelDownload:
+        """Prepare a download of ``model`` into the local HF hub.
+
+        The download does not start until :meth:`ModelDownload.start` (or
+        ``run``) is called, so the caller can show progress first.
+        """
+        return ModelDownload(model_id=model, hub_dir=self._hub_dir)
 
     def supports_thinking(self) -> bool:
         """Thinking support is per model family."""

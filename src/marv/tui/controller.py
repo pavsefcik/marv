@@ -245,7 +245,14 @@ class TUIController:
         ).save(agent.config.session_dir)
 
     def switch_model(self, model_name: str) -> None:
-        """Switch to a different model."""
+        """Switch to a different model, downloading it first when needed."""
+        if model_name and not self._app.model_is_available(model_name):
+            self._app.request_model_download(model_name)
+            return
+        self._apply_model(model_name)
+
+    def _apply_model(self, model_name: str) -> None:
+        """Apply an already-available model and warm its server up."""
         chat = self._app.query_one("#chat-view", ChatView)
         status = self._app.query_one("#status-line", StatusBar)
 
