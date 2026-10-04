@@ -132,6 +132,17 @@ mid-session: Textual's input parser has no OSC 11 handler, so an unsolicited
 reply arrives as key input. Following a live light/dark switch would need a
 supported change signal (e.g. text-driven DEC mode 2031) from Textual.
 
+### Incremental streaming render
+`MessageWidget.append_text` re-parses the *entire* accumulated Markdown on every
+token (`Markdown(self._content)` per delta), which is quadratic: a 4000-delta /
+20k-char answer spends ~7s in pure re-parse. Only the tail of a streaming
+message changes, so render incrementally (re-parse a paragraph on its blank-line
+boundary, or style the in-flight tail as plain text and re-render once the block
+settles). Also consider coalescing deltas on a short timer so bursty providers
+do not re-render per token.
+- Where: `src/marv/tui/chat.py` (`MessageWidget`), `src/marv/tui/renderer.py`
+- Effort: M · Risk: medium (Markdown correctness at block boundaries)
+
 ### Tool-call diffs
 Editing tools show their raw result text. Render `edit`/`write` results as a
 syntax-highlighted diff with add/remove bands (and horizontal scroll for long
