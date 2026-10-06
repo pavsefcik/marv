@@ -17,8 +17,10 @@ from textual.widgets import (
     RadioSet,
     Select,
     Static,
+    TextArea,
     Tree,
 )
+from textual.widgets._toast import Toast
 
 from marv.config import Config
 from marv.config.state import LastUsedSelection, load_last_used
@@ -38,7 +40,7 @@ from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 from marv.tui.app import AgentApp
-from marv.tui.chat import MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
+from marv.tui.chat import ChatView, MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
 from marv.tui.context_modal import ContextModal
 from marv.tui.download_modal import DownloadModal
 from marv.tui.extension_ui import ConfirmModal
@@ -229,9 +231,9 @@ def system_messages(app: AgentApp) -> list[str]:
     return messages
 
 
-def prompt_input(app: AgentApp) -> Input:
+def prompt_input(app: AgentApp) -> TextArea:
     prompt = app.query_one("#prompt-input", PromptInput)
-    input_widget = prompt.query_one("#prompt-inner", Input)
+    input_widget = prompt.query_one("#prompt-inner", TextArea)
     input_widget.focus()
     return input_widget
 
@@ -243,7 +245,7 @@ def render_text(widget: Static) -> str:
 
 async def submit(app: AgentApp, pilot: Any, text: str) -> None:
     input_widget = prompt_input(app)
-    input_widget.value = text
+    input_widget.text = text
     await pilot.press("enter")
     await pilot.pause()
 
@@ -293,7 +295,7 @@ async def test_tui_runner_autocomplete_includes_skills_templates_and_extensions(
         ]
         assert "$deploy" in options
 
-        input_widget.value = ""
+        input_widget.text = ""
         await pilot.press("/")
         await pilot.pause()
 
@@ -476,9 +478,9 @@ async def test_tui_runner_autocomplete_tab_and_history_navigation(temp_dir):
 
         await pilot.press("tab")
         await pilot.pause()
-        assert input_widget.value == "/help"
+        assert input_widget.text == "/help"
 
-        input_widget.value = "/help "
+        input_widget.text = "/help "
         await pilot.press("enter")
         await pilot.pause()
         assert any("ctrl+c quit" in msg for msg in system_messages(app))
@@ -490,22 +492,22 @@ async def test_tui_runner_autocomplete_tab_and_history_navigation(temp_dir):
         await wait_for_idle(app, pilot)
 
         input_widget = prompt_input(app)
-        input_widget.value = ""
+        input_widget.text = ""
         await pilot.press("up")
         await pilot.pause()
-        assert input_widget.value == "second prompt"
+        assert input_widget.text == "second prompt"
 
         await pilot.press("up")
         await pilot.pause()
-        assert input_widget.value == "first prompt"
+        assert input_widget.text == "first prompt"
 
         await pilot.press("down")
         await pilot.pause()
-        assert input_widget.value == "second prompt"
+        assert input_widget.text == "second prompt"
 
         await pilot.press("down")
         await pilot.pause()
-        assert input_widget.value == ""
+        assert input_widget.text == ""
 
 
 @pytest.mark.asyncio
@@ -530,10 +532,10 @@ async def test_tui_runner_model_modal_updates_model_and_thinking(temp_dir):
         await pilot.pause()
 
         prompt = app.query_one("#prompt-input", PromptInput)
-        input_widget = prompt.query_one("#prompt-inner", Input)
+        input_widget = prompt.query_one("#prompt-inner", TextArea)
         input_widget.focus()
         # Trailing space avoids autocomplete interception on first Enter.
-        input_widget.value = "/model "
+        input_widget.text = "/model "
         await pilot.press("enter")
         await pilot.pause()
 
@@ -550,7 +552,7 @@ async def test_tui_runner_model_modal_updates_model_and_thinking(temp_dir):
         assert "gpt-5" in status_left_text(app)
 
         # Reopen to change thinking only, then Save.
-        input_widget.value = "/model "
+        input_widget.text = "/model "
         await pilot.press("enter")
         await pilot.pause()
         modal = app.screen
@@ -1472,3 +1474,188 @@ async def test_tui_runner_offers_the_model_picker_when_models_are_already_downlo
 
         modal = app.screen
         assert isinstance(modal, ModelModal)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_shift_enter_inserts_newline_and_enter_submits(temp_dir):
+    """shift+enter grows the prompt upwards; plain enter submits the prompt."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("l", "i", "n", "e", "1")
+        await pilot.press("shift+enter")
+        await pilot.pause()
+
+        assert input_widget.text == "line1\n"
+        assert input_widget.document.line_count == 2
+
+        await pilot.press("l", "i", "n", "e", "2")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        chat = app.query_one("#chat-view")
+        user_messages = [w for w in chat.query(MessageWidget) if w.role == "user"]
+        assert any(w.text_content() == "line1\nline2" for w in user_messages)
+        assert input_widget.text == ""
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_copy_last_reply_notifies_and_copies(temp_dir, monkeypatch):
+    """ctrl+o copies the most recent assistant reply."""
+    copied: list[str] = []
+    monkeypatch.setattr("textual.app.App.copy_to_clipboard", lambda self, text: copied.append(text))
+
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake([make_text_events("the reply")], name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test(notifications=True) as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "hello")
+        await wait_for_idle(app, pilot)
+
+        await pilot.press("ctrl+o")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert copied == ["the reply"]
+        assert any("Copied last reply" in str(t.render()) for t in app.query(Toast))
+
+        # With nothing to copy, the user is told instead.
+        await submit(app, pilot, "/clear ")
+        await pilot.press("ctrl+o")
+        await pilot.pause()
+        await pilot.pause()
+        assert any("No reply to copy" in str(t.render()) for t in app.query(Toast))
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_enter_runs_highlighted_suggestion_in_one_press(temp_dir):
+    """A single Enter on a suggestion both applies and runs it."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        prompt_input(app)
+        await pilot.press("/", "h", "e")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert option_list.display
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert any("ctrl+c quit" in msg for msg in system_messages(app))
+        assert not option_list.display
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_clicking_a_suggestion_runs_it(temp_dir):
+    """Clicking a suggestion applies and runs it — no second Enter needed."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        prompt_input(app)
+        await pilot.press("/", "h", "e")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        option_list.action_select()
+        await pilot.pause()
+
+        assert any("ctrl+c quit" in msg for msg in system_messages(app))
+        assert not option_list.display
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_model_choices_offer_inline_dropdown(temp_dir):
+    """/model shows models above the input; picking one switches directly."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake(
+        [],
+        name="openai",
+        model="gpt-4o",
+        available_models=["gpt-4o", "gpt-5"],
+    )
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        prompt.set_models(["gpt-4o", "gpt-5"])
+        option_list = prompt.query_one("#suggestions", OptionList)
+
+        prompt_input(app)
+        await pilot.press("/", "m", "o", "d", "e", "l", " ", "g", "p", "t", "-", "5")
+        await pilot.pause()
+
+        assert option_list.display
+        options = [
+            option_list.get_option_at_index(i).prompt for i in range(option_list.option_count)
+        ]
+        assert "gpt-5" in options
+
+        # One Enter applies the highlighted model and switches to it.
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app.agent.provider.model == "gpt-5"
+        assert any("switched to gpt-5" in msg for msg in system_messages(app))
+        assert not option_list.display
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_clicking_anywhere_focuses_the_prompt(temp_dir):
+    """A click in the chat area moves the caret into the prompt input."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        chat = app.query_one("#chat-view", ChatView)
+        chat.add_system_message("clickable area")
+        await pilot.pause()
+        # A modal may have taken focus during startup; give it back.
+        app.set_focus(None)
+        await pilot.pause()
+
+        await pilot.click("#chat-view")
+        await pilot.pause()
+
+        focused = app.focused
+        assert isinstance(focused, TextArea)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_modal_keeps_the_tui_visible_behind_it(temp_dir):
+    """Modal screens don't paint an opaque scrim over the running TUI."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "/model ")
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, ModelModal)
+
+        # The scrim is transparent: the chat behind stays rendered and visible.
+        assert modal.styles.background.rgb == app.screen_stack[0].styles.background.rgb or (
+            modal.styles.background.a == 0
+        )

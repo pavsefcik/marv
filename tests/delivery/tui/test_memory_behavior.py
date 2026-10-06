@@ -13,7 +13,7 @@ from marv.tui.memory import (
     MemoryUsage,
     format_bytes,
     read_available_bytes,
-    read_process_tree_rss,
+    read_process_tree_memory,
     snapshot,
 )
 from marv.tui.status import StatusBar
@@ -52,9 +52,24 @@ def test_process_tree_rss_sums_the_root_and_its_children_only():
     import marv.tui.memory as memory
 
     original = memory._run
-    memory._run = lambda argv: PS_TREE
+    # No `top` output: fall back to the ps RSS column.
+    memory._run = lambda argv: PS_TREE if argv[0] == "ps" else ""
     try:
-        assert read_process_tree_rss(100) == (2000 + 3000 + 4000) * 1024
+        assert read_process_tree_memory(100) == (2000 + 3000 + 4000) * 1024
+    finally:
+        memory._run = original
+
+
+def test_process_tree_prefers_footprints_over_ps_rss():
+    """The footprint (Metal-wired memory included) wins over ps RSS."""
+    import marv.tui.memory as memory
+
+    original = memory._run
+    top = "PID    MEM  \n  100  5.8G  \n  101  200M  \n  102  300M  \n  200  999M  \n"
+    memory._run = lambda argv: PS_TREE if argv[0] == "ps" else top
+    try:
+        expected = int(5.8 * 1024**3) + 200 * 1024**2 + 300 * 1024**2
+        assert read_process_tree_memory(100) == expected
     finally:
         memory._run = original
 

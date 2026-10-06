@@ -65,8 +65,12 @@ class StatusBar(Horizontal):
         if self._extension_status:
             left += f"  status:{self._extension_status}"
 
+        home = os.path.expanduser("~")
+        cwd = os.getcwd()
+        if cwd.startswith(home + os.sep) or cwd == home:
+            cwd = "~" + cwd[len(home) :]
         self.query_one("#status-left", Static).update(left)
-        self.query_one("#status-right", Static).update(os.getcwd())
+        self.query_one("#status-right", Static).update(cwd)
 
     def set_model(self, model: str) -> None:
         """Set the model name."""

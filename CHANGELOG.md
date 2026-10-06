@@ -5,6 +5,42 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [0.107.0] - 2026-10-05
+
+### Fixed
+
+- **Multi-line prompt input.** The prompt is now a real text editor: it grows
+  upward as you type, `shift+enter` (or `alt+enter`) inserts a newline, and
+  `enter` submits. Up/down still walk suggestions and prompt history while the
+  prompt is a single line, and move the caret once it is multi-line.
+- **Suggestions run on a single Enter or click.** Pressing Enter (or clicking
+  an entry) on a highlighted suggestion now applies *and* runs it — `/q` +
+  Enter is enough; Tab remains apply-only.
+- **Inline model picker.** Typing `/model` lists models in the dropdown above
+  the input line; typing further filters them (`/model gpt-5` + Enter switches
+  directly). Enter with no filter still opens the full picker, which keeps the
+  thinking-level settings.
+- **Modals float over the TUI.** Modal screens no longer paint a dimming
+  scrim, so the chat and status bar stay visible behind the model/session
+  windows instead of being blanked out.
+- **Click anywhere to type.** Clicking anywhere in the main window moves the
+  caret into the prompt input; inside modals clicks are left alone.
+- **Copy assistant replies.** `ctrl+o` copies the most recent reply to the
+  clipboard (via OSC 52), and clicking an assistant message copies that
+  message. The mouse-based terminal selection the TUI previously swallowed is
+  therefore no longer the only way to reuse generated text.
+- **Status bar no longer wraps into the input.** The footer is pinned to one
+  row; an over-long left section ellipsizes instead of wrapping, and the
+  working directory is abbreviated (`~` for home).
+- **Accurate RAM figure.** The status bar now reads the physical memory
+  footprint (`top -l 1 -stats pid,mem`, the same accounting Activity Monitor
+  uses) for marv and its model server instead of `ps` RSS. RSS misses the
+  GPU-wired Metal memory where MLX model weights live, which is why a loaded
+  model showed as e.g. `681M` while the real footprint was ~5.8G. Falls back
+  to `ps` RSS when `top` is unavailable.
+- The startup hint "ctrl+o to expand tool output" was stale (tool rows have
+  always toggled by click); it now advertises the actual bindings.
+
 ## [0.106.0] - 2026-10-04
 
 ### Added

@@ -61,6 +61,7 @@ class AgentApp(App[None]):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear", "Clear"),
+        Binding("ctrl+o", "copy_last_reply", "Copy last reply"),
         Binding("escape", "escape_pressed", "Cancel/Focus", show=False),
     ]
 
@@ -172,6 +173,7 @@ class AgentApp(App[None]):
 
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
+        self._refresh_prompt_models()
 
         # No model is selected/downloaded yet: offer whatever is already in the
         # local hub, or ask which one to fetch when the hub is empty. Either way
@@ -261,6 +263,20 @@ class AgentApp(App[None]):
     def _restore_input_focus(self, _result: object = None) -> None:
         """Focus the prompt input (used as a modal close callback)."""
         self.query_one("#prompt-input", PromptInput).focus()
+        self._refresh_prompt_models()
+
+    def _refresh_prompt_models(self) -> None:
+        """Refresh the model names offered by the inline `/model` dropdown."""
+
+        async def _scan() -> None:
+            try:
+                models = await self._installed_models()
+            except Exception:  # noqa: BLE001 - the dropdown is best-effort
+                return
+            prompt = self.query_one("#prompt-input", PromptInput)
+            prompt.set_models(models)
+
+        asyncio.create_task(_scan())
 
     async def _installed_models(self) -> list[str]:
         """Models already available locally (empty when the scan fails)."""
@@ -405,6 +421,16 @@ class AgentApp(App[None]):
         """Clear chat history."""
         self._controller.action_clear()
 
+    def action_copy_last_reply(self) -> None:
+        """Copy the most recent assistant reply to the clipboard (OSC 52)."""
+        chat = self.query_one("#chat-view", ChatView)
+        text = chat.last_assistant_text()
+        if text is None:
+            self.notify("No reply to copy", severity="warning")
+            return
+        self.copy_to_clipboard(text)
+        self.notify("Copied last reply to clipboard")
+
     async def action_new(self) -> None:
         """Start a new session."""
         await self._controller.action_new()
@@ -415,6 +441,14 @@ class AgentApp(App[None]):
             self._cancel_agent()
         else:
             self.query_one("#prompt-input", PromptInput).focus()
+
+    def on_click(self) -> None:
+        """Clicking anywhere in the main window puts the caret in the prompt."""
+        from textual.screen import ModalScreen
+
+        if isinstance(self.screen, ModalScreen):
+            return
+        self.query_one("#prompt-input", PromptInput).focus()
 
     def _cancel_agent(self) -> None:
         """Cancel the running agent."""

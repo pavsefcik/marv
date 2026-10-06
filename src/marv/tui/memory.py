@@ -14,6 +14,8 @@ from dataclasses import dataclass
 
 _PAGE_SIZE_RE = re.compile(r"page size of (\d+) bytes")
 _VM_STAT_RE = re.compile(r"^(?:Pages )?([A-Za-z ]+):\s+(\d+)\.", re.MULTILINE)
+_TOP_MEM_ROW_RE = re.compile(r"^\s*(\d+)\s+([\d.]+)([KMG])\s*$")
+_MEM_MULTIPLIER = {"K": 1024, "M": 1024**2, "G": 1024**3}
 # Pages a running system can hand back without swapping: free, reclaimable
 # file cache (inactive/speculative) and pages the kernel may evict.
 _RECLAIMABLE = ("free", "inactive", "speculative", "purgeable")
@@ -67,13 +69,29 @@ def _process_table() -> list[tuple[int, int, int]]:
     return rows
 
 
-def _sum_tree_rss(rows: list[tuple[int, int, int]], roots: list[int]) -> int:
-    """Resident bytes for the process trees rooted at `roots`, counted once."""
-    rss_by_pid = {pid: rss for pid, _, rss in rows}
-    children: dict[int, list[int]] = {}
-    for pid, ppid, _ in rows:
-        children.setdefault(ppid, []).append(pid)
+def read_process_footprints() -> dict[int, int]:
+    """Physical memory footprint per pid, from `top`.
 
+    Unlike `ps` RSS, the footprint includes memory wired to the GPU (Metal),
+    which is where MLX model weights live — the same figure Activity Monitor
+    shows. Returns {} when `top` is unavailable.
+    """
+    out = _run(["top", "-l", "1", "-stats", "pid,mem"])
+    footprints: dict[int, int] = {}
+    for line in out.splitlines():
+        match = _TOP_MEM_ROW_RE.match(line)
+        if match:
+            pid, value, unit = match.groups()
+            footprints[int(pid)] = int(float(value) * _MEM_MULTIPLIER[unit])
+    return footprints
+
+
+def _tree_total(
+    memory_by_pid: dict[int, int],
+    children: dict[int, list[int]],
+    roots: list[int],
+) -> int:
+    """Sum `memory_by_pid` over the trees rooted at `roots`, counted once."""
     total = 0
     seen: set[int] = set()
     stack = list(roots)
@@ -82,19 +100,32 @@ def _sum_tree_rss(rows: list[tuple[int, int, int]], roots: list[int]) -> int:
         if pid in seen:
             continue
         seen.add(pid)
-        total += rss_by_pid.get(pid, 0)
+        total += memory_by_pid.get(pid, 0)
         stack.extend(children.get(pid, ()))
     return total
 
 
-def read_process_tree_rss(root_pid: int) -> int:
-    """Resident bytes held by `root_pid` and every process below it."""
+def _tree_children(rows: list[tuple[int, int, int]]) -> dict[int, list[int]]:
+    children: dict[int, list[int]] = {}
+    for pid, ppid, _ in rows:
+        children.setdefault(ppid, []).append(pid)
+    return children
+
+
+def read_process_tree_memory(root_pid: int) -> int:
+    """Physical memory footprint of `root_pid` and every process below it.
+
+    Falls back to `ps` RSS when the footprint table is unavailable. Footprints
+    are preferred because they include GPU-wired model weights.
+    """
     if root_pid <= 0:
         return 0
     rows = _process_table()
     if not rows:
         return _read_rss_bytes(root_pid)
-    return _sum_tree_rss(rows, [root_pid])
+    footprints = read_process_footprints()
+    memory_by_pid = footprints if footprints else {pid: rss for pid, _, rss in rows}
+    return _tree_total(memory_by_pid, _tree_children(rows), [root_pid])
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -132,7 +163,13 @@ def snapshot(server_pid: int | None = None) -> MemoryUsage:
         roots.append(server_pid)
 
     rows = _process_table()
-    marv = _sum_tree_rss(rows, roots) if rows else sum(_read_rss_bytes(pid) for pid in roots)
+    if not rows:
+        marv = sum(_read_rss_bytes(pid) for pid in roots)
+    else:
+        # Footprints are preferred: they include GPU-wired model weights.
+        footprints = read_process_footprints()
+        memory_by_pid = footprints if footprints else {pid: rss for pid, _, rss in rows}
+        marv = _tree_total(memory_by_pid, _tree_children(rows), roots)
     return MemoryUsage(
         marv=marv,
         available=read_available_bytes(),

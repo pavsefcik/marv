@@ -1,6 +1,6 @@
 
   marv <version>  ·  gpt-4o
-  Type /help for commands · ctrl+o to expand tool output
+  Type /help for commands · shift+enter newline · ctrl+o copy reply
 
 
 
@@ -19,6 +19,6 @@
 
 
   ────────────────────────────────────────────────────────────────────────────
-   Type here...
+   Type here… (shift+enter for a new line)
   ────────────────────────────────────────────────────────────────────────────
   gpt-4o  session:<id>                                     /workspace/marv

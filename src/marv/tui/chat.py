@@ -74,6 +74,12 @@ class MessageWidget(Static):
         self._content = content
         self._update_content()
 
+    def on_click(self) -> None:
+        """Click-to-copy: terminal mouse selection is captured by the TUI."""
+        if self.role == "assistant" and self._content.strip():
+            self.app.copy_to_clipboard(self._content)
+            self.app.notify("Copied message to clipboard")
+
     def text_content(self) -> str:
         """Return the current plain text content."""
         return self._content
@@ -405,6 +411,17 @@ class ChatView(ScrollableContainer):
 
     def scroll_to_bottom(self) -> None:
         self.scroll_end(animate=False)
+
+    def last_assistant_text(self) -> str | None:
+        """The most recent non-empty assistant message, or None."""
+        for child in reversed(self.children):
+            if (
+                isinstance(child, MessageWidget)
+                and child.role == "assistant"
+                and child.text_content().strip()
+            ):
+                return child.text_content()
+        return None
 
     def add_system_message(self, text: str) -> None:
         """Add a system message."""
