@@ -11,9 +11,18 @@ Fork of `eddmann/my-own-coding-agent`.
 Backends:
 
 - `marv-mlx` (default): marv spawns `mlx_vlm.server` and runs any MLX model in
-  the local Hugging Face hub.
+  the local Hugging Face hub. [marv-mlx](https://github.com/pavsefcik/marv-mlx)
+  is the recommended runtime/manager (the backend layer of the MARV family);
+  marv stays self-sufficient without it. `marv mlx …` passes through to the
+  `marv-mlx` CLI when installed.
 - `apple-fm`: Apple's Foundation Model via the macOS 27+ `fm` CLI. Chat-only
   (no tool calling).
+
+Env namespaces: the harness owns `AGENT_*` (including `AGENT_MLX_BASE_URL`,
+`AGENT_MLX_MAX_OUTPUT_TOKENS`) and `MARV_PROCTITLE`; the `MARV_MLX_*` namespace
+belongs to the runtime. The old `MARV_MLX_BASE_URL` /
+`MARV_MLX_MAX_OUTPUT_TOKENS` names are read for one release with a deprecation
+warning.
 
 ## Commands
 

@@ -385,6 +385,30 @@ def test_cli_version_flag_prints_package_version():
     assert result.stdout.strip() == f"marv {__version__}"
 
 
+def test_cli_mlx_passthrough_execs_the_runtime_binary(monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: "/usr/local/bin/marv-mlx")
+    monkeypatch.setattr(cli.os, "execv", lambda _bin, argv: calls.append(argv))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["mlx", "status", "--json"])
+
+    assert result.exit_code == 0
+    assert calls == [["/usr/local/bin/marv-mlx", "status", "--json"]]
+
+
+def test_cli_mlx_passthrough_fails_with_install_hint_when_missing(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["mlx", "status"])
+
+    assert result.exit_code == 1
+    assert "marv-mlx runtime not found" in result.stderr
+    assert "brew install pavsefcik/marv-mlx/marv-mlx" in result.stderr
+
+
 class HeadlessHubProvider:
     """Provider double that reports a model as missing and records downloads."""
 

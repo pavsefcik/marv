@@ -87,11 +87,30 @@ def test_payload_clamps_stream_option_max_tokens():
 def test_max_output_tokens_env_override(monkeypatch):
     from marv.llm import marv_mlx
 
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 4096
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "0")
+    assert marv_mlx.resolve_max_output_tokens(8192) == 8192
+
+
+def test_max_output_tokens_reads_legacy_env_with_deprecation(monkeypatch, capsys):
+    from marv.llm import marv_mlx
+
+    monkeypatch.delenv("AGENT_MLX_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "4096")
 
     assert marv_mlx.resolve_max_output_tokens(8192) == 4096
-    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "0")
-    assert marv_mlx.resolve_max_output_tokens(8192) == 8192
+    assert "MARV_MLX_MAX_OUTPUT_TOKENS is deprecated" in capsys.readouterr().err
+
+
+def test_max_output_tokens_prefers_new_env_over_legacy(monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "5120")
+    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 5120
 
 
 def test_launch_argv_runs_mlx_vlm_server_for_the_model():

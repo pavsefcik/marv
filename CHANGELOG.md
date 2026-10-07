@@ -5,6 +5,23 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+### Changed
+
+- **Aligned with the `marv-mlx` runtime.** Naming/contract alignment with the
+  renamed runtime (was `ymlx`) — the MARV family is now harness `marv` + runtime
+  `marv-mlx`. No harness identity change (repo, package, binary, config and state
+  paths are unchanged):
+  - env: `MARV_MLX_BASE_URL` → `AGENT_MLX_BASE_URL` and
+    `MARV_MLX_MAX_OUTPUT_TOKENS` → `AGENT_MLX_MAX_OUTPUT_TOKENS`. `MARV_MLX_*` is
+    the runtime's namespace; the harness keeps `AGENT_*`. The old names are read
+    for one release with a deprecation warning.
+  - `marv mlx …` (new): thin passthrough that `exec`s the `marv-mlx` CLI, with an
+    install hint when it is absent.
+  - the `marv-mlx` provider id and `MarvMlxProvider` are unchanged, so existing
+    `state.toml`/configs/sessions keep working.
+- Docs now frame the two layers and link the runtime repo (`README.md`,
+  `docs/llm.md`, `docs/configuration.md`).
+
 ## [0.107.0] - 2026-10-05
 
 ### Fixed

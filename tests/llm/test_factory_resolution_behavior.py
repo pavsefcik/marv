@@ -168,3 +168,48 @@ def test_create_provider_requires_model_for_compatible_provider_when_unset():
             max_output_tokens=4096,
             provider_overrides=None,
         )
+
+
+def test_marv_mlx_provider_reads_agent_mlx_base_url(monkeypatch):
+    monkeypatch.setenv("AGENT_MLX_BASE_URL", "http://127.0.0.1:12000")
+
+    provider_config = resolve_provider_config(
+        provider="marv-mlx",
+        model="mlx-community/Qwen3.5-4B-MLX-4bit",
+        api_key=None,
+        base_url=None,
+        provider_overrides=None,
+    )
+
+    assert provider_config.base_url == "http://127.0.0.1:12000"
+
+
+def test_marv_mlx_provider_prefers_agent_mlx_base_url_over_legacy(monkeypatch):
+    monkeypatch.setenv("AGENT_MLX_BASE_URL", "http://127.0.0.1:12000")
+    monkeypatch.setenv("MARV_MLX_BASE_URL", "http://127.0.0.1:13000")
+
+    provider_config = resolve_provider_config(
+        provider="marv-mlx",
+        model="mlx-community/Qwen3.5-4B-MLX-4bit",
+        api_key=None,
+        base_url=None,
+        provider_overrides=None,
+    )
+
+    assert provider_config.base_url == "http://127.0.0.1:12000"
+
+
+def test_marv_mlx_provider_reads_legacy_base_url_with_deprecation(monkeypatch, capsys):
+    monkeypatch.delenv("AGENT_MLX_BASE_URL", raising=False)
+    monkeypatch.setenv("MARV_MLX_BASE_URL", "http://127.0.0.1:13000")
+
+    provider_config = resolve_provider_config(
+        provider="marv-mlx",
+        model="mlx-community/Qwen3.5-4B-MLX-4bit",
+        api_key=None,
+        base_url=None,
+        provider_overrides=None,
+    )
+
+    assert provider_config.base_url == "http://127.0.0.1:13000"
+    assert "MARV_MLX_BASE_URL is deprecated" in capsys.readouterr().err

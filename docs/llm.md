@@ -27,11 +27,15 @@ how to launch their server and how to tell it is ready.
   downloads in `src/marv/llm/model_download.py`.
 - **Server lifecycle** — marv launches `mlx_vlm.server` itself
   (`mlx_vlm.server --host 127.0.0.1 --model <id> --port 11500`), located via
-  `resolve_mlx_server_command()`. No external model-manager CLI is involved.
+  `resolve_mlx_server_command()`. marv is self-sufficient here: **`marv-mlx` is
+  the recommended runtime and model manager but not a runtime dependency**, so
+  no external model-manager CLI is required to run the agent. `marv mlx …` is a
+  thin passthrough to the `marv-mlx` CLI when it is installed.
 - **Model discovery** — `list_models()` scans the local HF hub
   (`~/.cache/huggingface/hub/models--*`) and collapses Ministral Instruct/Reasoning
-  pairs into a single entry. Models can also be downloaded with YMLX or `hf`; marv
-  reads the same hub either way.
+  pairs into a single entry. Models can also be downloaded with
+  [marv-mlx](https://github.com/pavsefcik/marv-mlx) or `hf`; marv reads the same
+  hub either way.
 - **Model downloads** — `src/marv/llm/model_download.py` fetches a missing model
   into the hub (running `huggingface_hub.snapshot_download` in the `mlx-vlm`
   interpreter, since marv itself has no HF dependency) and streams progress

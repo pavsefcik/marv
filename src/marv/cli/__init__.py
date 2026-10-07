@@ -1,6 +1,8 @@
 """CLI entry point using Typer."""
 
 import asyncio
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -303,6 +305,42 @@ def sessions(
 ) -> None:
     """List recent sessions."""
     sessions_command(limit)
+
+
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def mlx(
+    ctx: typer.Context,
+) -> None:
+    """Run the marv-mlx runtime CLI (passes through all remaining arguments).
+
+    `marv-mlx` is the recommended local-LLM runtime that sits underneath the
+    harness. marv stays self-sufficient (it can launch the server itself), so
+    this is a convenience passthrough: `marv mlx status --json` runs
+    `marv-mlx status --json`.
+    """
+    passthrough = [arg for arg in ctx.args if arg != "--"]
+    exec_mlx(passthrough)
+
+
+def exec_mlx(args: list[str]) -> None:
+    """Exec the `marv-mlx` runtime CLI, replacing this process.
+
+    Raises ``typer.Exit(1)`` with a hint when the binary is not installed.
+    """
+    binary = shutil.which("marv-mlx")
+    if binary is None:
+        typer.echo(
+            "marv-mlx runtime not found. Install it with:\n"
+            "  brew install pavsefcik/marv-mlx/marv-mlx\n"
+            "or:\n"
+            "  curl -fsSL "
+            "https://raw.githubusercontent.com/pavsefcik/marv-mlx/main/install.sh | sh",
+            err=True,
+        )
+        raise typer.Exit(1)
+    os.execv(binary, [binary, *args])
 
 
 @app.command()

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,15 +42,25 @@ if TYPE_CHECKING:
 #: Conservative output cap for the local MLX server. Peak prefill memory
 #: scales with prompt + max_tokens, and on unified-memory Macs an oversized
 #: budget can push Metal past its working-set limit, surfacing mid-stream as
-#: "[METAL] ... Insufficient Memory". ymlx uses the same 2048 default. Override
-#: with MARV_MLX_MAX_OUTPUT_TOKENS (<= 0 disables the cap).
+#: "[METAL] ... Insufficient Memory". marv-mlx uses the same 2048 default.
+#: Override with AGENT_MLX_MAX_OUTPUT_TOKENS (<= 0 disables the cap).
 DEFAULT_MAX_OUTPUT_TOKENS = 2048
 
 
 def resolve_max_output_tokens(requested: int) -> int:
     """Clamp the requested output budget to the local server's safe ceiling."""
     cap = DEFAULT_MAX_OUTPUT_TOKENS
-    if raw := os.environ.get("MARV_MLX_MAX_OUTPUT_TOKENS"):
+    raw = os.environ.get("AGENT_MLX_MAX_OUTPUT_TOKENS")
+    if raw is None:
+        # One-release deprecation for the old name; drop next release.
+        legacy = os.environ.get("MARV_MLX_MAX_OUTPUT_TOKENS")
+        if legacy is not None:
+            print(
+                "marv: MARV_MLX_MAX_OUTPUT_TOKENS is deprecated; use AGENT_MLX_MAX_OUTPUT_TOKENS",
+                file=sys.stderr,
+            )
+            raw = legacy
+    if raw is not None:
         try:
             cap = int(raw)
         except ValueError:
