@@ -488,7 +488,7 @@ class CuratedModel:
         return self.ids[0]
 
 
-#: Bundled fallback for the curated list (mirrors the ymlx-curator model file),
+#: Bundled fallback for the curated list (mirrors the marv-curator model file),
 #: grouped by the RAM tier it is intended for.
 CURATED_TIERS: dict[int, list[CuratedModel]] = {
     8: [
