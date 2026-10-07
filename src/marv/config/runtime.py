@@ -38,6 +38,9 @@ class Config:
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
     approval_mode: ApprovalMode = ApprovalMode.OFF
     theme: str = "auto"
+    #: Local-server lifecycle: "embedded" (marv launches mlx_vlm.server) or
+    #: "marv-mlx" (delegate to the marv-mlx runtime CLI when present).
+    server_manager: str = "embedded"
     session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
@@ -137,6 +140,7 @@ class Config:
             "AGENT_THINKING": "thinking_level",
             "AGENT_APPROVAL": "approval_mode",
             "AGENT_THEME": "theme",
+            "AGENT_SERVER_MANAGER": "server_manager",
         }
 
         for env_var, config_key in env_mappings.items():
@@ -207,6 +211,7 @@ class Config:
             thinking_level=thinking_level,
             approval_mode=approval_mode,
             theme=str(data.get("theme") or "auto"),
+            server_manager=str(data.get("server_manager") or "embedded"),
             session_dir=session_dir,
             skills_dirs=skills_dirs,
             extensions=extensions,

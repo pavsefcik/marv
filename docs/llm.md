@@ -25,12 +25,19 @@ how to launch their server and how to tell it is ready.
 
 - Implementation: `src/marv/llm/marv_mlx.py`, family classification in `src/marv/llm/mlx_models.py`,
   downloads in `src/marv/llm/model_download.py`.
-- **Server lifecycle** — marv launches `mlx_vlm.server` itself
+- **Server lifecycle** — by default marv launches `mlx_vlm.server` itself
   (`mlx_vlm.server --host 127.0.0.1 --model <id> --port 11500`), located via
-  `resolve_mlx_server_command()`. marv is self-sufficient here: **`marv-mlx` is
-  the recommended runtime and model manager but not a runtime dependency**, so
+  `resolve_mlx_server_command()`. **Seam A:** marv is self-sufficient — `marv-mlx`
+  is the recommended runtime and model manager but not a runtime dependency, and
   no external model-manager CLI is required to run the agent. `marv mlx …` is a
   thin passthrough to the `marv-mlx` CLI when it is installed.
+- **Seam B (opt-in)** — with `server_manager = "marv-mlx"` (or
+  `AGENT_SERVER_MANAGER=marv-mlx`, or `marv run --server-manager marv-mlx`) marv
+  delegates model lifecycle to the runtime: `list_models()` →
+  `marv-mlx list --json`, `ensure_running()` → `marv-mlx run <model>`,
+  `stop()` → `marv-mlx stop`. The client (`src/marv/llm/marv_mlx_cli.py`)
+  degrades to the embedded path on any CLI failure or missing binary, so
+  `embedded` stays the safe default.
 - **Model discovery** — `list_models()` scans the local HF hub
   (`~/.cache/huggingface/hub/models--*`) and collapses Ministral Instruct/Reasoning
   pairs into a single entry. Models can also be downloaded with

@@ -69,6 +69,7 @@ def _create_llm_provider(config: Config) -> LLMProvider:
         temperature=config.temperature,
         max_output_tokens=config.max_output_tokens,
         provider_overrides=config.provider_overrides(),
+        server_manager=config.server_manager,
     )
 
 
@@ -97,6 +98,13 @@ def run(
         typer.Option(
             "--theme",
             help="TUI theme: auto, minimal, or any built-in Textual theme",
+        ),
+    ] = None,
+    server_manager: Annotated[
+        str | None,
+        typer.Option(
+            "--server-manager",
+            help="Local server lifecycle: embedded (default) or marv-mlx",
         ),
     ] = None,
     extension: Annotated[
@@ -135,6 +143,11 @@ def run(
             typer.echo("Valid values: off, destructive, all", err=True)
             raise typer.Exit(1) from err
 
+    if server_manager and server_manager not in ("embedded", "marv-mlx"):
+        typer.echo(f"Invalid server manager: {server_manager}", err=True)
+        typer.echo("Valid values: embedded, marv-mlx", err=True)
+        raise typer.Exit(1)
+
     extensions = list(config.extensions)
     if extension:
         extensions.extend(Path(ext) for ext in extension)
@@ -150,6 +163,7 @@ def run(
         thinking_level=thinking_level,
         approval_mode=approval_mode,
         theme=theme or config.theme,
+        server_manager=server_manager or config.server_manager,
         session_dir=config.session_dir,
         skills_dirs=config.skills_dirs,
         extensions=extensions,
@@ -358,6 +372,8 @@ def config_show() -> None:
     typer.echo(f"  Max Output Tokens: {config.max_output_tokens}")
     typer.echo(f"  Temperature: {config.temperature}")
     typer.echo(f"  Thinking Level: {config.thinking_level}")
+    typer.echo(f"  Theme: {config.theme}")
+    typer.echo(f"  Server Manager: {config.server_manager}")
     typer.echo(f"  Session Dir: {config.session_dir}")
     typer.echo(f"  Skills Dirs: {config.skills_dirs or '[none]'}")
     typer.echo(f"  Extensions: {config.extensions or '[none]'}")

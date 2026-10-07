@@ -105,6 +105,22 @@ def test_create_provider_builds_marv_mlx_provider_instance():
 
     assert provider.name == "marv-mlx"
     assert provider.model == "mlx-community/Qwen3.5-4B-MLX-4bit"
+    assert provider.server_manager == "embedded"
+
+
+def test_create_provider_passes_server_manager_to_marv_mlx():
+    provider = create_provider(
+        provider="marv-mlx",
+        model="mlx-community/Qwen3.5-4B-MLX-4bit",
+        api_key=None,
+        base_url=None,
+        temperature=0.7,
+        max_output_tokens=4096,
+        provider_overrides=None,
+        server_manager="marv-mlx",
+    )
+
+    assert provider.server_manager == "marv-mlx"
 
 
 def test_create_provider_builds_openai_compatible_provider_with_override():

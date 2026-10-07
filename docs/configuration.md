@@ -37,6 +37,10 @@ the per-backend default for whichever provider is active.
   recommended runtime/manager (and backs the `marv mlx …` passthrough), but the
   harness stays self-sufficient without it. Models can also be downloaded with
   marv-mlx or `hf`.
+- `server_manager` selects the local-server lifecycle: `embedded` (default;
+  marv launches `mlx_vlm.server` itself) or `marv-mlx` (delegate to the
+  `marv-mlx` runtime CLI when present, falling back to embedded). Override with
+  `AGENT_SERVER_MANAGER` or `marv run --server-manager marv-mlx`.
 - Model discovery reads the local HF hub (`~/.cache/huggingface/hub`). A model that
   is not in the hub is downloaded only after you ask: the TUI opens a download
   picker (curated suggestions for your RAM tier, or any Hugging Face id) and shows

@@ -19,6 +19,12 @@ All notable changes to marv are documented here. The version in
     install hint when it is absent.
   - the `marv-mlx` provider id and `MarvMlxProvider` are unchanged, so existing
     `state.toml`/configs/sessions keep working.
+- **Seam B (opt-in): delegate local-server lifecycle to the `marv-mlx` runtime.**
+  New `server_manager` config (`embedded` default | `marv-mlx`), env
+  `AGENT_SERVER_MANAGER`, and `marv run --server-manager marv-mlx`. When set,
+  model listing/start/stop go through the `marv-mlx` CLI (`llm/marv_mlx_cli.py`),
+  falling back to the embedded manager on any failure or missing binary. The
+  default path is unchanged.
 - Docs now frame the two layers and link the runtime repo (`README.md`,
   `docs/llm.md`, `docs/configuration.md`).
 

@@ -409,6 +409,37 @@ def test_cli_mlx_passthrough_fails_with_install_hint_when_missing(monkeypatch):
     assert "brew install pavsefcik/marv-mlx/marv-mlx" in result.stderr
 
 
+def test_cli_run_propagates_server_manager_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.server_manager)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--server-manager", "marv-mlx"])
+
+    assert result.exit_code == 0
+    assert seen == ["marv-mlx"]
+
+
+def test_cli_run_rejects_invalid_server_manager():
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--server-manager", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Invalid server manager" in result.stderr
+
+
 class HeadlessHubProvider:
     """Provider double that reports a model as missing and records downloads."""
 

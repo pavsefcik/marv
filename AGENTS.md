@@ -19,10 +19,15 @@ Backends:
   (no tool calling).
 
 Env namespaces: the harness owns `AGENT_*` (including `AGENT_MLX_BASE_URL`,
-`AGENT_MLX_MAX_OUTPUT_TOKENS`) and `MARV_PROCTITLE`; the `MARV_MLX_*` namespace
-belongs to the runtime. The old `MARV_MLX_BASE_URL` /
+`AGENT_MLX_MAX_OUTPUT_TOKENS`, `AGENT_SERVER_MANAGER`) and `MARV_PROCTITLE`; the
+`MARV_MLX_*` namespace belongs to the runtime. The old `MARV_MLX_BASE_URL` /
 `MARV_MLX_MAX_OUTPUT_TOKENS` names are read for one release with a deprecation
 warning.
+
+The `server_manager` setting (`embedded` default | `marv-mlx`) selects whether
+marv launches `mlx_vlm.server` itself or delegates lifecycle to the `marv-mlx`
+CLI. Seam B is opt-in and always falls back to embedded; keep `embedded` as the
+default until the runtime is a declared dependency.
 
 ## Commands
 

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from marv.llm.local_server import LocalServerProvider
+from marv.llm.marv_mlx_cli import MarvMlxCli, MarvMlxCliError, resolve_marv_mlx_binary
 from marv.llm.mlx_models import (
     DEFAULT_HUB_DIR,
     discover_model_ids,
@@ -102,6 +103,7 @@ class MarvMlxProvider(LocalServerProvider):
         max_tokens: int = 4096,
         hub_dir: Path | None = None,
         server_command: str | None = None,
+        server_manager: str = "embedded",
     ) -> None:
         super().__init__(
             base_url=base_url,
@@ -112,10 +114,26 @@ class MarvMlxProvider(LocalServerProvider):
         )
         self._hub_dir = hub_dir or DEFAULT_HUB_DIR
         self._server_command = resolve_mlx_server_command(server_command)
+        #: "embedded" (marv launches mlx_vlm.server) or "marv-mlx" (delegate to
+        #: the runtime CLI when present; fall back to embedded otherwise).
+        self.server_manager = server_manager
+        self._cli: MarvMlxCli | None = None
 
     @property
     def hub_dir(self) -> Path:
         return self._hub_dir
+
+    @property
+    def uses_runtime_cli(self) -> bool:
+        """True when lifecycle is delegated to a present ``marv-mlx`` binary."""
+        if self.server_manager != "marv-mlx":
+            return False
+        if self._cli is None:
+            binary = resolve_marv_mlx_binary()
+            if binary is None:
+                return False
+            self._cli = MarvMlxCli(binary)
+        return True
 
     def _launch_argv(self, model: str, port: int) -> list[str]:
         if self._server_command is None:
@@ -126,7 +144,16 @@ class MarvMlxProvider(LocalServerProvider):
         return [*self._server_command, "--host", "127.0.0.1", "--model", model, "--port", str(port)]
 
     async def list_models(self) -> list[str]:
-        """List locally downloaded MLX models (hub scan + currently loaded)."""
+        """List locally downloaded MLX models (hub scan + currently loaded).
+
+        With Seam B the runtime CLI is the source of truth; a missing binary or
+        a failing call falls back to the embedded hub scan.
+        """
+        if self.uses_runtime_cli and self._cli is not None:
+            try:
+                return sorted(self._cli.list_models())
+            except MarvMlxCliError:
+                pass
         models = set(discover_model_ids(self._hub_dir))
         running = running_model_id(self.base_url)
         if running:
@@ -158,6 +185,33 @@ class MarvMlxProvider(LocalServerProvider):
     def supports_thinking(self) -> bool:
         """Thinking support is per model family."""
         return model_supports_thinking(self.model, self._hub_dir)
+
+    # ---- Seam B: delegate lifecycle to the marv-mlx runtime CLI ---------
+
+    def ensure_running(self) -> bool:
+        """Ensure the server is up, via the runtime CLI when configured."""
+        if not self.uses_runtime_cli or self._cli is None:
+            return super().ensure_running()
+        if not self.model:
+            return False
+        if self.is_serving():
+            return False
+        try:
+            self._cli.run(self.model)
+        except MarvMlxCliError:
+            # Fall back to the embedded manager rather than refusing to run.
+            return super().ensure_running()
+        return True
+
+    def stop(self, *, timeout: float | None = None) -> None:
+        """Stop the served model, via the runtime CLI when configured."""
+        if self.uses_runtime_cli and self._cli is not None:
+            try:
+                self._cli.stop()
+                return
+            except MarvMlxCliError:
+                pass
+        super().stop(timeout=timeout)
 
     def _build_payload(
         self,

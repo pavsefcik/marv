@@ -162,6 +162,7 @@ def create_provider(
     temperature: float,
     max_output_tokens: int,
     provider_overrides: ProviderOverrides | None = None,
+    server_manager: str = "embedded",
 ) -> LLMProvider:
     """Create a concrete provider instance from flat provider bootstrap params."""
     from marv.llm.models import is_model_valid_for_provider
@@ -202,6 +203,7 @@ def create_provider(
             model=prov_config.model,
             temperature=temperature,
             max_tokens=max_output_tokens,
+            server_manager=server_manager,
         )
 
     if provider == "apple-fm":

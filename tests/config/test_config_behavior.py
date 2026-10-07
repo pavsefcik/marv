@@ -373,3 +373,33 @@ def test_config_theme_from_env_overrides_the_config_file(temp_dir, monkeypatch):
 def test_config_theme_round_trips_through_construction():
     assert Config(theme="dracula").theme == "dracula"
     assert Config().theme == "auto"
+
+
+def test_config_server_manager_defaults_to_embedded(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    assert Config.load().server_manager == "embedded"
+
+
+def test_config_server_manager_from_env(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_SERVER_MANAGER", "marv-mlx")
+
+    assert Config.load().server_manager == "marv-mlx"
+
+
+def test_config_server_manager_round_trips_through_construction():
+    assert Config(server_manager="marv-mlx").server_manager == "marv-mlx"
+    assert Config().server_manager == "embedded"
