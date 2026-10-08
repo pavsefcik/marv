@@ -1,4 +1,4 @@
-"""TUI tool approver backed by the shared confirmation modal."""
+"""TUI tool approver backed by the shared confirmation panel."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class TUIApprover:
-    """Ask the user to approve a tool call through the confirm modal."""
+    """Ask the user to approve a tool call through the confirm panel."""
 
     __slots__ = ("_bridge",)
 

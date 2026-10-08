@@ -441,6 +441,12 @@ Goal: let the harness delegate model lifecycle to `marv-mlx` when present.
 
 ## 12. Execution log
 
+> **Current state (2026-10-08):** `marv-mlx` is at `v0.136.3` (the log below
+> recorded `v0.136.2` at execution time). `marv` is at `v0.109.0` with uncommitted
+> P0 latency work pending the next release. The optional Phase 5 items and the
+> Seam B default flip remain deliberately undone until `marv-mlx` is a declared
+> dependency.
+
 All four repos renamed on GitHub and released:
 
 | Repo | Renamed from | Latest |

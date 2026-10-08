@@ -194,6 +194,9 @@ class TUIRenderer:
         finally:
             status = self._app.query_one("#status-line", StatusBar)
             status.set_tokens(self._app.agent.total_tokens, self._app.agent.context_max_tokens)
+            sample = self._app.agent.latency.last_sample
+            if sample is not None and sample.streamed:
+                status.set_ttft(sample.ttft_ms, sample.prefill_tokens)
 
     def _track_speed(self, text: str) -> None:
         """Update the status bar when the speed estimate advances."""

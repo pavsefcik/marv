@@ -10,20 +10,16 @@ import pytest
 from textual.widgets import (
     Button,
     Input,
-    ListView,
     OptionList,
     ProgressBar,
-    RadioButton,
-    RadioSet,
-    Select,
     Static,
     TextArea,
-    Tree,
 )
 from textual.widgets._toast import Toast
 
 from marv.config import Config
 from marv.config.state import LastUsedSelection, load_last_used
+from marv.llm import model_download
 from marv.llm.events import (
     DoneEvent,
     ErrorEvent,
@@ -39,14 +35,15 @@ from marv.runtime.approval import ApprovalMode
 from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
+from marv.tui import download_panel
 from marv.tui.app import AgentApp
 from marv.tui.chat import ChatView, MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
-from marv.tui.context_modal import ContextModal
-from marv.tui.download_modal import DownloadModal
-from marv.tui.extension_ui import ConfirmModal
+from marv.tui.context_panel import ContextPanel
+from marv.tui.download_panel import DownloadPanel
+from marv.tui.extension_ui import ConfirmPanel
 from marv.tui.input import PromptInput
-from marv.tui.model_modal import ModelModal
-from marv.tui.session_modal import SessionForkModal, SessionLoadModal, SessionTreeModal
+from marv.tui.model_panel import ModelPanel
+from marv.tui.session_panels import SessionForkPanel, SessionLoadPanel, SessionTreePanel
 from tests.test_doubles.download_fake import DownloadFake
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 from tests.test_doubles.llm_stream_builders import make_text_events, make_tool_call_events
@@ -339,7 +336,7 @@ async def test_tui_extension_input_prompt_round_trip(temp_dir):
         await submit(app, pilot, "/ask-name ")
         await pilot.pause()
 
-        modal_input = app.screen.query_one("#extension-prompt-input", Input)
+        modal_input = app.query_one("#extension-prompt-input", Input)
         modal_input.focus()
         modal_input.value = "bob"
         await pilot.press("enter")
@@ -401,11 +398,11 @@ async def test_tui_presented_read_only_view_shows_close_button_without_input(tem
         await submit(app, pilot, "/show-readonly ")
         await pilot.pause()
 
-        presented_content = app.screen.query_one("#extension-presented-content", Static)
+        presented_content = app.query_one("#extension-presented-content", Static)
         assert "read only details" in render_text(presented_content)
-        buttons = app.screen.query(Button)
+        buttons = app.query(Button)
         assert any(button.id == "extension-presented-button-close" for button in buttons)
-        assert not list(app.screen.query("#extension-presented-input-command"))
+        assert not list(app.query("#extension-presented-input-command"))
 
         await pilot.press("enter")
         await wait_for_idle(app, pilot)
@@ -511,7 +508,7 @@ async def test_tui_runner_autocomplete_tab_and_history_navigation(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_model_modal_updates_model_and_thinking(temp_dir):
+async def test_tui_runner_model_menu_updates_model_and_thinking(temp_dir):
     session = Session.new(temp_dir)
     config = Config(
         provider="openai",
@@ -539,41 +536,41 @@ async def test_tui_runner_model_modal_updates_model_and_thinking(temp_dir):
         await pilot.press("enter")
         await pilot.pause()
 
-        modal = app.screen
-        assert isinstance(modal, ModelModal)
+        panel = app.active_panel
+        assert isinstance(panel, ModelPanel)
 
-        # Picking a model applies it and closes the picker immediately.
-        select = modal.query_one("#model-select", Select)
-        select.value = "gpt-5"
+        # Picking a model applies it and returns to input mode.
+        options = panel.query_one("#panel-options", OptionList)
+        ids = [str(options.get_option_at_index(i).id) for i in range(options.option_count)]
+        options.highlighted = ids.index("gpt-5")
+        options.action_select()
         await pilot.pause()
 
-        assert not isinstance(app.screen, ModelModal)
+        assert app.active_panel is None
         assert app.agent.provider.model == "gpt-5"
         assert "gpt-5" in status_left_text(app)
 
-        # Reopen to change thinking only, then Save.
+        # Reopen to change thinking through the thinking submenu.
         input_widget.text = "/model "
         await pilot.press("enter")
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, ModelModal)
+        panel = app.active_panel
+        assert isinstance(panel, ModelPanel)
 
-        radio = modal.query_one("#thinking-radio", RadioSet)
-        target = None
-        for button in radio.query(RadioButton):
-            if button.name == "low" and not button.disabled:
-                target = button
-                break
-
-        assert target is not None
-        target.toggle()
+        options = panel.query_one("#panel-options", OptionList)
+        options.highlighted = options.option_count - 1  # the thinking entry
+        options.action_select()
         await pilot.pause()
 
-        save = modal.query_one("#save-btn", Button)
-        save.focus()
-        await pilot.press("enter")
+        options = panel.query_one("#panel-options", OptionList)
+        ids = [str(options.get_option_at_index(i).id) for i in range(options.option_count)]
+        low_index = ids.index(ThinkingLevel.LOW.value)
+        assert not options.get_option_at_index(low_index).disabled
+        options.highlighted = low_index
+        options.action_select()
         await pilot.pause()
 
+        assert app.active_panel is None
         assert app.agent.provider.model == "gpt-5"
         assert app.agent.config.thinking_level == ThinkingLevel.LOW
         left = status_left_text(app)
@@ -855,7 +852,7 @@ async def test_tui_runner_status_displays_model_thinking_and_session(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_context_command_opens_and_closes_modal(temp_dir):
+async def test_tui_runner_context_menu_shows_context_and_closes(temp_dir):
     skills_dir = temp_dir / "skills"
     templates_dir = temp_dir / "templates"
     write_skill(skills_dir, "deploy")
@@ -883,31 +880,39 @@ async def test_tui_runner_context_command_opens_and_closes_modal(temp_dir):
         await pilot.pause()
 
         await submit(app, pilot, "/context ")
-        modal = app.screen
-        assert isinstance(modal, ContextModal)
+        panel = app.active_panel
+        assert isinstance(panel, ContextPanel)
 
-        summary_text = render_text(modal.query_one("#summary-content", Static))
+        summary_text = render_text(panel.query_one("#summary-content", Static))
         assert "Provider: openai" in summary_text
         assert "Model: gpt-4o" in summary_text
         assert "MESSAGES" in summary_text
         assert "SKILLS" in summary_text
         assert "TEMPLATES" in summary_text
 
-        messages_text = render_text(modal.query_one("#messages-content", Static))
+        # Tabs swap the visible section.
+        assert not panel.query_one("#messages-content", Static).display
+        await pilot.press("right")
+        await pilot.pause()
+        assert panel.query_one("#messages-content", Static).display
+        messages_text = render_text(panel.query_one("#messages-content", Static))
         assert "USER" in messages_text
         assert "ASSISTANT" in messages_text
         assert "Total:" in messages_text
 
-        system_text = render_text(modal.query_one("#system-content", Static))
+        await pilot.press("right")
+        await pilot.pause()
+        assert panel.query_one("#system-content", Static).display
+        system_text = render_text(panel.query_one("#system-content", Static))
         assert "Total:" in system_text or "(no system prompt)" in system_text
 
         await pilot.press("escape")
         await pilot.pause()
-        assert not isinstance(app.screen, ContextModal)
+        assert app.active_panel is None
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_load_modal_selects_session_via_public_flow(temp_dir):
+async def test_tui_runner_load_menu_selects_session_and_returns_to_input(temp_dir):
     target = Session.new(temp_dir)
     target.append(Message.user("target-session"))
 
@@ -921,24 +926,27 @@ async def test_tui_runner_load_modal_selects_session_via_public_flow(temp_dir):
         await pilot.pause()
 
         await submit(app, pilot, "/load ")
-        modal = app.screen
-        assert isinstance(modal, SessionLoadModal)
+        panel = app.active_panel
+        assert isinstance(panel, SessionLoadPanel)
 
-        list_view = modal.query_one("#session-list", ListView)
-        selected_item = list_view.children[list_view.index]
-        selected_path = getattr(selected_item, "name", None)
+        options = panel.query_one("#panel-options", OptionList)
+        selected_path = str(options.get_option_at_index(options.highlighted).id)
         assert selected_path is not None
 
-        list_view.action_select_cursor()
+        options.action_select()
         await pilot.pause()
 
         assert str(app.agent.session.path) == selected_path
         assert any("loaded session" in msg for msg in system_messages(app))
-        assert not isinstance(app.screen, SessionLoadModal)
+        assert app.active_panel is None
+
+        # Choosing drops straight back into input mode.
+        assert app.query_one("#prompt-input", PromptInput).display
+        assert isinstance(app.focused, TextArea)
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_fork_modal_forks_from_selected_message(temp_dir):
+async def test_tui_runner_fork_menu_forks_from_selected_message(temp_dir):
     session = Session.new(temp_dir)
     session.append(Message.user("first"))
     session.append(Message.assistant("second"))
@@ -952,18 +960,15 @@ async def test_tui_runner_fork_modal_forks_from_selected_message(temp_dir):
         await pilot.pause()
 
         await submit(app, pilot, "/fork ")
-        modal = app.screen
-        assert isinstance(modal, SessionForkModal)
+        panel = app.active_panel
+        assert isinstance(panel, SessionForkPanel)
 
-        list_view = modal.query_one("#fork-list", ListView)
-        while list_view.index > 0:
-            list_view.action_cursor_up()
-            await pilot.pause()
-        selected_item = list_view.children[list_view.index]
-        selected_message_id = getattr(selected_item, "name", None)
+        options = panel.query_one("#panel-options", OptionList)
+        options.highlighted = 0
+        selected_message_id = str(options.get_option_at_index(0).id)
         assert selected_message_id is not None
 
-        list_view.action_select_cursor()
+        options.action_select()
         await pilot.pause()
 
         assert app.agent.session.metadata.parent_session_id == parent_session_id
@@ -972,11 +977,11 @@ async def test_tui_runner_fork_modal_forks_from_selected_message(temp_dir):
             f"forked from {parent_session_id} at {selected_message_id}" in msg
             for msg in system_messages(app)
         )
-        assert not isinstance(app.screen, SessionForkModal)
+        assert app.active_panel is None
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_tree_modal_linear_list_updates_leaf(temp_dir):
+async def test_tui_runner_tree_menu_updates_leaf(temp_dir):
     session = Session.new(temp_dir)
     session.append(Message.user("first"))
     session.append(Message.assistant("second"))
@@ -989,28 +994,25 @@ async def test_tui_runner_tree_modal_linear_list_updates_leaf(temp_dir):
         await pilot.pause()
 
         await submit(app, pilot, "/tree ")
-        modal = app.screen
-        assert isinstance(modal, SessionTreeModal)
+        panel = app.active_panel
+        assert isinstance(panel, SessionTreePanel)
 
-        list_view = modal.query_one("#linear-list", ListView)
-        while list_view.index > 1:
-            list_view.action_cursor_up()
-            await pilot.pause()
-        selected_item = list_view.children[list_view.index]
-        selected_entry_id = getattr(selected_item, "name", None)
+        options = panel.query_one("#panel-options", OptionList)
+        options.highlighted = 1
+        selected_entry_id = str(options.get_option_at_index(1).id)
         assert selected_entry_id is not None
 
-        list_view.action_select_cursor()
+        options.action_select()
         await pilot.pause()
 
         assert app.agent.session.leaf_id == selected_entry_id
         assert len(app.agent.session.messages) == 2
         assert any(f"branched to {selected_entry_id}" in msg for msg in system_messages(app))
-        assert not isinstance(app.screen, SessionTreeModal)
+        assert app.active_panel is None
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_tree_modal_branch_view_updates_leaf(temp_dir):
+async def test_tui_runner_tree_menu_branch_updates_leaf(temp_dir):
     session = Session.new(temp_dir)
     first = Message.user("first")
     second = Message.assistant("second")
@@ -1030,31 +1032,22 @@ async def test_tui_runner_tree_modal_branch_view_updates_leaf(temp_dir):
         await pilot.pause()
 
         await submit(app, pilot, "/tree ")
-        modal = app.screen
-        assert isinstance(modal, SessionTreeModal)
+        panel = app.active_panel
+        assert isinstance(panel, SessionTreePanel)
 
-        tree = modal.query_one("#tree-view", Tree)
-        tree.action_cursor_parent()
-        await pilot.pause()
+        options = panel.query_one("#panel-options", OptionList)
+        count = options.option_count
+        assert count >= 2
+        options.highlighted = count - 2  # a sibling branch, not the current leaf
+        target_entry_id = str(options.get_option_at_index(count - 2).id)
+        assert target_entry_id != current_leaf
 
-        cursor_node = tree.cursor_node
-        assert cursor_node is not None
-        target_entry_id = str(cursor_node.data)
-        if target_entry_id == str(current_leaf):
-            tree.action_cursor_up()
-            await pilot.pause()
-            cursor_node = tree.cursor_node
-            assert cursor_node is not None
-            target_entry_id = str(cursor_node.data)
-
-        assert target_entry_id != str(current_leaf)
-
-        tree.action_select_cursor()
+        options.action_select()
         await pilot.pause()
 
         assert app.agent.session.leaf_id == target_entry_id
         assert any(f"branched to {target_entry_id}" in msg for msg in system_messages(app))
-        assert not isinstance(app.screen, SessionTreeModal)
+        assert app.active_panel is None
 
 
 @pytest.mark.asyncio
@@ -1168,7 +1161,7 @@ async def test_tui_runner_start_with_remembered_model_skips_picker(temp_dir, mon
 
         assert config.model == "gpt-5"
         assert app.agent.model_name == "gpt-5"
-        assert not isinstance(app.screen, ModelModal)
+        assert app.active_panel is None
         assert "gpt-5" in status_left_text(app)
 
 
@@ -1193,11 +1186,11 @@ async def test_tui_runner_confirms_before_destructive_tool(temp_dir):
         await pilot.pause()
         await submit(app, pilot, "write it")
         for _ in range(20):
-            if isinstance(app.screen, ConfirmModal):
+            if isinstance(app.active_panel, ConfirmPanel):
                 break
             await pilot.pause()
 
-        assert isinstance(app.screen, ConfirmModal)
+        assert isinstance(app.active_panel, ConfirmPanel)
         await pilot.press("y")
         await pilot.pause()
         await wait_for_idle(app, pilot)
@@ -1226,11 +1219,11 @@ async def test_tui_runner_denies_destructive_tool_on_reject(temp_dir):
         await pilot.pause()
         await submit(app, pilot, "write it")
         for _ in range(20):
-            if isinstance(app.screen, ConfirmModal):
+            if isinstance(app.active_panel, ConfirmPanel):
                 break
             await pilot.pause()
 
-        assert isinstance(app.screen, ConfirmModal)
+        assert isinstance(app.active_panel, ConfirmPanel)
         await pilot.press("n")
         await pilot.pause()
         await wait_for_idle(app, pilot)
@@ -1256,10 +1249,71 @@ async def test_tui_runner_offers_the_download_picker_when_no_model_is_available(
         await pilot.pause()
         await pilot.pause()
 
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
-        options = modal.query_one("#download-options", OptionList)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
+        options = panel.query_one("#download-options", OptionList)
         assert options.option_count > 0
+
+
+@pytest.mark.asyncio
+async def test_download_picker_shows_the_runtime_catalog_id_and_tagline(
+    temp_dir: Path, monkeypatch
+):
+    catalog = temp_dir / "curated-llms.md"
+    catalog.write_text(
+        "16 GB RAM Tier Models\n\nornith-ai/Ornith-1.5-9B-MLX-4bit\nThe coding sniper\n"
+    )
+    monkeypatch.setattr(model_download, "DEFAULT_CATALOG_PATH", catalog)
+    monkeypatch.setattr(model_download, "installed_ram_bytes", lambda: 16 * 1024**3)
+
+    app = AgentApp(
+        make_hub_config(temp_dir, model=""),
+        provider=HubProviderFake(model="", hub_dir=temp_dir, installed=[]),
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
+        options = panel.query_one("#download-options", OptionList)
+        rendered = [str(options.get_option_at_index(i).prompt) for i in range(options.option_count)]
+        assert any("ornith-ai/Ornith-1.5-9B-MLX-4bit" in entry for entry in rendered)
+        assert any("The coding sniper" in entry for entry in rendered)
+        assert not any("t3, vision" in entry for entry in rendered)
+
+
+@pytest.mark.asyncio
+async def test_download_picker_waits_for_the_in_flight_catalog_refresh(temp_dir: Path, monkeypatch):
+    """The first picker of a session reflects the just-completed refresh."""
+    catalog = temp_dir / "curated-llms.md"
+    catalog.write_text("16 GB RAM Tier Models\n\nmlx-community/Stale-4bit\nThe old one\n")
+    monkeypatch.setattr(model_download, "DEFAULT_CATALOG_PATH", catalog)
+    monkeypatch.setattr(model_download, "installed_ram_bytes", lambda: 16 * 1024**3)
+
+    def rewrite_then_finish() -> bool:
+        # Stand in for `marv-mlx curated` finishing: the cache is now the new list.
+        catalog.write_text(
+            "16 GB RAM Tier Models\n\nornith-ai/Ornith-1.5-9B-MLX-4bit\nThe coding sniper\n"
+        )
+        return True
+
+    monkeypatch.setattr(download_panel, "wait_for_catalog_refresh", lambda: rewrite_then_finish())
+
+    app = AgentApp(
+        make_hub_config(temp_dir, model=""),
+        provider=HubProviderFake(model="", hub_dir=temp_dir, installed=[]),
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
+        options = panel.query_one("#download-options", OptionList)
+        rendered = [str(options.get_option_at_index(i).prompt) for i in range(options.option_count)]
+        assert any("ornith-ai/Ornith-1.5-9B-MLX-4bit" in entry for entry in rendered)
+        assert not any("Stale-4bit" in entry for entry in rendered)
 
 
 @pytest.mark.asyncio
@@ -1275,7 +1329,7 @@ async def test_tui_runner_asks_before_downloading_a_missing_remembered_model(tem
         await pilot.pause()
         await pilot.pause()
 
-        assert isinstance(app.screen, DownloadModal)
+        assert isinstance(app.active_panel, DownloadPanel)
         assert provider.downloads == []
         assert provider.ensure_calls == 0
         assert any("not downloaded locally" in msg for msg in system_messages(app))
@@ -1296,7 +1350,7 @@ async def test_tui_runner_starts_the_remembered_model_when_it_is_downloaded(temp
         await pilot.pause()
         await pilot.pause()
 
-        assert not isinstance(app.screen, DownloadModal)
+        assert app.active_panel is None
         assert provider.ensure_calls == 1
 
 
@@ -1318,11 +1372,11 @@ async def test_tui_runner_shows_live_download_progress_then_applies_the_model(te
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
 
         # Selecting the remembered entry starts the download and streams progress.
-        options = modal.query_one("#download-options", OptionList)
+        options = panel.query_one("#download-options", OptionList)
         options.action_select()
         await pilot.pause()
 
@@ -1340,7 +1394,7 @@ async def test_tui_runner_shows_live_download_progress_then_applies_the_model(te
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_download_progress_is_visible_in_the_modal(temp_dir):
+async def test_tui_runner_download_progress_is_visible_in_the_menu(temp_dir):
     half = DownloadProgress(downloaded_bytes=200 * 1024**2, total_bytes=400 * 1024**2)
     provider = HubProviderFake(
         model="mlx-community/Remembered-4bit",
@@ -1355,13 +1409,13 @@ async def test_tui_runner_download_progress_is_visible_in_the_modal(temp_dir):
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
 
-        modal.query_one("#download-options", OptionList).action_select()
+        panel.query_one("#download-options", OptionList).action_select()
 
-        progress = modal.query_one("#download-progress", Static)
-        bar = modal.query_one("#download-bar", ProgressBar)
+        progress = panel.query_one("#download-progress", Static)
+        bar = panel.query_one("#download-bar", ProgressBar)
         for _ in range(40):
             await asyncio.sleep(0.02)
             await pilot.pause()
@@ -1389,20 +1443,19 @@ async def test_tui_runner_reports_a_failed_download_and_stays_open(temp_dir):
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
 
-        options = modal.query_one("#download-options", OptionList)
-        options.action_select()
+        panel.query_one("#download-options", OptionList).action_select()
 
         for _ in range(40):
-            progress = modal.query_one("#download-progress", Static)
+            progress = panel.query_one("#download-progress", Static)
             if "failed" in render_text(progress).lower():
                 break
             await pilot.pause()
 
-        assert "gated repo" in render_text(modal.query_one("#download-progress", Static))
-        assert isinstance(app.screen, DownloadModal)
+        assert "gated repo" in render_text(panel.query_one("#download-progress", Static))
+        assert isinstance(app.active_panel, DownloadPanel)
 
 
 @pytest.mark.asyncio
@@ -1420,10 +1473,10 @@ async def test_tui_runner_cancelling_the_download_leaves_the_model_unset(temp_di
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
 
-        modal.query_one("#download-options", OptionList).action_select()
+        panel.query_one("#download-options", OptionList).action_select()
         await pilot.pause()
         await pilot.press("escape")
         await pilot.pause()
@@ -1431,10 +1484,11 @@ async def test_tui_runner_cancelling_the_download_leaves_the_model_unset(temp_di
         assert provider.downloads[0].cancelled
         assert provider.model == "mlx-community/Remembered-4bit"  # unchanged
         assert not any("switched to" in m for m in system_messages(app))
+        assert app.active_panel is None
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_switching_to_a_missing_model_opens_the_download_modal(temp_dir):
+async def test_tui_runner_switching_to_a_missing_model_opens_the_download_menu(temp_dir):
     provider = HubProviderFake(
         model="mlx-community/Present-4bit",
         hub_dir=temp_dir,
@@ -1450,11 +1504,11 @@ async def test_tui_runner_switching_to_a_missing_model_opens_the_download_modal(
         await pilot.pause()
         await pilot.pause()
 
-        modal = app.screen
-        assert isinstance(modal, DownloadModal)
+        panel = app.active_panel
+        assert isinstance(panel, DownloadPanel)
         assert provider.downloads == []
         # The missing model is offered as the preselected entry.
-        options = modal.query_one("#download-options", OptionList)
+        options = panel.query_one("#download-options", OptionList)
         option_ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
         assert "mlx-community/Absent-4bit" in option_ids
 
@@ -1472,8 +1526,8 @@ async def test_tui_runner_offers_the_model_picker_when_models_are_already_downlo
         await pilot.pause()
         await pilot.pause()
 
-        modal = app.screen
-        assert isinstance(modal, ModelModal)
+        panel = app.active_panel
+        assert isinstance(panel, ModelPanel)
 
 
 @pytest.mark.asyncio
@@ -1642,20 +1696,58 @@ async def test_tui_runner_clicking_anywhere_focuses_the_prompt(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_modal_keeps_the_tui_visible_behind_it(temp_dir):
-    """Modal screens don't paint an opaque scrim over the running TUI."""
+async def test_tui_runner_menu_replaces_the_input_line_instead_of_a_window(temp_dir):
+    """Menus render between the input rules — no floating window over the chat."""
     config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
     app = AgentApp(config, provider=LLMProviderFake([]))
 
     async with app.run_test() as pilot:
         await pilot.pause()
 
+        chat = app.query_one("#chat-view", ChatView)
+        chat.add_system_message("still visible")
         await submit(app, pilot, "/model ")
         await pilot.pause()
-        modal = app.screen
-        assert isinstance(modal, ModelModal)
+        panel = app.active_panel
+        assert isinstance(panel, ModelPanel)
 
-        # The scrim is transparent: the chat behind stays rendered and visible.
-        assert modal.styles.background.rgb == app.screen_stack[0].styles.background.rgb or (
-            modal.styles.background.a == 0
-        )
+        # No modal screen: the menu is a widget in the input dock, and the
+        # prompt line is swapped out while it is up.
+        assert len(app.screen_stack) == 1
+        assert panel.parent is not None
+        assert panel.parent.id == "input-container"
+        assert not app.query_one("#prompt-input", PromptInput).display
+
+        # The chat keeps rendering above the menu.
+        assert any("still visible" in msg for msg in system_messages(app))
+
+        # Escape returns to input mode.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.active_panel is None
+        assert app.query_one("#prompt-input", PromptInput).display
+        assert isinstance(app.focused, TextArea)
+
+
+@pytest.mark.asyncio
+async def test_tui_status_bar_shows_ttft_after_a_turn(temp_dir):
+    """TTFT must be visible in the TUI, not just measurable in the runtime."""
+
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir,
+    )
+    app = AgentApp(config, provider=LLMProviderFake([make_text_events("Hello there")]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await submit(app, pilot, "hi")
+        await wait_for_idle(app, pilot)
+
+        text = status_left_text(app)
+        assert "ttft" in text
+        # The prompt cost behind that TTFT is shown too, so a regression is
+        # attributable without opening a debugger.
+        assert "t" in text

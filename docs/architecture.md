@@ -30,14 +30,16 @@ See [`delivery.md`](delivery.md) for the delivery model.
 
 ## Bootstrap and composition
 
-Bootstrap sits between delivery and runtime.
+Bootstrap sits between delivery and runtime. There is no single `bootstrap.py`;
+the concern is spread across the modules named here.
 
 It owns:
 
-- loading and merging config
-- projecting delivery config into runtime settings
-- resolving and constructing the active LLM provider
-- assembling the runtime stack for a delivery shell
+- loading and merging config (`src/marv/config/runtime.py`)
+- projecting delivery config into runtime settings (`Config.to_agent_settings()`)
+- resolving and constructing the active LLM provider (`src/marv/llm/factory.py`)
+- assembling the runtime stack for a delivery shell (`src/marv/tui/compose.py`,
+  `src/marv/cli/headless.py`)
 
 ## Runtime
 

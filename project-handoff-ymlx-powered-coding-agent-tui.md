@@ -1,5 +1,12 @@
 # Project Handoff — YMLX-powered Coding Agent TUI
 
+> **Historical / archived.** This brief predates the shipped app: the name was
+> chosen (`marv`), the backend was renamed `ymlx` → `marv-mlx`, and the YMLX CLI
+> dependency was dropped in favour of a self-managed `mlx_vlm.server`. It also
+> contains open questions that are all resolved now. Kept for context only — for
+> current behaviour see [`README.md`](README.md), [`docs/`](docs/), and
+> [`CHANGELOG.md`](CHANGELOG.md).
+
 This brief is for an AI coding agent continuing this project. It captures the goal, decisions already made, and the work that remains.
 
 ## 1. Goal

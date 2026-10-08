@@ -137,6 +137,19 @@ Set `approval_mode` (or `AGENT_APPROVAL`, or `marv run --approval`) to
 mode there is no one to ask, so an unapproved tool is denied. This is a
 guardrail, not a sandbox — see [SECURITY.md](SECURITY.md).
 
+The local-server lifecycle is controlled by `server_manager` (`embedded`, the
+default, where marv launches `mlx_vlm.server` itself, or `marv-mlx`, which
+delegates to the [marv-mlx](https://github.com/pavsefcik/marv-mlx) runtime CLI
+when installed and falls back to embedded otherwise). Override it with
+`AGENT_SERVER_MANAGER` or `marv run --server-manager marv-mlx`.
+
+The TUI status bar shows the last turn's time-to-first-token and prefill cost
+(`ttft <ms>/<tokens>t`); `marv bench` (see below) reports the aggregate.
+
+`AGENT_LLM_READ_TIMEOUT` caps the streaming read timeout for any provider
+(seconds, `off`/`0` disables); local backends wait indefinitely by default so a
+long prefill is not killed.
+
 A commented template ships at `config/default.toml`. The default provider is
 `marv-mlx` on `http://localhost:11500`; `apple-fm` uses
 `http://127.0.0.1:1976`. Neither needs an API key.
@@ -170,6 +183,15 @@ make test
 make lint
 make format
 make can-release   # lint + tests
+```
+
+Measure local latency with `marv bench` — a scripted multi-turn conversation
+through the real agent loop that reports TTFT p50/p90 and how much TTFT grows
+per turn (`--json` for machine consumption):
+
+```sh
+uv run marv bench
+uv run marv bench -n 8 --json
 ```
 
 ## License

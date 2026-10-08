@@ -211,72 +211,96 @@ Screen {
     text-overflow: ellipsis;
 }
 
-/* Extension UI Modals */
-/* Keep the TUI visible behind every modal: the window floats above it. */
-ModalScreen {
-    background: transparent;
-}
+/* ------------------------------------------------------ input-docked menus */
+/* Pickers and prompts replace the prompt input line: they render between the
+   two rules around the input (same borders, growing upward as needed) instead
+   of floating over the chat. */
 
-PromptModal,
-ConfirmModal,
-SelectModal,
-PresentedViewModal {
-    align: center middle;
-}
-
-#extension-modal {
-    width: 80%;
-    max-width: 70;
+.inline-panel {
     height: auto;
-    max-height: 80%;
-    background: $surface;
-    border: round $primary;
-    padding: 1 2;
+    background: transparent;
+    border-top: solid $primary;
+    border-bottom: solid $primary;
+    padding: 0 1;
 }
 
-.extension-prompt-modal {
-    max-width: 62;
-    padding: 2 3;
-    background: $panel;
-    border-title-color: $primary;
-}
-
-.extension-modal-kicker {
+.panel-title {
     color: $secondary;
     text-style: bold;
-    margin: 0 0 1 0;
 }
 
-.extension-modal-title {
-    margin: 0 0 1 0;
-    text-style: bold;
-    color: $primary;
-}
-
-.extension-modal-subtitle {
+.panel-subtitle {
     color: $foreground-muted;
-    margin: 0 0 1 0;
 }
 
-.extension-modal-hint {
-    margin: 1 0 0 0;
+.panel-empty {
+    color: $text-disabled;
+    padding: 1 0;
+}
+
+.panel-hint {
     color: $text-disabled;
 }
 
-.extension-input-shell {
-    border: round $secondary;
-    background: $surface;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
-#extension-prompt-input {
-    border: none;
+.panel-menu {
+    height: auto;
+    max-height: 10;
     background: transparent;
 }
 
-#extension-prompt-input:focus {
+.panel-menu > .option-list--option-highlighted {
+    background: $accent;
+}
+
+/* Model menu */
+#model-info {
+    min-height: 1;
+}
+
+/* Context menu */
+#context-scroll {
+    height: auto;
+    max-height: 24;
+}
+
+#summary-content,
+#messages-content,
+#system-content {
+    padding: 0 1;
+}
+
+/* Download menu */
+
+/* Two-line entries — taller so they are not clipped. */
+#download-options {
+    max-height: 14;
+}
+
+#download-custom,
+#extension-prompt-input {
+    background: transparent;
     border: none;
+    padding: 0;
+    width: 100%;
+}
+
+#download-bar {
+    width: 100%;
+}
+
+/* Extension presented views */
+#extension-presented-scroll {
+    height: auto;
+    max-height: 18;
+}
+
+.extension-presented-control-label {
+    color: $secondary;
+}
+
+.extension-presented-select-content {
+    height: auto;
+    max-height: 8;
 }
 
 .extension-modal-actions {
@@ -287,360 +311,4 @@ PresentedViewModal {
 
 .extension-modal-actions Button {
     margin-right: 1;
-}
-
-.extension-presented-control-label {
-    color: $secondary;
-    margin: 0 0 1 0;
-}
-
-.extension-presented-select-content {
-    height: auto;
-    max-height: 12;
-    margin: 0 0 1 0;
-}
-
-#extension-select-content,
-#extension-presented-scroll {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-/* Context Modal */
-ContextModal {
-    align: center middle;
-}
-
-#context-modal {
-    width: 90%;
-    height: 85%;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#context-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#context-tabs {
-    height: 1fr;
-}
-
-#context-tabs > ContentSwitcher {
-    height: 1fr;
-}
-
-#context-tabs TabPane {
-    height: 1fr;
-    padding: 0;
-}
-
-#context-tabs VerticalScroll {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#summary-content,
-#messages-content,
-#system-content {
-    padding: 1 1;
-}
-
-#context-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Model Modal */
-ModelModal {
-    align: center middle;
-}
-
-#model-modal {
-    width: 80%;
-    height: 70%;
-    max-width: 70;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#model-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#model-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-.section-header {
-    margin: 1 0 0 0;
-}
-
-#model-select {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#thinking-radio {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#summary-info {
-    margin: 0 0 1 0;
-}
-
-#save-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#model-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Load Modal */
-SessionLoadModal {
-    align: center middle;
-}
-
-#session-modal {
-    width: 85%;
-    height: 70%;
-    max-width: 90;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#session-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#session-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#session-list {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-#session-load-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#session-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#session-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Fork Modal */
-SessionForkModal {
-    align: center middle;
-}
-
-#fork-modal {
-    width: 85%;
-    height: 75%;
-    max-width: 100;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#fork-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#fork-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#fork-summary {
-    margin: 0 0 1 0;
-    color: $foreground-muted;
-}
-
-#fork-list {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-#fork-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#fork-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#fork-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Tree Modal */
-SessionTreeModal {
-    align: center middle;
-}
-
-#tree-modal {
-    width: 85%;
-    height: 75%;
-    max-width: 100;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#tree-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#tree-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#tree-view {
-    height: 1fr;
-}
-
-#linear-list {
-    height: 1fr;
-}
-
-#tree-summary {
-    margin: 0 0 1 0;
-    color: $foreground-muted;
-}
-
-#tree-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#tree-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#tree-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Model Download Modal */
-DownloadModal {
-    align: center middle;
-}
-
-#download-modal {
-    width: 90%;
-    height: 80%;
-    max-width: 84;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#download-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#download-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#download-intro {
-    color: $foreground-muted;
-    margin: 0 0 1 0;
-}
-
-#download-options {
-    height: auto;
-    max-height: 12;
-    margin: 0 0 1 0;
-    border: solid $panel;
-}
-
-#download-custom {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#download-progress {
-    color: $secondary;
-    margin: 1 0 0 0;
-}
-
-#download-bar {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#download-actions {
-    dock: bottom;
-    height: auto;
-    align-horizontal: right;
-}
-
-#download-actions Button {
-    margin-left: 1;
 }

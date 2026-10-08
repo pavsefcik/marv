@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from marv.llm.local_server import LocalServerProvider
 
 FAKE_SERVER = Path(__file__).parent / "_fake_server.py"
@@ -113,3 +115,28 @@ def test_server_pid_ignores_an_exited_process(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
 
     assert provider.server_pid == 222
+
+
+def test_local_provider_waits_for_prefill_without_a_read_timeout(tmp_path: Path):
+    """A local prefill can be minutes of silence before the first token.
+
+    A finite read timeout would kill the stream mid-prefill (and, before the
+    fix, retry it), so local servers default to waiting indefinitely.
+    """
+    provider = make_provider(tmp_path)
+
+    assert provider.read_timeout is None
+    assert provider.client.timeout.read is None
+    # The connect timeout still guards a wedged server.
+    assert provider.client.timeout.connect == 10.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_read_timeout_is_overridable(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_READ_TIMEOUT", "900")
+    provider = make_provider(tmp_path)
+
+    assert provider.read_timeout == 900.0
+    assert provider.client.timeout.read == 900.0
+
+    await provider.client.aclose()

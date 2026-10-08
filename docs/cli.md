@@ -38,6 +38,25 @@ The CLI also exposes delivery-level session utilities:
 
 These are delivery commands over the same JSONL session model used by the runtime and TUI.
 
+## Latency benchmark
+
+`marv bench` measures time-to-first-token for the active model, because for a
+local-LLM harness TTFT is the difference between an assistant and an
+interruption. It runs a scripted multi-turn conversation through the real agent
+loop (prompt assembly, tool schemas, transport included) and reports:
+
+- TTFT p50 / p90
+- median prefill cost (prompt + tool-schema tokens)
+- **TTFT growth per turn** — a flat number means the prompt is not being
+  re-prefilled in full each turn; a climbing one means it is, and that is the
+  latency bug to fix first
+
+Options: `--prompt` (repeatable, overrides the default prompts), `-n`/`--turns N`,
+`--no-warmup` (include cold start), `--json`, and the usual `-m`/`-p` overrides.
+
+See [`llm.md`](llm.md) for where the measurement is taken and
+[`coworking-plan.md`](coworking-plan.md) for how it feeds the latency work.
+
 ## Design role
 
 The CLI owns:

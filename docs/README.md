@@ -14,6 +14,7 @@ Start here if you’re new to the project.
 - [`tui.md`](tui.md) — Textual UI behavior and commands
 - [`configuration.md`](configuration.md) — config files, env vars, context files
 - [`sessions.md`](sessions.md) — JSONL sessions, forking, compaction
+- [`coworking-plan.md`](coworking-plan.md) — proposal: from coding agent to local-LLM coworking harness (P0 latency work shipped)
 
 See [`../ROADMAP.md`](../ROADMAP.md) for planned next work.
 

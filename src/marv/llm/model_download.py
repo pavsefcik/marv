@@ -9,8 +9,9 @@ remembered (or selected) model is not present, this module fetches it:
 * that child streams newline-delimited JSON progress events on stdout, and
   ``ModelDownload`` owns the process: it exposes the drained events plus
   cancellation, so the TUI can render progress and the user can abort;
-* a curated list of suggested models for this machine's RAM tier ships with
-  marv, so the picker can offer sane choices even offline.
+* suggested models for this machine's RAM tier come from the same marv-curator
+  catalog the `marv-mlx` runtime uses (read from its cache, so both layers show
+  one list), with a bundled fallback so the picker still works offline.
 """
 
 from __future__ import annotations
@@ -487,50 +488,36 @@ class CuratedModel:
         """The id marv runs (the first of a sibling pair)."""
         return self.ids[0]
 
+    @classmethod
+    def single(cls, model_id: str, description: str = "") -> CuratedModel:
+        """A one-id entry (the common catalog shape)."""
+        return cls(label=model_id, ids=(model_id,), description=description)
+
 
 #: Bundled fallback for the curated list (mirrors the marv-curator model file),
-#: grouped by the RAM tier it is intended for.
+#: grouped by the RAM tier it is intended for. Used when the runtime's live
+#: catalog is unavailable, so the picker works on a fresh/offline install.
 CURATED_TIERS: dict[int, list[CuratedModel]] = {
     8: [
-        CuratedModel("Qwen 3.5 4B", ("mlx-community/Qwen3.5-4B-MLX-4bit",), "t3, vision"),
-        CuratedModel("Gemma 4 E4B", ("mlx-community/gemma-4-e4b-it-4bit",), "t3, vision, audio"),
-        CuratedModel(
-            "Ministral 3 3B",
-            (
-                "mlx-community/Ministral-3-3B-Instruct-2512-4bit",
-                "mlx-community/Ministral-3-3B-Reasoning-2512-4bit",
-            ),
-            "t3, vision",
-        ),
+        CuratedModel.single("mlx-community/Qwen3.5-4B-MLX-4bit", "The compact generalist"),
+        CuratedModel.single("mlx-community/gemma-4-e4b-it-4bit", "The quick wit"),
     ],
     16: [
-        CuratedModel("Qwen 3.5 9B", ("mlx-community/Qwen3.5-9B-MLX-4Bit",), "t3, vision"),
-        CuratedModel(
-            "Gemma 4 12B", ("mlx-community/gemma-4-12B-it-qat-4bit",), "t3, vision, audio"
-        ),
-        CuratedModel(
-            "Ministral 3 8B",
-            (
-                "mlx-community/Ministral-3-8B-Instruct-2512-4bit",
-                "mlx-community/Ministral-3-8B-Reasoning-2512-4bit",
-            ),
-            "t3, vision",
-        ),
-        CuratedModel("Ternary Bonsai 2 27B", ("prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",), "t3"),
+        CuratedModel.single("ornith-ai/Ornith-1.5-9B-MLX-4bit", "The coding sniper"),
+        CuratedModel.single("mlx-community/gemma-4-12B-it-qat-OptiQ-4bit", "The creative writer"),
+        CuratedModel.single("prism-ml/Ternary-Bonsai-2-27B-mlx-2bit", "The efficiency experiment"),
     ],
     32: [
-        CuratedModel("Qwen 3.8 27B", ("mlx-community/Qwen3.8-27B-4bit",), "t3, vision"),
-        CuratedModel("Gemma 4 31B", ("mlx-community/gemma-4-31b-it-4bit",), "t3, vision, audio"),
-        CuratedModel(
-            "Ministral 3 14B",
-            (
-                "mlx-community/Ministral-3-14B-Instruct-2512-4bit",
-                "mlx-community/Ministral-3-14B-Reasoning-2512-4bit",
-            ),
-            "t3, vision",
-        ),
+        CuratedModel.single("bottlecapai/ThinkingCap-Qwen3.8-27B-MLX-4bit-DWQ", "The deep thinker"),
+        CuratedModel.single("ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit", "The agentic king"),
+        CuratedModel.single("mlx-community/gemma-4-31B-it-qat-OptiQ-4bit", "The creative flagship"),
     ],
 }
+
+
+#: The runtime's cached marv-curator catalog. ``marv-mlx`` refreshes this file on
+#: interactive startup, so reading it keeps both download menus on one list.
+DEFAULT_CATALOG_PATH = Path.home() / ".cache" / "marv" / "mlx" / "curated-llms.md"
 
 
 def ram_tier_gb(total_bytes: int | None = None) -> int:
@@ -545,9 +532,199 @@ def ram_tier_gb(total_bytes: int | None = None) -> int:
     return 8
 
 
-def suggested_models(total_bytes: int | None = None) -> list[CuratedModel]:
-    """Hand-picked model suggestions for this machine's RAM tier."""
-    return list(CURATED_TIERS[ram_tier_gb(total_bytes)])
+def parse_catalog(text: str) -> dict[int, list[CuratedModel]]:
+    """Parse a marv-curator catalog into per-RAM-tier suggestions.
+
+    Mirrors the runtime's ``_marv_mlx_parse_catalog`` so both download menus show
+    the same entries: blank-line-separated blocks, ``<n> GB RAM`` tier headers,
+    and ``#``-commented entries that stay visible (the marker only highlights a
+    hand-pick). Blocks are id-first (``<id>`` then a tagline); the legacy
+    title-first and bare-id shapes are accepted too, and a `` & ``-joined id pair
+    (Ministral Instruct/Reasoning) is split.
+    """
+    tiers: dict[int, list[CuratedModel]] = {}
+    tier = 0
+    block: list[str] = []
+
+    def flush() -> None:
+        nonlocal block
+        if not block:
+            return
+        entry = _catalog_entry(block)
+        block = []
+        if entry is not None:
+            tiers.setdefault(tier, []).append(entry)
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush()
+            continue
+        if "GB RAM" in line:
+            flush()
+            digits = "".join(ch for ch in line if ch.isdigit())
+            tier = int(digits) if digits else 0
+            continue
+        if line.startswith("#"):
+            line = line[1:].strip()
+            if not line:
+                continue
+        block.append(line)
+    flush()
+    return tiers
+
+
+def _catalog_entry(block: list[str]) -> CuratedModel | None:
+    head = block[0]
+    second = block[1] if len(block) > 1 else ""
+    third = block[2] if len(block) > 2 else ""
+    # A legacy leading flag emoji carries no ASCII alphanumerics; peel it off.
+    if " " in head:
+        first, rest = head.split(" ", 1)
+        if not any(ch.isalnum() for ch in first):
+            head = rest.strip()
+    if not head:
+        return None
+    if "/" in head:
+        ids = _split_ids(head)
+        if not ids:
+            return None
+        # A second line with spaces but no comma is the tagline; otherwise it is
+        # a legacy tag token list and the third line is the tagline.
+        if second and " " in second and "," not in second:
+            tags, description = "", second
+        else:
+            tags, description = second, third
+        return CuratedModel(label=ids[0], ids=ids, tags=tags, description=description)
+    if second:
+        return CuratedModel(label=head, ids=_split_ids(second), tags=third)
+    return CuratedModel(label=head, ids=(head,))
+
+
+def _split_ids(value: str) -> tuple[str, ...]:
+    """Split a ``'a & b'`` id list into its parts (single ids pass through)."""
+    return tuple(part for part in (p.strip() for p in value.split(" & ")) if part)
+
+
+def load_catalog(path: Path | None = None) -> dict[int, list[CuratedModel]]:
+    """Read and parse a catalog file; empty when it is absent or unreadable."""
+    target = path or DEFAULT_CATALOG_PATH
+    try:
+        text = target.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return parse_catalog(text)
+
+
+#: Accepted by the startup refresh: long enough for a cold curl of marv-curator,
+#: short enough that a hung network cannot hold the TUI open.
+REFRESH_TIMEOUT_SECONDS = 30.0
+
+
+def refresh_catalog_argv(binary: str | None = None) -> list[str] | None:
+    """The command that refreshes the runtime's catalog cache, or None.
+
+    This is the runtime's ``curated`` verb: it re-fetches marv-curator and
+    rewrites ``~/.cache/marv/mlx/curated-llms.md`` before printing. ``marv``
+    reads that file, so running this at startup keeps the download picker from
+    showing a list that only the runtime's own TUI would have refreshed.
+    """
+    resolved = binary or shutil.which("marv-mlx")
+    return None if resolved is None else [resolved, "curated"]
+
+
+class CatalogRefresher:
+    """Refreshes the curated catalog once, in the background, per process.
+
+    Both the startup refresh and the first download-modal render can ask for a
+    refresh; it runs at most once and later callers :meth:`wait` for the same
+    attempt. Failures are remembered, not raised: the picker falls back to the
+    cached file and then the bundled list, so a missing runtime or offline
+    machine stays silent.
+    """
+
+    def __init__(self, binary: str | None = None) -> None:
+        self.binary = binary
+        self._lock = threading.Lock()
+        self._done = threading.Event()
+        self._started = False
+        self._ok: bool | None = None
+
+    @property
+    def finished(self) -> bool:
+        return self._done.is_set()
+
+    @property
+    def succeeded(self) -> bool | None:
+        """True/False once finished, None while pending or never started."""
+        return self._ok
+
+    def start(self) -> None:
+        """Kick off the refresh; a no-op after the first call."""
+        with self._lock:
+            if self._started:
+                return
+            self._started = True
+            argv = refresh_catalog_argv(self.binary)
+            if argv is None:
+                self._finish(False)
+                return
+            thread = threading.Thread(target=self._refresh, args=(argv,), daemon=True)
+            thread.start()
+
+    def wait(self, timeout: float | None = REFRESH_TIMEOUT_SECONDS) -> bool:
+        """Refresh (starting it if needed) and block until it is done."""
+        self.start()
+        self._done.wait(timeout)
+        return bool(self._ok)
+
+    def _refresh(self, argv: list[str]) -> None:
+        try:
+            result = subprocess.run(
+                argv,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=REFRESH_TIMEOUT_SECONDS,
+            )
+            self._finish(result.returncode == 0)
+        except (OSError, subprocess.SubprocessError):
+            self._finish(False)
+
+    def _finish(self, ok: bool) -> None:
+        self._ok = ok
+        self._done.set()
+
+
+#: Process-wide refresher: one refresh per marv run, shared by the startup kick
+#: and the first download-modal render.
+_CATALOG_REFRESHER = CatalogRefresher()
+
+
+def start_catalog_refresh(binary: str | None = None) -> None:
+    """Begin a background refresh of the runtime's curated catalog."""
+    _CATALOG_REFRESHER.start()
+
+
+def wait_for_catalog_refresh(timeout: float | None = REFRESH_TIMEOUT_SECONDS) -> bool:
+    """Refresh (if not already) and wait for it, for a render that needs it."""
+    return _CATALOG_REFRESHER.wait(timeout)
+
+
+def suggested_models(
+    total_bytes: int | None = None, *, catalog_path: Path | None = None
+) -> list[CuratedModel]:
+    """Hand-picked model suggestions for this machine's RAM tier.
+
+    Prefers the runtime's live catalog (the same list its own download menu
+    shows), then falls back to the bundled :data:`CURATED_TIERS` when that file
+    is missing or has no entry for this tier.
+    """
+    tier = ram_tier_gb(total_bytes)
+    live = load_catalog(catalog_path).get(tier) or []
+    if live:
+        return live
+    return list(CURATED_TIERS[tier])
 
 
 def installed_ram_bytes() -> int:

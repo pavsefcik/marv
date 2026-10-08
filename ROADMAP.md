@@ -4,7 +4,11 @@ Candidate work, roughly ordered by value. Sizes are rough: **S** < 1h,
 **M** ~ half a day, **L** > a day. Nothing here is committed scope — it is a
 menu, not a promise.
 
-Current state: `v0.106.0`. See [`CHANGELOG.md`](CHANGELOG.md) for what shipped.
+Current state: `v0.109.0` (plus uncommitted P0 latency work pending release).
+`VERSION` is authoritative — this line is a snapshot. See
+[`CHANGELOG.md`](CHANGELOG.md) for what shipped, and
+[`docs/coworking-plan.md`](docs/coworking-plan.md) for the local-LLM
+coworking direction (its P0 latency work is shipped; P1–P5 remain).
 
 ---
 
@@ -35,7 +39,7 @@ self-diagnosing instead of surfacing as a cryptic TUI error.
 Sessions are flat JSONL files with no title, so `/load` and `marv sessions` are a
 list of timestamps. Auto-title each session from its first user message (or a
 cheap summary) and show it in the picker; add search/filter once there are dozens.
-- Where: `src/marv/runtime/session.py` (`SessionMetadata`), `src/marv/tui/session_modal.py`,
+- Where: `src/marv/runtime/session.py` (`SessionMetadata`), `src/marv/tui/session_panels.py`,
   `src/marv/cli/sessions.py`
 - Effort: M · Risk: low
 
@@ -58,7 +62,7 @@ or archiving.
 
 ### In-app model management
 Downloading a missing model in the TUI and in headless runs now works
-(`src/marv/llm/model_download.py`, `src/marv/tui/download_modal.py`), with
+(`src/marv/llm/model_download.py`, `src/marv/tui/download_panel.py`), with
 curated suggestions per RAM tier. Still missing: a `marv models` command
 (list / download / delete / show size) so marv is self-sufficient outside the
 TUI, and delete/size accounting.
@@ -120,7 +124,7 @@ buffer in `$EDITOR` and paste it back.
 We ship auto-apply of the last-used model (Option B). Add a config flag to instead
 open the picker pre-selected (Option A: press Enter to confirm), for people who
 want the explicit "this is what I'm about to load" moment.
-- Where: `src/marv/tui/app.py`, `src/marv/tui/model_modal.py`
+- Where: `src/marv/tui/app.py`, `src/marv/tui/model_panel.py`
 - Effort: S · Risk: low
 
 ### Theme config
@@ -172,7 +176,7 @@ first extension" tutorial. The examples are good reference material.
 ## Recently completed (do not re-suggest)
 
 - Opt-in tool approval (`approval_mode`, `AGENT_APPROVAL`, `--approval`) with a
-  TUI confirm modal and headless deny.
+  TUI confirm panel and headless deny.
 - `marv --version`; `VERSION` as the single version source.
 - Release workflow (VERSION/tag check, build, smoke-test, attach assets) and a
   build+smoke-test CI job.

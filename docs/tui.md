@@ -12,7 +12,13 @@ The TUI is split into a few clear roles:
 - chat/session rendering
 - extension UI hosting
 
-The widget and modal files sit underneath that split as the leaf UI components.
+The widget and panel files sit underneath that split as the leaf UI components.
+
+Menus are inline: the session picker, model/thinking menu, context viewer,
+download picker, and extension prompt/confirm/select/presented panels render at
+the input line, between the two rules around the prompt, and grow upward as
+needed. They never float over the chat. Picking an item applies it and drops
+straight back into input mode; `Esc` cancels.
 
 ## Features
 
@@ -80,7 +86,7 @@ handler, so an unsolicited reply would be reissued as key input.
 - `/fork` — fork from a message
 - `/tree` — move session leaf (tree view; linear list when no branches)
 - `/context` — show context files
-- `/model` — open model/thinking modal
+- `/model` — open the model/thinking menu
 - `/model <name>` — switch model directly
 - `/help` — quick help
 - `/quit` — exit
@@ -100,7 +106,7 @@ When a TUI `AgentApp` is active, extensions get a bound `ctx.ui` surface. That s
 
 - notifications rendered into the chat stream
 - status text in the status bar
-- prompt / confirm / select modals
+- prompt / confirm / select menus at the input line
 - temporary presented custom views with view-defined controls
 - persistent widget slots:
   - `footer`
@@ -142,4 +148,5 @@ It should not own:
 
 - `Ctrl+C` — quit
 - `Ctrl+L` — clear
+- `Ctrl+O` — copy the most recent assistant reply to the clipboard (OSC 52)
 - `Esc` — cancel or refocus input

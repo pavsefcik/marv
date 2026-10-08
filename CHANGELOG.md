@@ -5,7 +5,63 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [0.110.0] - 2026-10-08
+
+Docs: audit pass against the working tree — corrected the prefill-figure claim
+(prompt-only; `schema_tokens` not yet threaded), documented the `marv bench`
+metrics, the modal→panel rename caveats, the marv-mlx catalog format, and the
+installer-vs-pi-extension divergence; added missing CHANGELOG link refs.
+
+### Added
+
+- **Turn-latency measurement: TTFT is now a first-class number.** A local model
+  is judged on how long until the first token, and whether that gets worse as
+  the conversation grows — the signature of re-prefilling the whole history
+  every turn. The OpenAI-compatible transport now times each turn from request
+  to first decoded token and reports it (with the prompt and tool-schema token
+  cost behind it) on the existing `assistant_metadata` channel, so no new
+  stream protocol was needed. `Agent` accumulates one sample per streamed turn,
+  and `marv bench` runs a scripted conversation through the real agent loop and
+  reports TTFT p50/p90, median prefill cost, and the change in TTFT per turn
+  (`--json` for machine consumption). A turn that errors before streaming is
+  excluded rather than recorded as an infinite TTFT.- **TTFT and prefill cost in the TUI status bar.** After each turn the status
+  line shows `ttft <ms>/<prefill>t` next to the existing token rate, so a
+  latency regression is visible where it happens.
+
+### Fixed
+
+- **Large-prompt turns no longer die as `[LLM stream error]` from a prefill
+  timeout.** The transport's 120 s read timeout was shorter than a silent MLX
+  prefill: a ~32k-token prompt on a 9B model takes ~2 minutes before the first
+  token, and `mlx_vlm` sends nothing on the stream while it works, so the client
+  killed the socket mid-prefill — then retried, discarding and re-running the
+  entire prefill up to three more times before failing. Local-server backends
+  (`marv-mlx`, `apple-fm`) now wait indefinitely by default, and a read timeout
+  that fires *before* the first token is surfaced immediately instead of being
+  retried (a retry only restarts the prefill). `AGENT_LLM_READ_TIMEOUT` sets a
+  finite cap for any provider (`off`/`0` disables). A timeout after tokens have
+  started streaming is still retried as a normal transport failure.
+- **The download picker showed a stale curated list.** It rendered a hardcoded
+  table that had drifted from `marv-curator`, so it could offer models the
+  runtime no longer recommends (and the old `// t3, vision` tag column). It now
+  reads the same catalog the `marv-mlx` runtime uses
+  (`~/.cache/marv/mlx/curated-llms.md`), showing each model id with its tagline,
+  and falls back to a bundled list (refreshed to match `marv-curator`) when that
+  file is absent. The list is also taller so entries are not clipped.
+
 ### Changed
+
+- **Menus replaced modal windows in the TUI.** The session picker (load/fork/
+  tree), model/thinking menu, context viewer, download picker, and extension
+  prompt/confirm/select/presented panels now render inline at the input line,
+  between the two rules around the prompt, instead of floating windows over the
+  chat. Picking an item applies it and drops straight back into input mode;
+  `Esc` cancels (in the thinking submenu it steps back a level first, and during
+  a download it cancels the download). The model menu now applies each choice
+  immediately — model and thinking level are picked one at a time. Internal TUI
+  modules were renamed to match: `session_modal.py` → `session_panels.py`,
+  `model_modal.py` → `model_panel.py`, `context_modal.py` → `context_panel.py`,
+  `download_modal.py` → `download_panel.py`, with a shared `panel.py` base.
 
 - **Aligned with the `marv-mlx` runtime.** Naming/contract alignment with the
   renamed runtime (was `ymlx`) — the MARV family is now harness `marv` + runtime
@@ -198,8 +254,22 @@ First tagged release.
 ### Notes
 
 - Local-first backends only: `marv-mlx` (default) and `apple-fm`.
+- **Known gap in the latency figures.** The transport reports both
+  `prompt_tokens` and `schema_tokens`, but `Agent` currently threads only the
+  prompt count into the latency tracker (`_apply_provider_ttft` refines
+  `ttft_ms` only, and `note_request` passes `prompt_tokens` only), so the TUI
+  `ttft <ms>/<N>t` figure and the bench `prefill (median)` line are
+  **prompt-only** — tool-schema tokens are not yet included. `marv bench` also
+  reports TTFT and prefill, not decode tok/s. Both are tracked in
+  [`docs/coworking-plan.md`](docs/coworking-plan.md).
 
+[0.110.0]: https://github.com/pavsefcik/marv/releases/tag/v0.110.0
+[0.109.0]: https://github.com/pavsefcik/marv/releases/tag/v0.109.0
+[0.108.0]: https://github.com/pavsefcik/marv/releases/tag/v0.108.0
+[0.107.0]: https://github.com/pavsefcik/marv/releases/tag/v0.107.0
 [0.106.0]: https://github.com/pavsefcik/marv/releases/tag/v0.106.0
+[0.105.1]: https://github.com/pavsefcik/marv/releases/tag/v0.105.1
+[0.105.0]: https://github.com/pavsefcik/marv/releases/tag/v0.105.0
 [0.104.0]: https://github.com/pavsefcik/marv/releases/tag/v0.104.0
 [0.103.0]: https://github.com/pavsefcik/marv/releases/tag/v0.103.0
 [0.102.0]: https://github.com/pavsefcik/marv/releases/tag/v0.102.0

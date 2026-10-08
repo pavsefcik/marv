@@ -205,3 +205,77 @@ async def test_agent_surfaces_stream_error_as_system_message(temp_dir):
 
     persisted = [m for m in agent.session.messages if m.role.value == "system"]
     assert any("LLM stream error" in m.content for m in persisted)
+
+
+@pytest.mark.asyncio
+async def test_agent_records_a_latency_sample_per_streamed_turn(temp_dir):
+    """TTFT must be observable from the runtime, with its prompt cost."""
+
+    agent, _ = build_agent(temp_dir, [make_text_events("Hello")])
+
+    async for _ in agent.run("Hi"):
+        pass
+
+    metrics = agent.latency.metrics
+    assert metrics.turns == 1
+    assert metrics.ttft_ms >= 0.0
+    # The prompt (system prompt + user turn) is non-trivial, so prefill is
+    # attributed to it rather than reading as zero.
+    assert metrics.prompt_tokens_per_turn > 0
+
+
+@pytest.mark.asyncio
+async def test_agent_prefers_a_provider_reported_ttft(temp_dir):
+    """A provider timing the request itself wins over the loop's wall clock."""
+
+    script = [
+        AssistantMetadataEvent(
+            metadata={
+                "latency": {
+                    "ttft_ms": 12.5,
+                    "prompt_tokens": 40,
+                    "schema_tokens": 0,
+                    "streamed": True,
+                }
+            }
+        ),
+        *make_text_events("Hello"),
+    ]
+    agent, _ = build_agent(temp_dir, [script])
+
+    async for _ in agent.run("Hi"):
+        pass
+
+    assert agent.latency.metrics.ttft_ms == 12.5
+    assert agent.latency.metrics.turns == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_does_not_record_a_turn_that_never_streams(temp_dir):
+    """An errored turn must not be reported as a latency sample."""
+
+    agent, _ = build_agent(temp_dir, [make_error_events("boom")])
+
+    async for _ in agent.run("Hi"):
+        pass
+
+    assert agent.latency.metrics.turns == 0
+    assert agent.latency.last_sample is None
+
+
+@pytest.mark.asyncio
+async def test_agent_latency_resets_between_runs(temp_dir):
+    """Each run reports its own latency profile."""
+
+    agent, _ = build_agent(
+        temp_dir,
+        [make_text_events("One"), make_text_events("Two"), make_text_events("Three")],
+    )
+
+    async for _ in agent.run("first"):
+        pass
+    assert agent.latency.metrics.turns == 1
+
+    async for _ in agent.run("second"):
+        pass
+    assert agent.latency.metrics.turns == 1

@@ -11,8 +11,8 @@ from marv.runtime.message import Role
 from marv.runtime.session import MessageEntry, Session
 from marv.runtime.settings import ThinkingLevel
 from marv.tui.chat import ChatView
-from marv.tui.context_modal import ContextModal
-from marv.tui.session_modal import SessionForkModal, SessionLoadModal, SessionTreeModal
+from marv.tui.context_panel import ContextPanel
+from marv.tui.session_panels import SessionForkPanel, SessionLoadPanel, SessionTreePanel
 from marv.tui.status import StatusBar
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class TUIController:
         await self.load_session(session, note=f"loaded session {session.metadata.id}")
 
     def queue_load_session_path(self, path: Path) -> None:
-        """Queue a session-load task for modal callbacks."""
+        """Queue a session-load task for menu callbacks."""
         asyncio.create_task(self.load_session_path(path))
 
     def resolve_message_id(self, session: Session, spec: str) -> str | None:
@@ -88,7 +88,7 @@ class TUIController:
         await self.load_session(new_session, note=note)
 
     def queue_fork_from_message(self, message_id: str) -> None:
-        """Queue a fork task for modal callbacks."""
+        """Queue a fork task for menu callbacks."""
         asyncio.create_task(self.fork_from_message(message_id))
 
     async def set_leaf(self, message_id: str) -> None:
@@ -106,7 +106,7 @@ class TUIController:
         )
 
     def queue_set_leaf(self, message_id: str) -> None:
-        """Queue a leaf-switch task for modal callbacks."""
+        """Queue a leaf-switch task for menu callbacks."""
         asyncio.create_task(self.set_leaf(message_id))
 
     def resolve_entry_id(self, session: Session, spec: str) -> str | None:
@@ -145,26 +145,13 @@ class TUIController:
         if prompt.lower() == "/new":
             await self.action_new()
             return True
-        if prompt.lower() == "/load":
-            self._app.push_screen(
-                SessionLoadModal(
-                    self._app.agent.session_dir,
-                    on_load=self.queue_load_session_path,
-                )
-            )
+        if prompt.lower() in {"/load", "/resume"}:
+            self._open_session_load_panel()
             return True
         if prompt.lower().startswith("/load "):
             path_text = prompt[6:].strip()
             if path_text:
                 await self.load_session_path(Path(path_text).expanduser())
-            return True
-        if prompt.lower() == "/resume":
-            self._app.push_screen(
-                SessionLoadModal(
-                    self._app.agent.session_dir,
-                    on_load=self.queue_load_session_path,
-                )
-            )
             return True
         if prompt.lower().startswith("/resume "):
             path_text = prompt[8:].strip()
@@ -172,11 +159,9 @@ class TUIController:
                 await self.load_session_path(Path(path_text).expanduser())
             return True
         if prompt.lower() == "/fork":
-            self._app.push_screen(
-                SessionForkModal(
-                    self._app.agent.session,
-                    on_fork=self.queue_fork_from_message,
-                )
+            self._app.open_panel(
+                SessionForkPanel(self._app.agent.session),
+                callback=self._on_fork_picked,
             )
             return True
         if prompt.lower().startswith("/fork "):
@@ -188,11 +173,9 @@ class TUIController:
             await self.fork_from_message(message_id)
             return True
         if prompt.lower() == "/tree":
-            self._app.push_screen(
-                SessionTreeModal(
-                    self._app.agent.session,
-                    on_select=self.queue_set_leaf,
-                )
+            self._app.open_panel(
+                SessionTreePanel(self._app.agent.session),
+                callback=self._on_leaf_picked,
             )
             return True
         if prompt.lower().startswith("/tree "):
@@ -213,10 +196,10 @@ class TUIController:
             )
             return True
         if prompt.lower() == "/context":
-            self._app.push_screen(ContextModal(self._app.agent))
+            self._app.open_panel(ContextPanel(self._app.agent))
             return True
         if prompt.lower() == "/model":
-            await self._app._open_model_modal()
+            await self._app._open_model_panel()
             return True
         if prompt.lower().startswith("/model "):
             model_name = prompt[7:].strip()
@@ -224,6 +207,28 @@ class TUIController:
                 self.switch_model(model_name)
             return True
         return False
+
+    def _open_session_load_panel(self) -> None:
+        """Open the session load menu in the input dock."""
+        self._app.open_panel(
+            SessionLoadPanel(self._app.agent.session_dir),
+            callback=self._on_session_picked,
+        )
+
+    def _on_session_picked(self, path: str | None) -> None:
+        """Load the session chosen in the load menu."""
+        if path:
+            self.queue_load_session_path(Path(path))
+
+    def _on_fork_picked(self, message_id: str | None) -> None:
+        """Fork from the message chosen in the fork menu."""
+        if message_id:
+            self.queue_fork_from_message(message_id)
+
+    def _on_leaf_picked(self, entry_id: str | None) -> None:
+        """Move the leaf to the entry chosen in the tree menu."""
+        if entry_id:
+            self.queue_set_leaf(entry_id)
 
     def action_clear(self) -> None:
         """Clear chat history."""
@@ -293,12 +298,12 @@ class TUIController:
         chat.add_system_message(f"thinking level: {level.value}")
         self.remember_selection()
 
-    def on_model_modal_change(
+    def on_model_choice(
         self,
         model: str | None,
         thinking: ThinkingLevel | None,
     ) -> None:
-        """Callback when model modal changes settings."""
+        """Apply a choice made in the model menu."""
         if model:
             self.switch_model(model)
 

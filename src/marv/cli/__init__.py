@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -252,8 +253,15 @@ def _stop_provider_server(llm_provider: LLMProvider) -> None:
 
 def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
     """Run the interactive TUI."""
+    from marv.llm.model_download import start_catalog_refresh
     from marv.llm.server_lifecycle import install_handlers
     from marv.tui.app import AgentApp
+
+    # Refresh the marv-curator catalog in the background. The download picker
+    # reads the runtime's cached copy; the runtime only rewrites it from its own
+    # TUI, so a marv-only user would otherwise see a stale list. Fire-and-forget:
+    # the download panel waits for this same attempt when it opens.
+    start_catalog_refresh()
 
     install_handlers()
     app = AgentApp(config, provider=llm_provider, session=session)
@@ -267,6 +275,57 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     finally:
         # Unload the model even if the TUI crashed before its own cleanup ran.
         _stop_provider_server(llm_provider)
+
+
+@app.command()
+def bench(
+    prompt: Annotated[
+        list[str] | None,
+        typer.Option("--prompt", help="Prompt to include (repeatable); overrides defaults"),
+    ] = None,
+    turns: Annotated[
+        int | None,
+        typer.Option("-n", "--turns", help="Number of default prompts to run"),
+    ] = None,
+    no_warmup: Annotated[
+        bool,
+        typer.Option("--no-warmup", help="Skip the warm-up turn (measures cold start)"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON"),
+    ] = False,
+    model: Annotated[str | None, typer.Option("-m", "--model", help="Model to use")] = None,
+    provider: Annotated[str | None, typer.Option("-p", "--provider", help="Provider name")] = None,
+) -> None:
+    """Measure time-to-first-token for the active model.
+
+    Reports TTFT p50/p90 and how much it grows per turn. A flat growth number
+    means the prompt is not being re-prefilled in full each turn; a climbing
+    one means it is, and that is the latency bug to fix first.
+    """
+    from .bench import DEFAULT_PROMPTS, bench_command
+
+    base = Config.load()
+    config = replace(base, provider=provider or base.provider, model=model or base.model)
+
+    selected = list(prompt) if prompt else list(DEFAULT_PROMPTS)
+    if turns is not None:
+        if turns < 1:
+            typer.echo("Error: --turns must be at least 1", err=True)
+            raise typer.Exit(1)
+        selected = selected[:turns]
+
+    from marv.llm.server_lifecycle import install_handlers
+
+    install_handlers()
+    bench_command(
+        config=config,
+        create_llm_provider=_create_llm_provider,
+        prompts=selected,
+        warmup=not no_warmup,
+        as_json=json_output,
+    )
 
 
 @app.command()

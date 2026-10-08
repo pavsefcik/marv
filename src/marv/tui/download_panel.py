@@ -1,4 +1,4 @@
-"""Model download modal — pick a model and watch it download.
+"""Model download menu — pick a model and watch it download at the input line.
 
 Shown when marv has no usable model (nothing downloaded in the HF hub) or when
 the remembered/selected model is missing. It offers the curated suggestions for
@@ -10,37 +10,35 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from textual.binding import Binding
-from textual.containers import Container, Horizontal, VerticalScroll
-from textual.screen import ModalScreen
-from textual.widgets import Button, Input, OptionList, ProgressBar, Static
+from rich.text import Text
+from textual.widgets import Input, OptionList, ProgressBar, Static
 from textual.widgets.option_list import Option
 
 from marv.llm.model_download import (
     DownloadError,
     DownloadProgress,
     suggested_models,
+    wait_for_catalog_refresh,
 )
+from marv.tui.panel import DockPanel
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from textual.app import ComposeResult
 
-    from marv.llm.model_download import DownloadHandle
+    from marv.llm.model_download import CuratedModel, DownloadHandle
 
 #: Sentinel option id for "download a custom Hugging Face id".
 CUSTOM_OPTION_ID = "__custom__"
 
 
-class DownloadModal(ModalScreen[str | None]):
+class DownloadPanel(DockPanel[str]):
     """Pick a model to download, then watch it download with live progress.
 
     Dismisses with the model id once it is present in the local hub, or with
     ``None`` if the user cancelled.
     """
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(
         self,
@@ -59,35 +57,51 @@ class DownloadModal(ModalScreen[str | None]):
         self._remembered = remembered
         self._total_ram_bytes = total_ram_bytes
         self._poll_interval = poll_interval
-        self._suggestions = suggested_models(total_ram_bytes)
+        self._suggestions = self._load_suggestions(total_ram_bytes)
         self._download: DownloadHandle | None = None
         self._timer: Any = None
+        self._stage = "pick"
+
+    @staticmethod
+    def _load_suggestions(total_ram_bytes: int | None) -> list[CuratedModel]:
+        """Suggestions for this machine, from the freshest catalog we can get.
+
+        The startup refresh runs in the background; if it is still in flight,
+        wait for it (bounded) so the first picker of a session shows the current
+        list instead of the pre-refresh cache.
+        """
+        wait_for_catalog_refresh()
+        return suggested_models(total_ram_bytes)
 
     # ---- compose --------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        with Container(id="download-modal"):
-            yield Static("Download a model", id="download-title")
-            with VerticalScroll(id="download-content"):
-                yield Static(self._intro(), id="download-intro")
-                yield Static("[bold cyan]SUGGESTED FOR THIS MAC[/]", classes="section-header")
-                yield OptionList(*self._options(), id="download-options")
-                yield Static("[bold cyan]CUSTOM HUGGING FACE ID[/]", classes="section-header")
-                yield Input(
-                    placeholder="e.g. mlx-community/Qwen3.5-4B-MLX-4bit",
-                    id="download-custom",
-                )
-                yield Static("", id="download-progress", classes="hidden")
-                yield ProgressBar(total=None, id="download-bar", classes="hidden")
-            with Horizontal(id="download-actions"):
-                yield Button("Download", id="download-start-btn", variant="primary")
-                yield Button("Cancel", id="download-cancel-btn")
+        yield Static(self._intro(), id="download-intro", classes="panel-subtitle")
+        yield OptionList(*self._options(), id="download-options", classes="panel-menu")
+        yield Input(
+            placeholder="e.g. mlx-community/Qwen3.5-4B-MLX-4bit",
+            id="download-custom",
+            classes="hidden",
+        )
+        yield Static("", id="download-progress", classes="panel-subtitle hidden")
+        yield ProgressBar(total=None, id="download-bar", classes="hidden")
+        yield Static("", id="download-hint", classes="panel-hint")
+
+    def on_mount(self) -> None:
+        self._show_hint("enter to download · type a custom id below · esc to close")
+        self.focus_target()
+
+    def focus_target(self) -> None:
+        if self._stage == "pick":
+            self.query_one("#download-options", OptionList).focus()
+        else:
+            self.focus()
 
     def _intro(self) -> str:
         lines: list[str] = []
         if self._remembered and self._preselected:
             lines.append(
-                f"[yellow]{self._preselected}[/] is not downloaded yet. "
+                f"{self._preselected} is not downloaded yet. "
                 "Pick a model below to fetch it, or choose another."
             )
         else:
@@ -102,7 +116,7 @@ class DownloadModal(ModalScreen[str | None]):
         if self._preselected and self._preselected not in self._installed:
             options.append(
                 Option(
-                    f"{self._preselected}  // remembered, not downloaded",
+                    Text(f"{self._preselected}  // remembered, not downloaded"),
                     id=self._preselected,
                 )
             )
@@ -112,75 +126,82 @@ class DownloadModal(ModalScreen[str | None]):
             if suggestion.model_id in seen:
                 continue
             seen.add(suggestion.model_id)
-            options.append(
-                Option(
-                    f"{suggestion.label} · {suggestion.model_id}  // {suggestion.tags}",
-                    id=suggestion.model_id,
-                )
-            )
+            options.append(Option(self._suggestion_text(suggestion), id=suggestion.model_id))
 
-        options.append(Option("Custom Hugging Face id…", id=CUSTOM_OPTION_ID))
+        options.append(Option(Text("Custom Hugging Face id…"), id=CUSTOM_OPTION_ID))
         return options
 
-    async def on_mount(self) -> None:
-        """Focus the option list."""
-        self.query_one("#download-options", OptionList).focus()
+    @staticmethod
+    def _suggestion_text(suggestion: CuratedModel) -> Text:
+        """Two-line entry: the model id, then its tagline dimmed beneath it."""
+        text = Text(suggestion.model_id)
+        if suggestion.description:
+            text.append("\n    ")
+            text.append(suggestion.description, style="dim")
+        return text
+
+    def _show_hint(self, text: str) -> None:
+        self.query_one("#download-hint", Static).update(Text(text))
 
     # ---- choosing -------------------------------------------------------
 
-    def _selected_model(self) -> str | None:
-        custom = self.query_one("#download-custom", Input).value.strip()
-        options = self.query_one("#download-options", OptionList)
-        highlighted = options.highlighted
-        option_id: str | None = None
-        if highlighted is not None:
-            option = options.get_option_at_index(highlighted)
-            option_id = option.id if option is not None else None
-
-        if option_id == CUSTOM_OPTION_ID:
-            return custom or None
-        # A typed custom id wins only when it is the focused/active entry.
-        if custom and (option_id is None or self.query_one("#download-custom", Input).has_focus):
-            return custom
-        return option_id or custom or None
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Start the highlighted download when a suggestion is clicked."""
-        event.stop()
-        if event.option.id == CUSTOM_OPTION_ID:
-            self.query_one("#download-custom", Input).focus()
-            return
-        if event.option.id:
-            self._begin(event.option.id)
-
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle the Download and Cancel buttons."""
-        if event.button.id == "download-start-btn":
-            model = self._selected_model()
-            if model:
-                self._begin(model)
-            else:
-                self.query_one("#download-custom", Input).focus()
-        elif event.button.id == "download-cancel-btn":
-            self.action_cancel()
-
     def action_cancel(self) -> None:
-        """Cancel the download (if running) and close the modal."""
+        """Escape: cancel a running download, step back, or close."""
         if self._download is not None and not self._download.finished:
             self._download.cancel()
-        self._dismiss(None)
+            self.dismiss(None)
+            return
+        if self._stage == "custom":
+            self._show_pick()
+            return
+        self.dismiss(None)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Enter or a click starts the highlighted download."""
+        event.stop()
+        if event.option.id == CUSTOM_OPTION_ID:
+            self._show_custom()
+            return
+        if event.option.id:
+            self._begin(str(event.option.id))
+
+    def _show_pick(self) -> None:
+        self._stage = "pick"
+        self.query_one("#download-options", OptionList).display = True
+        self.query_one("#download-custom", Input).display = False
+        self._show_hint("enter to download · type a custom id below · esc to close")
+        self.focus_target()
+
+    def _show_custom(self) -> None:
+        self._stage = "custom"
+        self.query_one("#download-options", OptionList).display = False
+        custom = self.query_one("#download-custom", Input)
+        custom.display = True
+        custom.value = ""
+        self._show_hint("enter to download this id · esc back")
+        custom.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter in the custom field starts the download for that id."""
+        model_id = event.value.strip()
+        if model_id:
+            self._begin(model_id)
+        else:
+            self._show_pick()
 
     # ---- downloading ----------------------------------------------------
 
     def _begin(self, model_id: str) -> None:
+        self._stage = "progress"
         self._download = self._create_download(model_id)
-        self.query_one("#download-options", OptionList).disabled = True
-        self.query_one("#download-custom", Input).disabled = True
-        self.query_one("#download-start-btn", Button).disabled = True
+        self.query_one("#download-options", OptionList).display = False
+        self.query_one("#download-custom", Input).display = False
         self.query_one("#download-bar", ProgressBar).remove_class("hidden")
         progress = self.query_one("#download-progress", Static)
         progress.remove_class("hidden")
-        progress.update(f"Downloading [bold]{model_id}[/]…")
+        progress.update(Text(f"Downloading {model_id}…"))
+        self._show_hint("esc cancels the download")
+        self.focus()
         self._download.start()
         self._timer = self.set_interval(self._poll_interval, self._poll_download)
 
@@ -201,7 +222,9 @@ class DownloadModal(ModalScreen[str | None]):
         bar = self.query_one("#download-bar", ProgressBar)
         if progress.total_bytes > 0:
             bar.update(total=float(progress.total_bytes), progress=float(progress.downloaded_bytes))
-        self.query_one("#download-progress", Static).update(f"Downloading… {progress.label()}")
+        self.query_one("#download-progress", Static).update(
+            Text(f"Downloading… {progress.label()}")
+        )
 
     def _finish(self) -> None:
         download = self._download
@@ -209,30 +232,27 @@ class DownloadModal(ModalScreen[str | None]):
             return
         self._stop_timer()
         if download.state == "done":
-            self._dismiss(download.model_id)
+            self.dismiss(download.model_id)
             return
         if download.state == "cancelled":
-            self._dismiss(None)
+            self.dismiss(None)
             return
         self._fail(download.error or "download failed")
 
     def _fail(self, message: str) -> None:
         self._stop_timer()
         self._download = None
-        self.query_one("#download-options", OptionList).disabled = False
-        self.query_one("#download-custom", Input).disabled = False
-        self.query_one("#download-start-btn", Button).disabled = False
         self.query_one("#download-bar", ProgressBar).add_class("hidden")
         progress = self.query_one("#download-progress", Static)
         progress.remove_class("hidden")
-        progress.update(f"[red]Download failed:[/] {message}\nPick another model, or try again.")
+        progress.update(Text(f"Download failed: {message}\nPick another model, or try again."))
+        self._show_pick()
 
     def _stop_timer(self) -> None:
         if self._timer is not None:
             self._timer.stop()
             self._timer = None
 
-    def _dismiss(self, result: str | None) -> None:
+    def dismiss(self, result: str | None) -> None:
         self._stop_timer()
-        if self.app.screen is self:
-            self.dismiss(result)
+        super().dismiss(result)

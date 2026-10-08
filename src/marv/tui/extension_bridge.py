@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from textual.widgets import Static
 
 from marv.extensions.api import ExtensionUIBindings
 from marv.tui.chat import ChatView
-from marv.tui.extension_ui import ConfirmModal, PresentedViewModal, PromptModal, SelectModal
+from marv.tui.extension_ui import ConfirmPanel, PresentedViewPanel, PromptPanel, SelectPanel
 from marv.tui.status import StatusBar
 
 if TYPE_CHECKING:
@@ -59,25 +59,20 @@ class TUIExtensionBridge:
 
     async def input(self, prompt: str, default: str | None = None) -> str | None:
         """Prompt for freeform text from the TUI."""
-        return cast(
-            "str | None",
-            await self._app.push_extension_screen(PromptModal(prompt, default)),
-        )
+        return await self._app.await_panel(PromptPanel(prompt, default))
 
     async def confirm(self, prompt: str) -> bool:
-        """Prompt for confirmation in the TUI."""
-        return bool(await self._app.push_extension_screen(ConfirmModal(prompt)))
+        """Prompt for confirmation in the TUI; esc counts as "no"."""
+        result = await self._app.await_panel(ConfirmPanel(prompt))
+        return bool(result)
 
     async def select(self, prompt: str, options: list[str]) -> str | None:
         """Prompt to select from a list in the TUI."""
-        return cast(
-            "str | None",
-            await self._app.push_extension_screen(SelectModal(prompt, options)),
-        )
+        return await self._app.await_panel(SelectPanel(prompt, options))
 
     async def present(self, view: PresentedView[object]) -> object | None:
         """Present a temporary custom extension view."""
-        return await self._app.push_extension_screen(PresentedViewModal(view))
+        return await self._app.await_panel(PresentedViewPanel(view))
 
     def set_widget(self, slot: str, view: WidgetView | None) -> None:
         """Set or clear a persistent extension widget."""

@@ -46,7 +46,7 @@ how to launch their server and how to tell it is ready.
 - **Model downloads** — `src/marv/llm/model_download.py` fetches a missing model
   into the hub (running `huggingface_hub.snapshot_download` in the `mlx-vlm`
   interpreter, since marv itself has no HF dependency) and streams progress
-  events back; `src/marv/tui/download_modal.py` renders them. The TUI asks before
+  events back; `src/marv/tui/download_panel.py` renders them. The TUI asks before
   downloading a missing remembered model, and `/model <id>` downloads before
   switching. Curated per-RAM-tier suggestions ship in `model_download.py`.
 - **Thinking** — `enable_thinking` is sent for template families (Qwen/Gemma), `[THINK]`
@@ -74,6 +74,19 @@ how to launch their server and how to tell it is ready.
   cannot be intercepted. A server marv attached to (rather than launched) is found
   via `lsof` on the port and stopped too.
 
+### Timeouts
+
+- The generic OpenAI-compatible transport uses a 120 s read timeout: cloud
+  endpoints keep an SSE connection warm, so silence is a real failure.
+- Local-server backends set no read timeout (`DEFAULT_LOCAL_READ_TIMEOUT`). A
+  large prompt takes minutes of silent prefill in `mlx_vlm` before the first
+  token, and killing it there is wrong. `AGENT_LLM_READ_TIMEOUT` overrides the
+  read timeout for any provider (`off`/`0` disables; integer seconds otherwise).
+- A `httpx.ReadTimeout` **before the first token** is wrapped in
+  `PrefillTimeoutError`, which is explicitly non-retriable. A timeout *after*
+  tokens arrive is a real transport drop and is retried as before. The connect
+  timeout (10 s) is unaffected.
+
 ### OpenAI-compatible
 
 - Implementation: `src/marv/llm/openai_compat.py`.
@@ -99,3 +112,38 @@ The stream yields structured events:
 These events are consumed by the agent loop and TUI to render incremental updates.
 The OpenAI-compatible transport parses `reasoning_content`/`reasoning` deltas into the
 thinking events, so MLX reasoning shows up in the TUI automatically.
+
+## Turn latency (TTFT)
+
+Time-to-first-token is measured, not estimated, because for a local model it is
+the difference between a responsive partner and an interruption. The
+OpenAI-compatible transport times each turn from just before the request is
+handed to the transport to the first decoded token (text or thinking), and
+publishes the result as `assistant_metadata`:
+
+```json
+{"latency": {"ttft_ms": 812.4, "prompt_tokens": 3100, "schema_tokens": 640,
+             "streamed": true, "token_events": 214}}
+```
+
+Design notes:
+
+- **Emitted on the existing channel.** `assistant_metadata` was already a
+  provider→runtime path, so latency needed no new stream event. Nested payloads
+  are merged, so latency and provider-specific artifacts can coexist.
+- **Prompt cost travels with the timing.** TTFT alone cannot distinguish "the
+  model is slow" from "the prompt grew"; `prompt_tokens` and `schema_tokens`
+  make the prefill cost attributable, and are kept separate because tool
+  schemas are avoidable cost on a turn that needs no tools. **Known gap:**
+  `Agent` currently forwards only `prompt_tokens` into the tracker, so the TUI
+  and `marv bench` prefill figures are prompt-only; the transport's
+  `schema_tokens` is not yet rolled up.
+- **A turn that never streams reports `streamed: false`.** It is excluded from
+  medians rather than recorded as an infinite TTFT.
+- **The runtime may prefer its own clock.** `Agent` times the same interval from
+  `note_request` to the first delta; a provider-reported TTFT refines that last
+  sample, since the transport excludes the loop's bookkeeping. This keeps
+  providers that do not report timing (the test fake, `apple-fm`) measurable.
+
+Consumers: `marv bench` (aggregate report), the TUI status bar (last turn), and
+any future routing work that needs to know the cost of a turn before sending it.

@@ -1,4 +1,4 @@
-"""Context modal - displays context information in a tabbed modal."""
+"""Context menu — context information docked at the input line."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Container, VerticalScroll
-from textual.screen import ModalScreen
-from textual.widgets import Static, TabbedContent, TabPane
+from textual.containers import VerticalScroll
+from textual.widgets import Static
+
+from marv.tui.panel import DockPanel
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -16,38 +17,90 @@ if TYPE_CHECKING:
     from marv.runtime.agent import Agent
 
 
-class ContextModal(ModalScreen[None]):
-    """Modal screen displaying context information with tabs."""
+class ContextPanel(DockPanel[None]):
+    """Context viewer with summary/messages/system tabs.
+
+    Left/right switch tabs, up/down scroll, escape returns to input mode.
+    """
+
+    _TABS = ("summary", "messages", "system")
 
     BINDINGS = [
-        Binding("escape", "close", "Close"),
+        Binding("escape", "cancel", "Close", show=False),
+        Binding("left", "prev_tab", "Previous tab", show=False),
+        Binding("right", "next_tab", "Next tab", show=False),
+        Binding("up", "line_up", "Scroll up", show=False),
+        Binding("down", "line_down", "Scroll down", show=False),
+        Binding("pageup", "page_up", "Page up", show=False),
+        Binding("pagedown", "page_down", "Page down", show=False),
+        Binding("home", "top", "Top", show=False),
+        Binding("end", "bottom", "Bottom", show=False),
     ]
 
     def __init__(self, agent: Agent) -> None:
         super().__init__()
         self._agent = agent
+        self._tab_index = 0
 
     def compose(self) -> ComposeResult:
-        with Container(id="context-modal"):
-            yield Static("Context Information", id="context-title")
-            with TabbedContent(id="context-tabs"):
-                with TabPane("Summary", id="tab-summary"):
-                    yield VerticalScroll(
-                        Static(self._build_summary(), id="summary-content"),
-                    )
-                with TabPane("Messages", id="tab-messages"):
-                    yield VerticalScroll(
-                        Static(self._build_messages(), id="messages-content"),
-                    )
-                with TabPane("System", id="tab-system"):
-                    yield VerticalScroll(
-                        Static(self._build_system(), id="system-content"),
-                    )
-            yield Static("Press [bold]ESC[/] to close", id="context-hint")
+        yield Static(self._tab_header(), id="context-tabs", classes="panel-title")
+        with VerticalScroll(id="context-scroll"):
+            yield Static(self._build_summary(), id="summary-content")
+            yield Static(self._build_messages(), id="messages-content")
+            yield Static(self._build_system(), id="system-content")
+        yield Static("← → tabs · ↑ ↓ scroll · esc to close", classes="panel-hint")
 
-    def action_close(self) -> None:
-        """Close the modal."""
-        self.app.pop_screen()
+    def on_mount(self) -> None:
+        self._show_tab(0)
+        self.focus_target()
+
+    # ---- tabs -----------------------------------------------------------
+
+    def _tab_header(self) -> Text:
+        text = Text()
+        for index, name in enumerate(self._TABS):
+            if index:
+                text.append("  ·  ", style="dim")
+            text.append(name, style="bold" if index == self._tab_index else "dim")
+        return text
+
+    def _show_tab(self, index: int) -> None:
+        self._tab_index = index % len(self._TABS)
+        names = ("summary-content", "messages-content", "system-content")
+        for position, name in enumerate(names):
+            self.query_one(f"#{name}", Static).display = position == self._tab_index
+        self.query_one("#context-tabs", Static).update(self._tab_header())
+        self.query_one("#context-scroll", VerticalScroll).scroll_home(animate=False)
+
+    def action_prev_tab(self) -> None:
+        """Show the previous tab."""
+        self._show_tab(self._tab_index - 1)
+
+    def action_next_tab(self) -> None:
+        """Show the next tab."""
+        self._show_tab(self._tab_index + 1)
+
+    # ---- scrolling ------------------------------------------------------
+
+    def action_line_up(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_scroll_up()
+
+    def action_line_down(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_scroll_down()
+
+    def action_page_up(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_page_up()
+
+    def action_page_down(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_page_down()
+
+    def action_top(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_scroll_home()
+
+    def action_bottom(self) -> None:
+        self.query_one("#context-scroll", VerticalScroll).action_scroll_end()
+
+    # ---- content --------------------------------------------------------
 
     def _build_summary(self) -> str:
         """Build the summary tab content."""

@@ -29,7 +29,7 @@ If there are name collisions, higher‑priority sources win.
 
 - lowercase letters, numbers, and hyphens only
 - must match directory name
-- max length 64 chars
+- name max length 64 chars; description max length 1024 chars
 - description required
 
 ## Invocation

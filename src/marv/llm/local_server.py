@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from marv.llm.mlx_models import running_model_id
-from marv.llm.openai_compat import OpenAICompatibleProvider
+from marv.llm.openai_compat import DEFAULT_LOCAL_READ_TIMEOUT, OpenAICompatibleProvider
 from marv.llm.server_lifecycle import register_stop, unregister_stop
 from marv.llm.server_process import (
     listener_pid,
@@ -59,6 +59,7 @@ class LocalServerProvider(OpenAICompatibleProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
         log_dir: Path | None = None,
+        read_timeout: float | None = DEFAULT_LOCAL_READ_TIMEOUT,
     ) -> None:
         super().__init__(
             base_url=base_url,
@@ -67,6 +68,7 @@ class LocalServerProvider(OpenAICompatibleProvider):
             name=self.name,
             temperature=temperature,
             max_tokens=max_tokens,
+            read_timeout=read_timeout,
         )
         self._server_proc: subprocess.Popen[bytes] | None = None
         self._log_dir = log_dir or Path.home() / ".cache" / "marv" / "logs"

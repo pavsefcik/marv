@@ -31,6 +31,10 @@ the per-backend default for whichever provider is active.
 ## marv-mlx (default)
 
 - Default `base_url` is `http://localhost:11500`.
+- Config keys that are easy to miss: `server_manager` (`embedded` default |
+  `marv-mlx`), `theme` (`auto` follows the terminal), and the read-timeout
+  override `AGENT_LLM_READ_TIMEOUT`. A commented template ships at
+  `config/default.toml`.
 - No API key is required — the endpoint is local and unauthenticated.
 - marv launches `mlx_vlm.server` itself and stops it on exit; no external model
   manager is required. [marv-mlx](https://github.com/pavsefcik/marv-mlx) is the
@@ -43,8 +47,18 @@ the per-backend default for whichever provider is active.
   `AGENT_SERVER_MANAGER` or `marv run --server-manager marv-mlx`.
 - Model discovery reads the local HF hub (`~/.cache/huggingface/hub`). A model that
   is not in the hub is downloaded only after you ask: the TUI opens a download
-  picker (curated suggestions for your RAM tier, or any Hugging Face id) and shows
+  picker (suggestions for your RAM tier, or any Hugging Face id) and shows
   live progress. Downloads run in the `mlx-vlm` interpreter and land in the same hub.
+  The suggestions come from the same `marv-curator` catalog the `marv-mlx` runtime
+  uses (read from `~/.cache/marv/mlx/curated-llms.md`), so both download menus
+  agree; a bundled copy is the offline fallback.
+- **Long prefills wait, they do not time out.** `mlx_vlm` sends nothing on the
+  stream while it prefills, so a large prompt can be silent for minutes before
+  the first token. Local-server backends (`marv-mlx`, `apple-fm`) therefore have
+  no read timeout by default. Set `AGENT_LLM_READ_TIMEOUT` (seconds; `off`/`0`
+  disables) to cap it, or shrink the prompt. A timeout *before* the first token
+  is reported once and is **not** retried, since a retry would restart the whole
+  prefill from zero.
 
 ## apple-fm (macOS 27+)
 

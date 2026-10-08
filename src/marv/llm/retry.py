@@ -107,6 +107,11 @@ def _is_retriable(e: Exception) -> bool:
     Returns:
         True if the request should be retried
     """
+    # An error can opt out explicitly (e.g. a pre-token read timeout, where a
+    # retry would discard work already done rather than recover).
+    if getattr(e, "retriable", None) is False:
+        return False
+
     # Timeout errors
     if isinstance(e, asyncio.TimeoutError):
         return True

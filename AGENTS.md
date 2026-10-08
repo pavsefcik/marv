@@ -19,10 +19,12 @@ Backends:
   (no tool calling).
 
 Env namespaces: the harness owns `AGENT_*` (including `AGENT_MLX_BASE_URL`,
-`AGENT_MLX_MAX_OUTPUT_TOKENS`, `AGENT_SERVER_MANAGER`) and `MARV_PROCTITLE`; the
-`MARV_MLX_*` namespace belongs to the runtime. The old `MARV_MLX_BASE_URL` /
+`AGENT_MLX_MAX_OUTPUT_TOKENS`, `AGENT_SERVER_MANAGER`, `AGENT_THEME`, and
+`AGENT_LLM_READ_TIMEOUT`) and `MARV_PROCTITLE`; the `MARV_MLX_*` namespace
+belongs to the runtime. The old `MARV_MLX_BASE_URL` /
 `MARV_MLX_MAX_OUTPUT_TOKENS` names are read for one release with a deprecation
-warning.
+warning. Legacy `AGENT_MAX_TOKENS` / `AGENT_CONTEXT_TOKENS` are also still
+mapped (`src/marv/config/runtime.py`).
 
 The `server_manager` setting (`embedded` default | `marv-mlx`) selects whether
 marv launches `mlx_vlm.server` itself or delegates lifecycle to the `marv-mlx`
@@ -42,16 +44,21 @@ Prefer Makefile targets over direct commands. Run `make help` to list them.
 ## Layout
 
 - `src/marv/llm/` — provider adapters + streaming events (`marv_mlx.py`,
-  `apple_fm.py`, `local_server.py`, `factory.py`)
+  `apple_fm.py`, `local_server.py`, `factory.py`, `latency.py`)
 - `src/marv/runtime/` — agent loop, sessions, context compaction, approval
   policy, hooks
 - `src/marv/tools/` — read/write/edit/bash/grep/find/ls + registry
 - `src/marv/config/` — config loading and last-used state
 - `src/marv/tui/` — Textual UI; `src/marv/cli/` — Typer surface + headless
+  (`bench.py` = `marv bench` latency benchmark)
 - `src/marv/extensions/`, `skills/`, `prompts/`
-- `docs/` — source of truth for behaviour. `PLAN.md` is archived/historical.
-- `ROADMAP.md` — candidate next work (a menu, not committed scope).
-- `tests/` — mirrors `src/`, with fakes in `tests/test_doubles/`.
+- `docs/` — source of truth for behaviour. `PLAN.md`, `marv-merge-plan.md`,
+  and `project-handoff-*.md` are archived/historical; `docs/coworking-plan.md`
+  is a proposal (P0 shipped, P1+ not implemented).
+- `ROADMAP.md` — candidate next work (a menu, not committed scope). Its
+  "Current state" line is a snapshot, not authoritative — `VERSION` is.
+- `tests/` — mirrors `src/`, with fakes in `tests/test_doubles/`; the
+  `tests/delivery/tui/snapshots/` suite pins TUI presentation.
 
 Layering is `llm/` → `runtime/` → delivery (`tui/`, `cli/`). Do not leak
 delivery concerns into `runtime/`.

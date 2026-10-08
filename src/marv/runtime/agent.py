@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from marv.llm.events import StreamEvent, StreamOptions, ToolCallBlock
 from marv.llm.events import ThinkingLevel as StreamThinkingLevel
+from marv.llm.latency import LatencyTracker
 from marv.prompts.loader import PromptTemplateLoader
 from marv.prompts.parser import ParsedCommand, expand_template, parse_command
 from marv.runtime.approval import requires_approval
@@ -95,6 +96,7 @@ class _StreamConsumptionState:
     tool_calls: list[ToolCall] = field(default_factory=list)
     thinking_started: bool = False
     message_started: bool = False
+    first_token_seen: bool = False
     stream_error: str | None = None
     stream_aborted: bool = False
 
@@ -124,6 +126,7 @@ class Agent:
         "_cwd",
         "_context_files",
         "_approver",
+        "_latency",
     )
 
     def __init__(
@@ -168,6 +171,7 @@ class Agent:
         self._approver = approver
         self._in_loop = False
         self._context_files: list[ContextFile] = []
+        self._latency = LatencyTracker()
 
         # Use provided loaders or create with default directories + config paths
         self._skill_loader = skill_loader or SkillLoader.with_defaults(
@@ -434,6 +438,15 @@ class Agent:
         """Get loaded context files (AGENTS.md, CLAUDE.md, etc.)."""
         return self._context_files
 
+    @property
+    def latency(self) -> LatencyTracker:
+        """Per-run time-to-first-token samples.
+
+        Delivery shells read ``latency.metrics`` to show TTFT and to attribute
+        a rising TTFT to prompt growth rather than to the transport.
+        """
+        return self._latency
+
     def set_hooks(self, hooks: AgentHooks) -> None:
         """Replace the active runtime hook host."""
         self._hooks = hooks
@@ -550,6 +563,9 @@ class Agent:
             and system messages
         """
         pending_inputs: deque[str] = deque([user_input])
+
+        # Each run reports its own latency profile.
+        self._latency.reset()
 
         async with self._hooks.run_scope() as run_control:
             while pending_inputs:
@@ -688,6 +704,7 @@ class Agent:
                     if not state.message_started:
                         await self._emit(MessageStartEvent())
                         state.message_started = True
+                    self._note_first_token(state)
                     state.response_content += event.delta
                     await self._emit(MessageUpdateEvent(delta=event.delta))
                     yield TextDeltaChunk(payload=event.delta)
@@ -701,6 +718,7 @@ class Agent:
                     if not state.thinking_started:
                         await self._emit(ThinkingStartEvent())
                         state.thinking_started = True
+                    self._note_first_token(state)
                     state.thinking_content += event.delta
                     await self._emit(ThinkingDeltaEvent(delta=event.delta))
                     yield ThinkingDeltaChunk(payload=ThinkingContent(text=event.delta))
@@ -725,13 +743,8 @@ class Agent:
 
                 case "assistant_metadata":
                     if isinstance(event.metadata, dict):
-                        for key, value in event.metadata.items():
-                            if isinstance(value, dict) and isinstance(
-                                state.provider_metadata.get(key), dict
-                            ):
-                                state.provider_metadata[key].update(value)
-                            else:
-                                state.provider_metadata[key] = value
+                        self._merge_provider_metadata(state, event.metadata)
+                        self._apply_provider_ttft(state)
 
                 case "error":
                     state.stream_error = event.message.error_message or "LLM stream error"
@@ -739,6 +752,40 @@ class Agent:
                     break
                 case "done":
                     pass
+
+    @staticmethod
+    def _merge_provider_metadata(
+        state: _StreamConsumptionState,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Merge an ``assistant_metadata`` payload into the turn's accumulators.
+
+        Nested dicts are merged so a later payload can extend an earlier one
+        without discarding it (providers may emit latency and provider-specific
+        artifacts separately).
+        """
+        for key, value in metadata.items():
+            if isinstance(value, dict) and isinstance(state.provider_metadata.get(key), dict):
+                state.provider_metadata[key].update(value)
+            else:
+                state.provider_metadata[key] = value
+
+    def _note_first_token(self, state: _StreamConsumptionState) -> None:
+        """Record time-to-first-token for the current turn, once."""
+        if state.first_token_seen:
+            return
+        state.first_token_seen = True
+        self._latency.note_first_token()
+        self._apply_provider_ttft(state)
+
+    def _apply_provider_ttft(self, state: _StreamConsumptionState) -> None:
+        """Prefer a provider-reported TTFT over the local wall clock."""
+        report = state.provider_metadata.get("latency")
+        if not isinstance(report, dict) or not report.get("streamed"):
+            return
+        ttft_ms = report.get("ttft_ms")
+        if isinstance(ttft_ms, int | float):
+            self._latency.refine_last_ttft(float(ttft_ms))
 
     async def _execute_tool_calls(
         self,
@@ -896,9 +943,17 @@ class Agent:
 
                 messages_for_llm = await self._hooks.prepare_context(list(self.session.messages))
                 options = self._build_stream_options(cancel_event=cancel_event)
+                tool_schemas = self.tools.get_schemas() if self._supports_tools else None
+
+                # Anchor the TTFT clock for this turn. The prompt estimate is the
+                # same token counter compaction uses, so the number shown to the
+                # user matches the number that drives context management.
+                self._latency.note_request(
+                    prompt_tokens=self.provider.count_messages_tokens(messages_for_llm),
+                )
                 stream = self.provider.stream(
                     messages_for_llm,
-                    tools=self.tools.get_schemas() if self._supports_tools else None,
+                    tools=tool_schemas,
                     options=options,
                 )
 
@@ -907,6 +962,9 @@ class Agent:
                     yield chunk
 
                 if stream_state.stream_error:
+                    # The turn never streamed: drop the pending sample so it is
+                    # not attributed to whichever turn streams next.
+                    self._latency.discard_pending()
                     if not stream_state.stream_aborted:
                         error_msg = Message.system(
                             f"[LLM stream error]\n{stream_state.stream_error}"

@@ -25,6 +25,8 @@ class StatusBar(Horizontal):
         self._tokens = 0
         self._max_tokens = 0
         self._speed = 0.0
+        self._ttft_ms = 0.0
+        self._prefill_tokens = 0
         self._extension_status: str | None = None
         self._session_id: str | None = None
         self._session_parent: str | None = None
@@ -59,6 +61,13 @@ class StatusBar(Horizontal):
         if self._speed > 0:
             left += f"  {self._speed:.0f} tok/s"
 
+        # TTFT is the number that decides whether the model feels responsive;
+        # prefill tokens explain it, so they are shown next to it.
+        if self._ttft_ms > 0:
+            left += f"  ttft {self._ttft_ms:.0f}ms"
+            if self._prefill_tokens > 0:
+                left += f"/{self._prefill_tokens:,}t"
+
         if self._memory is not None and self._memory.total > 0:
             left += f"  {self._memory.label()}"
 
@@ -91,6 +100,12 @@ class StatusBar(Horizontal):
     def set_speed(self, tokens_per_second: float) -> None:
         """Set the estimated generation speed in tokens per second."""
         self._speed = tokens_per_second
+        self._update_display()
+
+    def set_ttft(self, ttft_ms: float, prefill_tokens: int = 0) -> None:
+        """Set the last time-to-first-token and its prompt cost."""
+        self._ttft_ms = ttft_ms
+        self._prefill_tokens = prefill_tokens
         self._update_display()
 
     def set_session(self, session_id: str, parent_id: str | None = None) -> None:

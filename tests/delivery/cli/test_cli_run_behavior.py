@@ -127,6 +127,70 @@ def test_cli_run_propagates_approval_mode_to_config(temp_dir, monkeypatch):
     assert seen == [ApprovalMode.DESTRUCTIVE]
 
 
+def test_cli_tui_start_kicks_off_a_catalog_refresh(temp_dir, monkeypatch):
+    """Launching the TUI refreshes the marv-curator list in the background.
+
+    The runtime only rewrites its cached catalog from its own TUI, so a
+    marv-only user would otherwise see a stale download picker forever.
+    """
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    calls: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    class FakeApp:
+        def __init__(self, config, provider, session):
+            pass
+
+        def run(self):
+            calls.append("tui")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    import marv.tui.app
+
+    monkeypatch.setattr(marv.tui.app, "AgentApp", FakeApp)
+    from marv.llm import model_download
+
+    monkeypatch.setattr(model_download, "start_catalog_refresh", lambda: calls.append("refresh"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run"])
+
+    assert result.exit_code == 0
+    assert calls == ["refresh", "tui"]
+
+
+def test_cli_headless_run_does_not_touch_the_catalog(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    calls: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        calls.append("headless")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setattr(cli, "_ensure_model_downloaded", lambda llm_provider: None)
+    from marv.llm import model_download
+
+    monkeypatch.setattr(model_download, "start_catalog_refresh", lambda: calls.append("refresh"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert calls == ["headless"]
+
+
 def test_cli_run_propagates_theme_to_config(temp_dir, monkeypatch):
     project = temp_dir / "project"
     project.mkdir()

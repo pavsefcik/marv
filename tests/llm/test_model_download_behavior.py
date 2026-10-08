@@ -10,12 +10,16 @@ import pytest
 
 from marv.llm.model_download import (
     CURATED_TIERS,
+    CatalogRefresher,
     DownloadError,
     DownloadProgress,
     ModelDownload,
     format_size,
     hub_model_present,
+    load_catalog,
+    parse_catalog,
     ram_tier_gb,
+    refresh_catalog_argv,
     resolve_download_interpreter,
     suggested_models,
 )
@@ -175,16 +179,126 @@ def test_ram_tier_selects_the_machine_tier():
     assert ram_tier_gb(64 * 1024**3) == 32
 
 
-def test_suggestions_come_from_the_matching_curated_tier():
-    suggestions = suggested_models(16 * 1024**3)
+def test_suggestions_come_from_the_matching_curated_tier(tmp_path: Path):
+    # With no live catalog, the bundled fallback for this tier is used.
+    suggestions = suggested_models(16 * 1024**3, catalog_path=tmp_path / "absent.md")
 
     assert [s.model_id for s in suggestions] == [s.model_id for s in CURATED_TIERS[16]]
     assert all(s.label for s in suggestions)
 
 
-def test_curated_ministral_pairs_run_the_instruct_half():
-    pair = next(entry for tier in CURATED_TIERS.values() for entry in tier if len(entry.ids) == 2)
+#: A catalog in the current marv-curator shape: tier headers, id + tagline
+#: blocks, a blank-line separator, and a commented-out hand-pick.
+CATALOG = """\
+8 GB RAM Tier Models
 
-    assert pair.model_id == pair.ids[0]
-    assert "Instruct" in pair.model_id
-    assert "Reasoning" in pair.ids[1]
+mlx-community/Qwen3.5-4B-MLX-4bit
+The compact generalist
+
+16 GB RAM Tier Models
+
+ornith-ai/Ornith-1.5-9B-MLX-4bit
+The coding sniper
+
+# mlx-community/gemma-4-12B-it-qat-OptiQ-4bit
+The creative writer
+"""
+
+
+def test_parse_catalog_groups_entries_by_ram_tier():
+    tiers = parse_catalog(CATALOG)
+
+    assert [e.model_id for e in tiers[8]] == ["mlx-community/Qwen3.5-4B-MLX-4bit"]
+    assert [e.model_id for e in tiers[16]] == [
+        "ornith-ai/Ornith-1.5-9B-MLX-4bit",
+        "mlx-community/gemma-4-12B-it-qat-OptiQ-4bit",
+    ]
+    assert tiers[16][0].description == "The coding sniper"
+    # A commented-out entry stays visible: the '#' only highlights a hand-pick.
+    assert tiers[16][1].description == "The creative writer"
+
+
+def test_parse_catalog_splits_a_ministral_id_pair():
+    pair = parse_catalog(
+        "16 GB RAM Tier Models\n\n"
+        "mlx-community/Ministral-3-8B-Instruct-2512-4bit"
+        " & mlx-community/Ministral-3-8B-Reasoning-2512-4bit\n"
+        "The instruct/reasoning pair\n"
+    )[16][0]
+
+    assert pair.model_id == "mlx-community/Ministral-3-8B-Instruct-2512-4bit"
+    assert pair.ids[-1].endswith("Reasoning-2512-4bit")
+
+
+def test_suggested_models_prefers_the_runtime_catalog(tmp_path: Path):
+    catalog = tmp_path / "curated-llms.md"
+    catalog.write_text(CATALOG)
+
+    suggestions = suggested_models(16 * 1024**3, catalog_path=catalog)
+
+    assert [s.model_id for s in suggestions] == [
+        "ornith-ai/Ornith-1.5-9B-MLX-4bit",
+        "mlx-community/gemma-4-12B-it-qat-OptiQ-4bit",
+    ]
+    assert suggestions[0].description == "The coding sniper"
+
+
+def test_suggested_models_ignores_a_catalog_without_this_tier(tmp_path: Path):
+    catalog = tmp_path / "curated-llms.md"
+    catalog.write_text("8 GB RAM Tier Models\n\nmlx-community/Tiny-4bit\nThe small one\n")
+
+    suggestions = suggested_models(32 * 1024**3, catalog_path=catalog)
+
+    assert suggestions == CURATED_TIERS[32]
+
+
+def test_load_catalog_of_a_missing_file_is_empty(tmp_path: Path):
+    assert load_catalog(tmp_path / "absent.md") == {}
+
+
+def test_refresh_catalog_argv_uses_the_runtime_curated_verb():
+    assert refresh_catalog_argv("/usr/local/bin/marv-mlx") == ["/usr/local/bin/marv-mlx", "curated"]
+    assert refresh_catalog_argv("true") == ["true", "curated"]
+
+
+def test_refresh_catalog_argv_is_none_without_a_binary(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+
+    assert refresh_catalog_argv() is None
+
+
+def test_catalog_refresher_runs_the_command_once(tmp_path: Path):
+    marker = tmp_path / "runs"
+    script = tmp_path / "fake-marv-mlx"
+    script.write_text(f"#!/bin/sh\necho x >> {marker}\n")
+    script.chmod(0o755)
+    refresher = CatalogRefresher(str(script))
+
+    refresher.start()
+    assert refresher.wait(10) is True
+    refresher.start()  # second request reuses the first attempt
+    assert refresher.wait(10) is True
+
+    assert marker.read_text().count("x") == 1
+    assert refresher.succeeded is True
+
+
+def test_catalog_refresher_records_a_failure_without_raising(tmp_path: Path):
+    script = tmp_path / "failing-marv-mlx"
+    script.write_text("#!/bin/sh\nexit 3\n")
+    script.chmod(0o755)
+    refresher = CatalogRefresher(str(script))
+
+    assert refresher.wait(10) is False
+
+    assert refresher.finished
+    assert refresher.succeeded is False
+
+
+def test_catalog_refresher_without_a_binary_finishes_immediately(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    refresher = CatalogRefresher()
+
+    assert refresher.wait(10) is False
+
+    assert refresher.finished
