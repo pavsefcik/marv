@@ -3,31 +3,14 @@
 A local-first coding agent TUI for Apple Silicon. **marv** is a lean, hackable
 agent harness that runs entirely on-device — no cloud accounts, no API keys.
 
-Backends:
-
-- **`marv-mlx`** (default) — marv launches [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm)'s
-  `mlx_vlm.server` itself and runs any MLX model downloaded in the local Hugging
-  Face hub, with family-accurate thinking support. Models can be downloaded and
-  managed with [marv-mlx](https://github.com/pavsefcik/marv-mlx) — the runtime
-  layer of the MARV family (see below) — or with `hf`; marv reads the same hub
-  and has **no runtime dependency** on either. `marv mlx …` passes through to
-  the `marv-mlx` CLI when it is installed.
-- **`apple-fm`** — Apple's built-in Foundation Model via the macOS 27+ `fm` CLI
-  (`system` on-device, or `pcc` on Private Cloud Compute). Chat-only: the
-  endpoint has no function/tool calling.
-
-It is a fork of
-[eddmann/my-own-coding-agent](https://github.com/eddmann/my-own-coding-agent)
-(MIT), stripped down to local backends and rebranded:
-
-- **Removed:** `web/` FastAPI delivery, the OpenAI / Anthropic / OpenAI-Codex
-  cloud providers, OAuth flows, and pricing tables.
-- **Added:** the `marv-mlx` and `apple-fm` backends, self-managed server
-  lifecycle (start/swap/unload, including on crash), and family-accurate
-  thinking support.
-- **Kept:** the readable agent loop, Textual TUI, skills, prompt templates,
-  extensions, JSONL sessions (fork/resume), context compaction, and the
-  read/write/edit/bash tool suite.
+marv runs local MLX models through **`marv-mlx`** (the default backend): it
+launches [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm)'s `mlx_vlm.server`
+itself and runs any MLX model downloaded in the local Hugging Face hub, with
+family-accurate thinking support. Models can be downloaded and managed with
+[marv-mlx](https://github.com/pavsefcik/marv-mlx) — the runtime layer of the
+MARV family (see below) — or with `hf`; marv reads the same hub and has **no
+runtime dependency** on either. `marv mlx …` passes through to the `marv-mlx`
+CLI when it is installed.
 
 ## The MARV family
 
@@ -65,7 +48,6 @@ yours_.
 - Python 3.14+ and `uv`
 - For `marv-mlx`: the `mlx-vlm` tool — `uv tool install mlx-vlm --with jinja2 --with setproctitle`
   (the `setproctitle` extra is optional and only affects the process name)
-- For `apple-fm`: macOS 27+ with the `fm` CLI licensed (`sudo fm license`)
 
 ## Install
 
@@ -98,14 +80,13 @@ Headless (single prompt, model loaded on demand):
 ```sh
 make run-headless PROMPT="List all Python files"
 uv run marv run --headless -m mlx-community/Qwen3.5-4B-MLX-4bit "Say hi"
-uv run marv run --headless -p apple-fm "Say hi"
 ```
 
 marv starts the model server itself and stops it when it exits. The model picker
-lists every MLX model downloaded in `~/.cache/huggingface/hub` (or the `system` /
-`pcc` models for `apple-fm`), and selecting one starts/swaps the server. If a
-model is already selected — from config, a resumed session, or the last-used
-state — marv starts its server on launch instead of waiting for the first prompt.
+lists every MLX model downloaded in `~/.cache/huggingface/hub`, and selecting
+one starts/swaps the server. If a model is already selected — from config, a
+resumed session, or the last-used state — marv starts its server on launch
+instead of waiting for the first prompt.
 
 ## Shell launcher
 
@@ -151,8 +132,7 @@ The TUI status bar shows the last turn's time-to-first-token and prefill cost
 long prefill is not killed.
 
 A commented template ships at `config/default.toml`. The default provider is
-`marv-mlx` on `http://localhost:11500`; `apple-fm` uses
-`http://127.0.0.1:1976`. Neither needs an API key.
+`marv-mlx` on `http://localhost:11500` and needs no API key.
 
 ## Layout
 
@@ -177,5 +157,4 @@ uv run marv bench -n 8 --json
 
 ## License
 
-MIT. Derived from [my-own-coding-agent](https://github.com/eddmann/my-own-coding-agent)
-by eddmann.
+MIT.
