@@ -1,6 +1,7 @@
 """Chat display widget for conversation history."""
 
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 from rich.markdown import Markdown
@@ -10,6 +11,9 @@ from textual.containers import ScrollableContainer
 from textual.widgets import Static
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from marv.llm.latency import WaitEstimate
     from marv.runtime.message import ToolCall
 
 # Truncate long outputs for display
@@ -24,6 +28,19 @@ TOOL_RUNNING_GLYPH = "\u25cb"  # ring, replaced by the spinner frames below
 def truncate(text: str, limit: int, message: str = "...") -> str:
     """Truncate text to limit, appending message if truncated."""
     return text if len(text) <= limit else text[:limit] + f"\n{message}"
+
+
+def format_tokens(tokens: int) -> str:
+    """A compact token count for wait narration (32000 -> ``32k``)."""
+    if tokens < 1000:
+        return str(tokens)
+    return f"{tokens / 1000:g}k"
+
+
+def format_clock(seconds: float) -> str:
+    """A ``m:ss`` clock for elapsed and predicted waits."""
+    total = max(0, int(seconds))
+    return f"{total // 60}:{total % 60:02d}"
 
 
 SKILL_BLOCK_RE = re.compile(
@@ -362,7 +379,16 @@ class ThinkingWidget(Static):
 
 
 class WaitingIndicator(Static):
-    """Animated waiting indicator."""
+    """Animated waiting indicator that can narrate a predicted wait.
+
+    Without an estimate it is the plain spinner (``working…``/``thinking…``).
+    With one it narrates the prefill -- ``prefilling 32k tokens · ~2:00 ·
+    1:14 elapsed (62%)`` -- where the ``~`` figure and the derived percentage
+    are a *revising* estimate of the remaining wait, recomputed on every tick
+    from elapsed vs the prediction. A wait that outlives its prediction says
+    ``taking longer than predicted`` rather than sitting at 99%: an overrun is
+    information about the machine, not a failed progress bar.
+    """
 
     FRAMES = [
         "\u280b",
@@ -378,23 +404,78 @@ class WaitingIndicator(Static):
     ]
     THINKING_FRAMES = FRAMES
 
-    def __init__(self, thinking: bool = False, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        thinking: bool = False,
+        *,
+        estimate: WaitEstimate | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._frame = 0
         self._thinking = thinking
+        self._estimate = estimate
+        self._clock = clock
+        self._started_at = clock()
         self.add_class("message-assistant")
+        # Content is set here as well as on mount so the widget renders the same
+        # before and after it is attached.
+        self._update_display()
 
     def on_mount(self) -> None:
         self._update_display()
 
+    def elapsed_seconds(self) -> float:
+        """Seconds since this wait began (never negative)."""
+        return max(0.0, self._clock() - self._started_at)
+
+    def set_estimate(self, estimate: WaitEstimate) -> None:
+        """Attach a prediction that arrived after the indicator was shown.
+
+        The estimate is emitted just before its request goes out, so it also
+        starts the elapsed clock it is measured against.
+        """
+        self._estimate = estimate
+        self._started_at = self._clock()
+        self._update_display()
+
+    def _narration(self) -> str:
+        """The waiting message, driven by the prediction when one exists."""
+        estimate = self._estimate
+        if estimate is None:
+            label = "thinking" if self._thinking else "working"
+            return f"{label}\u2026"
+
+        tokens = format_tokens(estimate.prefill_tokens)
+        elapsed = self.elapsed_seconds()
+        eta_seconds = (estimate.eta_ms or 0.0) / 1000.0
+        if not estimate.has_eta or eta_seconds <= 0:
+            # A first-ever run has no measured history, so only the clock is
+            # honest: no ETA is invented and no constant is assumed.
+            return f"prefilling {tokens} tokens \u00b7 {format_clock(elapsed)} elapsed"
+        if elapsed > eta_seconds:
+            return (
+                f"prefilling {tokens} tokens \u00b7 taking longer than predicted"
+                f" \u00b7 {format_clock(elapsed)} elapsed"
+            )
+
+        # The figure revises with every tick: it is a remaining-time estimate
+        # derived from elapsed vs the prediction, not a progress bar that would
+        # jump or freeze at 99%.
+        percent = min(99, int(elapsed / eta_seconds * 100))
+        return (
+            f"prefilling {tokens} tokens \u00b7 ~{format_clock(eta_seconds - elapsed)}"
+            f" \u00b7 {format_clock(elapsed)} elapsed ({percent}%)"
+        )
+
     def _update_display(self) -> None:
         """Update display based on current mode."""
         frames = self.THINKING_FRAMES if self._thinking else self.FRAMES
-        label = "thinking" if self._thinking else "working"
-        self.update(f"[$primary]{frames[self._frame]}[/] [$text-muted]{label}\u2026[/]")
+        self.update(f"[$primary]{frames[self._frame]}[/] [$text-muted]{self._narration()}[/]")
 
     def advance(self) -> None:
-        """Advance to the next animation frame."""
+        """Advance to the next animation frame and refresh the narration."""
         self._frame = (self._frame + 1) % len(self.FRAMES)
         self._update_display()
 
@@ -455,12 +536,22 @@ class ChatView(ScrollableContainer):
             self.mount(MessageWidget("user", user_message))
         self.scroll_to_bottom()
 
-    def _show_waiting(self, thinking: bool = False) -> None:
-        """Show the waiting indicator."""
+    def _show_waiting(
+        self,
+        thinking: bool = False,
+        estimate: WaitEstimate | None = None,
+    ) -> None:
+        """Show the waiting indicator, narrating ``estimate`` when known."""
         if not self._waiting_indicator:
-            self._waiting_indicator = WaitingIndicator(thinking=thinking)
+            self._waiting_indicator = WaitingIndicator(thinking=thinking, estimate=estimate)
             self.mount(self._waiting_indicator)
             self.scroll_to_bottom()
+
+    def apply_wait_estimate(self, estimate: WaitEstimate) -> None:
+        """Narrate a wait prediction that arrived after the indicator appeared."""
+        self._show_waiting()
+        if self._waiting_indicator is not None:
+            self._waiting_indicator.set_estimate(estimate)
 
     def _hide_waiting(self) -> None:
         """Hide and remove the waiting indicator."""
@@ -477,9 +568,13 @@ class ChatView(ScrollableContainer):
             if not widget.has_result():
                 widget.advance_spinner()
 
-    def start_assistant_message(self, thinking: bool = False) -> None:
+    def start_assistant_message(
+        self,
+        thinking: bool = False,
+        estimate: WaitEstimate | None = None,
+    ) -> None:
         """Start waiting for an assistant message."""
-        self._show_waiting(thinking=thinking)
+        self._show_waiting(thinking=thinking, estimate=estimate)
 
     async def append_to_assistant(self, text: str) -> None:
         """Append text to the current assistant message."""

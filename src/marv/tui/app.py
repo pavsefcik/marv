@@ -13,6 +13,7 @@ from textual.reactive import reactive
 from textual.theme import Theme
 from textual.widgets import Static
 
+from marv.config.state import remember_latency_fit
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
@@ -98,6 +99,8 @@ class AgentApp(App[None]):
         self._cancel_event: asyncio.Event | None = None
         self._model_start_task: asyncio.Task[None] | None = None
         self._model_start_for: str | None = None
+        #: Model whose persisted wait calibration is currently installed.
+        self._fit_seeded_for: str | None = None
 
     @property
     def runtime(self) -> TUIRuntime:
@@ -131,9 +134,10 @@ class AgentApp(App[None]):
             self._spinner_timer = None
 
     def _animate_spinner(self) -> None:
-        """Animate the spinner in the chat waiting indicator."""
+        """Animate the spinner and refresh the generating elapsed reading."""
         chat = self.query_one("#chat-view", ChatView)
         chat.advance_waiting()
+        self._renderer.tick()
 
     def compose(self) -> ComposeResult:
         """Compose the UI."""
@@ -179,6 +183,10 @@ class AgentApp(App[None]):
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
         self._refresh_prompt_models()
+
+        # The wait prediction is only as good as this machine's own measured
+        # turns; a first-ever run gets an empty fit and therefore no ETA.
+        self.seed_latency_fit()
 
         # No model is selected/downloaded yet: offer whatever is already in the
         # local hub, or ask which one to fetch when the hub is empty. Either way
@@ -460,6 +468,8 @@ class AgentApp(App[None]):
     async def _agent_worker(self, prompt: str) -> None:
         """Execute agent and handle events."""
         try:
+            # A model switch lands here, so the calibration follows the model.
+            self._seed_fit_if_model_changed()
             # Wait for the selected model to be serving (non-blocking event loop;
             # the provider launches a detached server and we just poll).
             task = self.start_model()
@@ -467,10 +477,31 @@ class AgentApp(App[None]):
                 await task
             await self._renderer.render_agent_run(prompt, self._cancel_event)
         finally:
+            self.remember_latency_fit()
             self.is_processing = False
             self._cancel_event = None
             if self._active_panel is None:
                 self.query_one("#prompt-input", PromptInput).focus()
+
+    def seed_latency_fit(self) -> None:
+        """Install the persisted wait calibration for the active model."""
+        agent = self.agent
+        self._fit_seeded_for = agent.model_name
+        agent.set_latency_fit(self._bootstrap_config.latency_fit_for(agent.model_name))
+
+    def _seed_fit_if_model_changed(self) -> None:
+        """Re-seed only on a switch, so a run's refinement is not thrown away."""
+        if self._fit_seeded_for != self.agent.model_name:
+            self.seed_latency_fit()
+
+    def remember_latency_fit(self) -> None:
+        """Persist the calibration sharpened by this run's measured turns."""
+        agent = self.agent
+        remember_latency_fit(
+            agent.config.session_dir,
+            agent.model_name,
+            agent.refine_latency_fit(),
+        )
 
     def action_clear(self) -> None:
         """Clear chat history."""

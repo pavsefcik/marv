@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from marv.config.state import remember_latency_fit
 from marv.runtime.chunk import MessageChunk, TextDeltaChunk, ThinkingDeltaChunk, ToolCallChunk
 
 if TYPE_CHECKING:
@@ -27,6 +28,9 @@ async def run_headless(
         llm_provider,
         session,
     )
+    # Only this machine's own measured turns predict the wait; with no history
+    # the fit is empty and the runtime reports no ETA at all.
+    agent.set_latency_fit(config.latency_fit_for(agent.model_name))
     extension_host: ExtensionHost | None = None
 
     if config.extensions:
@@ -71,4 +75,10 @@ async def run_headless(
             print("\n[/Thinking]", flush=True)
         print(f"\n[Error: {type(exc).__name__}: {exc}]", flush=True)
     finally:
+        # Sharpened by this run's turns, so the next run predicts better.
+        remember_latency_fit(
+            agent.config.session_dir,
+            agent.model_name,
+            agent.refine_latency_fit(),
+        )
         await agent.close()

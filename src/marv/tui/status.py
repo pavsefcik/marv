@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from marv.tui.chat import format_clock
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
@@ -27,6 +29,8 @@ class StatusBar(Horizontal):
         self._speed = 0.0
         self._ttft_ms = 0.0
         self._prefill_tokens = 0
+        self._eta_ms: float | None = None
+        self._elapsed_seconds: float | None = None
         self._extension_status: str | None = None
         self._session_id: str | None = None
         self._session_parent: str | None = None
@@ -62,11 +66,23 @@ class StatusBar(Horizontal):
             left += f"  {self._speed:.0f} tok/s"
 
         # TTFT is the number that decides whether the model feels responsive;
-        # prefill tokens explain it, so they are shown next to it.
+        # prefill tokens explain it, so they are shown next to it. The
+        # prediction (when a measured fit exists) sits beside the reading it
+        # was checked against, and is omitted entirely while unknown.
+        readings: list[str] = []
         if self._ttft_ms > 0:
-            left += f"  ttft {self._ttft_ms:.0f}ms"
+            reading = f"ttft {self._ttft_ms:.0f}ms"
             if self._prefill_tokens > 0:
-                left += f"/{self._prefill_tokens:,}t"
+                reading += f"/{self._prefill_tokens:,}t"
+            readings.append(reading)
+        if self._eta_ms is not None:
+            readings.append(f"eta ~{format_clock(self._eta_ms / 1000)}")
+        if readings:
+            left += "  " + " ".join(readings)
+
+        # While decoding, how long this turn has been generating so far.
+        if self._elapsed_seconds is not None:
+            left += f"  {format_clock(self._elapsed_seconds)} elapsed"
 
         if self._memory is not None and self._memory.total > 0:
             left += f"  {self._memory.label()}"
@@ -106,6 +122,16 @@ class StatusBar(Horizontal):
         """Set the last time-to-first-token and its prompt cost."""
         self._ttft_ms = ttft_ms
         self._prefill_tokens = prefill_tokens
+        self._update_display()
+
+    def set_eta(self, eta_ms: float | None) -> None:
+        """Set (or clear, with None) the pending turn's predicted TTFT."""
+        self._eta_ms = eta_ms
+        self._update_display()
+
+    def set_elapsed(self, seconds: float | None) -> None:
+        """Set (or clear, with None) how long the current turn has generated."""
+        self._elapsed_seconds = seconds
         self._update_display()
 
     def set_session(self, session_id: str, parent_id: str | None = None) -> None:
