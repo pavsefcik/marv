@@ -5,6 +5,11 @@ Status: **proposal** (not committed scope). `ROADMAP.md` remains the menu.
 > **Audit (2026-10-08).** P0 is genuinely shipped (code + tests); P1–P5 are
 > genuinely absent. Known P0 caveats are recorded inline below. Updated
 > against the working tree that includes the uncommitted latency/panel work.
+>
+> **Related:** the harness-side counterpart to P0 is the ROADMAP's P1
+> "Predictable wait" — calibrate a per-model prefill rate from the measured
+> samples, predict TTFT before sending, and narrate it during the wait. It is
+> measurement-driven like this plan, not a fixed constant.
 
 ## 1. The shift
 

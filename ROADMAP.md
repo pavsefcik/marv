@@ -33,6 +33,104 @@ self-diagnosing instead of surfacing as a cryptic TUI error.
 
 ---
 
+## P1 — Predictable wait: tell the user how long before they wait
+
+A local model's first token can be two minutes away on a large prompt, and
+`mlx_vlm` sends nothing while it prefills. With the prefill read timeout now
+removed (so we no longer kill the wait), the raw experience is *silence with no
+end in sight*: the user cannot tell "still prefilling" from "wedged", and has no
+signal to decide whether to wait, cancel, or `/compact`. The fix is not to make
+prefill faster (that is [`docs/coworking-plan.md`](docs/coworking-plan.md) P1)
+but to **make the wait legible**: predict it, narrate it while it happens, and
+offer the ways out when it is going to be long.
+
+This is deliberately ordered **calibrate → predict → narrate → advise**, so
+every number shown to a user is derived from that machine's own measurements
+rather than a hardcoded constant.
+
+### 1. Per-model prefill/decode calibration *(S–M)*
+Learn the two constants the prediction needs from turns we already measure.
+`TTFT ≈ prefill_seconds + decode_seconds`, and both terms are linear in a token
+count, so a handful of samples are enough for a least-squares fit:
+`prefill_tok_per_s` from `prompt_tokens`/`ttft_ms`, and decode `tok/s` from the
+existing `TokenSpeedTracker`. Persist the fit per model in `state.toml` beside
+the last-used selection, refresh it opportunistically after each turn, and seed
+it from `marv bench` when available. Handle the two regimes explicitly: a
+*cold* model start (weights loading, tens of seconds — a separate constant) and
+a *cache hit* (a server-side prefix cache makes a large prompt cheap, so a
+sample that is far below the fit must not be treated as noise).
+- Where: `src/marv/llm/latency.py` (fit helpers), `src/marv/runtime/agent.py`
+  (`note_request`/`note_first_token` already bracket the interval
+  exactly), `src/marv/config/state.py`, `src/marv/cli/bench.py`
+- Effort: S–M · Risk: low (pure, offline fit; worst case the ETA is scruffy)
+
+### 2. Predict the wait before it starts *(S)*
+
+Compute the estimate when the request is built, not after the first token.
+`Agent._agent_loop` already knows the exact prompt size from
+`count_messages_tokens(messages_for_llm)` at `note_request`, and the transport
+knows the schema size; the missing piece is that `Agent` currently threads only
+`prompt_tokens` and **drops `schema_tokens`** (noted in the coworking audit),
+so tool schemas are invisible to the estimate. Thread both through, then emit a
+prediction on the same `assistant_metadata` channel as an `eta_ms` the delivery
+layer can render.
+- Where: `src/marv/runtime/agent.py` (`_apply_provider_ttft`/`note_request`),
+  `src/marv/llm/openai_compat.py` (`_latency_metadata`, `schema_tokens`),
+  `src/marv/llm/latency.py`
+- Effort: S · Risk: low
+
+### 3. Narrate the prefill in the waiting indicator *(S–M)*
+
+The `WaitingIndicator` currently spins with no sense of progress. Give it the
+prediction and an elapsed clock: `prefilling 32k tokens · ~2:00 · 1:14 elapsed`
+with a live/cancellable affordance. Percent is *derived from elapsed vs the
+estimate*, and must be presented as an estimate that revises itself rather than
+a progress bar that jumps or stalls at 99% — a wrong-but-honest ETA builds more
+trust than a frozen one. When the estimate is exceeded, switch to a different
+message ("taking longer than predicted") instead of reaching 100% and lying.
+Also add an elapsed timer to the generating phase so decode time is visible too.
+- Where: `src/marv/tui/chat.py` (`WaitingIndicator`),
+  `src/marv/tui/renderer.py`, `src/marv/tui/status.py`
+- Effort: S–M · Risk: low (display only; no protocol change)
+
+### 4. Turn the prediction into an exit offer *(M)*
+
+When the predicted TTFT crosses a threshold, the wait is a decision, not just a
+fact — surface the options where the user already looks:
+
+- **`/compact` before sending.** If the estimate is dominated by prompt size,
+  offer to compact first and re-estimate, using the existing manual-compaction
+  work (ROADMAP P2 "/compact on demand").
+- **Drop avoidable cost.** Tool schemas are on the wire for every turn; a
+  chat-shaped turn predicted to be slow is a signal to use the coworking-plan
+  router (P2.1) to re-send without schemas and shave TTFT.
+- **Say why.** Attribute the wait to prompt vs schemas vs cold start, reusing
+  the `prompt_tokens`/`schema_tokens` split, so the advice is specific rather
+  than "your context is long".
+- Where: `src/marv/tui/controller.py`, `src/marv/runtime/context.py`,
+  `src/marv/runtime/agent.py`
+- Effort: M · Risk: medium (must not nag every turn or fight the model router)
+
+### 5. Latency tier in model choice *(S)*
+Surface the calibrated TTFT/tok/s per curated model in the model menu and `marv
+bench`, so a slow-but-smart model is chosen knowingly rather than discovered
+mid-session. Overlaps coworking-plan P5.3; the calibration in (1) is what makes
+it honest.
+- Where: `src/marv/tui/model_panel.py`, `src/marv/llm/model_download.py`
+- Effort: S · Risk: low
+
+**Acceptance:** on a machine with a few recorded turns, sending a 30k-token
+prompt shows an ETA within ~25% of the eventual TTFT, the waiting indicator
+tracks elapsed against it, and a predicted-long turn offers `/compact` / a
+schema-light retry that measurably lowers the estimate. On a first-ever run with
+no history, the UI degrades to elapsed-only (no fabricated ETA).
+
+**Explicitly not this:** a spinner that implies progress we do not have, a
+hardcoded "this takes ~2 min" constant, or a timeout that kills a slow prefill.
+The prediction is advisory; the wait itself stays uncapped.
+
+---
+
 ## P2 — Session and context UX
 
 ### Session titles + searchable session browser
@@ -190,3 +288,7 @@ first extension" tutorial. The examples are good reference material.
 - Status bar shows model RAM usage and generation speed.
 - Terminal-native theming (`auto` follows the terminal background) with a quiet,
   rule-based TUI layout, plus screen snapshots guarding it against regressions.
+- Prefill waits are no longer killed: local-server backends have no read timeout
+  by default, a pre-token read timeout is surfaced without retrying, and
+  `AGENT_LLM_READ_TIMEOUT` sets a cap. Making that wait *legible* (ETA/narration)
+  is **not** done yet — see P1 "Predictable wait" above.
