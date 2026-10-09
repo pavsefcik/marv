@@ -13,6 +13,7 @@ import typer
 from marv import __version__
 from marv.config import Config
 from marv.llm.factory import create_provider
+from marv.runtime.agent import READ_ONLY_TOOLS
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
@@ -94,6 +95,13 @@ def run(
             help="Tool approval mode: off, destructive, all",
         ),
     ] = None,
+    read_only: Annotated[
+        bool,
+        typer.Option(
+            "--read-only",
+            help="Narrow the tool set to read/grep/find/ls (no writes or shell)",
+        ),
+    ] = False,
     theme: Annotated[
         str | None,
         typer.Option(
@@ -153,6 +161,8 @@ def run(
     if extension:
         extensions.extend(Path(ext) for ext in extension)
 
+    effective_read_only = read_only or config.read_only
+
     config = Config(
         provider=provider or config.provider,
         model=model or config.model,
@@ -163,6 +173,7 @@ def run(
         temperature=config.temperature,
         thinking_level=thinking_level,
         approval_mode=approval_mode,
+        read_only=effective_read_only,
         theme=theme or config.theme,
         server_manager=server_manager or config.server_manager,
         session_dir=config.session_dir,
@@ -329,6 +340,30 @@ def bench(
 
 
 @app.command()
+def doctor(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON"),
+    ] = False,
+) -> None:
+    """Diagnose config, hub, server, and extension setup.
+
+    One command that checks the resolved config, the local Hugging Face hub,
+    the model server, the download tooling, and whether configured extensions
+    load, so a setup problem explains itself instead of surfacing later as a
+    cryptic TUI error.
+    """
+    from .doctor import doctor_command
+
+    config = Config.load()
+    doctor_command(
+        config=config,
+        create_llm_provider=_create_llm_provider,
+        as_json=json_output,
+    )
+
+
+@app.command()
 def fork(
     session: Annotated[
         Path | None, typer.Option("-s", "--session", help="Session file to fork")
@@ -431,6 +466,9 @@ def config_show() -> None:
     typer.echo(f"  Max Output Tokens: {config.max_output_tokens}")
     typer.echo(f"  Temperature: {config.temperature}")
     typer.echo(f"  Thinking Level: {config.thinking_level}")
+    tools = ", ".join(READ_ONLY_TOOLS) if config.read_only else "[all registered]"
+    typer.echo(f"  Read Only: {config.read_only}")
+    typer.echo(f"  Active Tools: {tools}")
     typer.echo(f"  Theme: {config.theme}")
     typer.echo(f"  Server Manager: {config.server_manager}")
     typer.echo(f"  Session Dir: {config.session_dir}")
