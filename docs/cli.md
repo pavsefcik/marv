@@ -50,11 +50,23 @@ loop (prompt assembly, tool schemas, transport included) and reports:
 - **TTFT growth per turn** — a flat number means the prompt is not being
   re-prefilled in full each turn; a climbing one means it is, and that is the
   latency bug to fix first
+- **prefill rate** — the learned `tokens/s` this machine prefills at, plus a
+  `cold start` constant when cold turns were measured
 
 Options: `--prompt` (repeatable, overrides the default prompts), `-n`/`--turns N`,
 `--no-warmup` (include cold start), `--json`, and the usual `-m`/`-p` overrides.
 
-See [`llm.md`](llm.md) for where the measurement is taken and
+### Seeding the calibration
+
+Beyond reporting, `marv bench` **writes the calibration to `state.toml`**
+(`remember_latency_fit`) for the active model. This is how a fresh machine gets
+its prefill constants: the first benchmark seeds the fit that the wait predictor
+and the model menu's latency tier then use. An ordinary session also refreshes
+it from its own measured turns, so running `bench` is a way to seed it early
+rather than a required step. A `--no-warmup` run measures the cold-start
+constant too.
+
+See [`llm.md`](llm.md#prefilldecode-calibration) for the prediction model and
 [`coworking-plan.md`](coworking-plan.md) for how it feeds the latency work.
 
 ## Design role

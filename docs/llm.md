@@ -134,10 +134,10 @@ Design notes:
 - **Prompt cost travels with the timing.** TTFT alone cannot distinguish "the
   model is slow" from "the prompt grew"; `prompt_tokens` and `schema_tokens`
   make the prefill cost attributable, and are kept separate because tool
-  schemas are avoidable cost on a turn that needs no tools. **Known gap:**
-  `Agent` currently forwards only `prompt_tokens` into the tracker, so the TUI
-  and `marv bench` prefill figures are prompt-only; the transport's
-  `schema_tokens` is not yet rolled up.
+  schemas are avoidable cost on a turn that needs no tools. `Agent` threads
+  both into the tracker (the transport's `schema_tokens` refines its own
+  pre-request estimate), so the TUI and `marv bench` prefill figures include
+  the schemas that were actually on the wire.
 - **A turn that never streams reports `streamed: false`.** It is excluded from
   medians rather than recorded as an infinite TTFT.
 - **The runtime may prefer its own clock.** `Agent` times the same interval from
@@ -145,5 +145,44 @@ Design notes:
   sample, since the transport excludes the loop's bookkeeping. This keeps
   providers that do not report timing (the test fake, `apple-fm`) measurable.
 
-Consumers: `marv bench` (aggregate report), the TUI status bar (last turn), and
-any future routing work that needs to know the cost of a turn before sending it.
+Consumers: `marv bench` (aggregate report + seeding the calibration), the TUI
+status bar (last turn), and the wait predictor that needs to know the cost of a
+turn before sending it.
+
+## Prefill/decode calibration
+
+The measured samples' other job is to teach the harness how fast *this machine*
+prefills, so a wait can be predicted before it starts rather than discovered by
+sitting through it. `LatencyFit` (`src/marv/llm/latency.py`) is the learned
+constant, and it is deliberately small:
+
+```
+TTFT ≈ prefill_tokens / prefill_tokens_per_second + cold_start_ms
+```
+
+- **Managed by a through-origin aggregate.** `prefill_tokens_per_second` is
+  `total_prefill_tokens / total_prefill_seconds` over warm samples, not a
+two-point slope, so one noisy turn cannot produce an absurd estimate. A model
+with no usable samples reports `has_data == false`, and
+`predict_ttft_ms()` returns `None` — the UI then degrades to elapsed-only
+instead of showing a fabricated ETA.
+- **Cold start is a separate regime.** The first turn after the model is loaded
+pays weight-loading time that is independent of prompt size. It is learned as a
+`cold_start_ms` constant (excluded from the prefill rate, and only once a warm
+rate exists to subtract the prefill cost from), so a cold turn does not drag
+the rate down.
+- **A cache hit is not a faster prefill.** When the server has a warm prefix
+cache a large prompt comes back far below the current prediction. A sample
+faster than `CACHE_HIT_RATIO` (0.5×) of the fit is counted as a `cache_hit` and
+kept out of the rate: it is a real speedup, but folding it in would
+under-predict every later uncached turn. A sample below `MIN_PREFILL_MS` is
+treated as too cheap to inform the rate.
+- **Where the fit comes from.** The runtime learns it from the turns it already
+measures (`Agent.refine_latency_fit()`), and `marv bench` seeds it on a fresh
+machine (see [`cli.md`](cli.md#latency-benchmark)). Either way it is persisted
+per model in `state.toml` beside the last-used selection
+(`remember_latency_fit`) and re-loaded on the next start
+(`Config.latency_fit_for(model)`).
+
+See [`configuration.md`](configuration.md#last-used-selection) for where the fit
+is stored.

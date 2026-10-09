@@ -10,6 +10,7 @@ from textual.binding import Binding
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from marv.config.state import load_last_used
 from marv.llm.models import get_model_info, resolve_capability_provider, supports_reasoning
 from marv.runtime.settings import ThinkingLevel, get_available_thinking_levels
 from marv.tui.panel import DockPanel
@@ -17,7 +18,24 @@ from marv.tui.panel import DockPanel
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
+    from marv.llm.latency import LatencyFit
     from marv.runtime.agent import Agent
+
+
+def format_latency_tier(fit: LatencyFit) -> str:
+    """One-line latency tier for a calibrated model (empty when unknown).
+
+    ``bench`` and the agent's own turns record a prefill rate and a cold-start
+    constant per model; this renders them for the model menu. An uncalibrated
+    model yields an empty string so the menu shows no number rather than an
+    invented one.
+    """
+    parts: list[str] = []
+    if fit.cold_start_ms > 0:
+        parts.append(f"≈{fit.cold_start_ms / 1000:.1f}s TTFT")
+    if fit.has_data:
+        parts.append(f"{fit.prefill_tokens_per_second:,.0f} tok/s")
+    return " · ".join(parts)
 
 
 @dataclass(slots=True)
@@ -182,4 +200,13 @@ class ModelPanel(DockPanel[ModelChoice]):
             provider_hint = resolve_capability_provider(self._agent.provider_name)
             reasoning = "yes" if supports_reasoning(option_id, provider_hint) else "no"
             max_tokens = "(unknown)"
-        info.update(Text(f"reasoning: {reasoning} · max output: {max_tokens}"))
+        parts = [f"reasoning: {reasoning}", f"max output: {max_tokens}"]
+        tier = self._latency_tier(option_id)
+        if tier:
+            parts.append(tier)
+        info.update(Text(" · ".join(parts)))
+
+    def _latency_tier(self, model: str) -> str:
+        """The calibrated latency tier for ``model``, read from state.toml."""
+        fit = load_last_used(self._agent.config.session_dir).fit_for(model)
+        return format_latency_tier(fit)
