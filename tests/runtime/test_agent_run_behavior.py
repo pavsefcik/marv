@@ -279,3 +279,97 @@ async def test_agent_latency_resets_between_runs(temp_dir):
     async for _ in agent.run("second"):
         pass
     assert agent.latency.metrics.turns == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_emits_a_wait_estimate_before_the_request(temp_dir):
+    """The UI must be able to narrate the prefill from the first second."""
+    agent, _ = build_agent(temp_dir, [make_text_events("Hello")])
+
+    chunks = []
+    async for chunk in agent.run("Hi"):
+        chunks.append(chunk)
+
+    estimates = [chunk for chunk in chunks if chunk.type == "wait_estimate"]
+    assert len(estimates) == 1
+    estimate = estimates[0].payload
+    assert estimate.prompt_tokens > 0
+    # Tool schemas are on the wire every turn and cost prefill too.
+    assert estimate.schema_tokens > 0
+    assert estimate.prefill_tokens == estimate.prompt_tokens + estimate.schema_tokens
+    # No measured history yet, so there is honestly no ETA to show.
+    assert estimate.eta_ms is None
+
+
+@pytest.mark.asyncio
+async def test_agent_estimate_uses_an_installed_calibration(temp_dir):
+    """Once a fit exists, the pre-request estimate is derived from it."""
+    from marv.llm.latency import LatencyFit, LatencySample
+
+    agent, _ = build_agent(temp_dir, [make_text_events("Hello")])
+    agent.set_latency_fit(
+        LatencyFit.from_samples([LatencySample(ttft_ms=1000.0, prompt_tokens=5000, streamed=True)])
+    )
+
+    chunks = []
+    async for chunk in agent.run("Hi"):
+        chunks.append(chunk)
+
+    estimate = next(c for c in chunks if c.type == "wait_estimate").payload
+    assert estimate.has_eta
+    # 5000 tok/s means the whole prefill (prompt + schemas) is predicted.
+    assert estimate.eta_ms == estimate.prefill_tokens / 5000.0 * 1000.0
+
+
+@pytest.mark.asyncio
+async def test_agent_fit_absorbs_a_measured_turn(temp_dir):
+    """A completed turn must improve the calibration so the next ETA is better."""
+    script = [
+        AssistantMetadataEvent(
+            metadata={
+                "latency": {
+                    "ttft_ms": 2500.0,
+                    "prompt_tokens": 10000,
+                    "schema_tokens": 1000,
+                    "streamed": True,
+                }
+            }
+        ),
+        *make_text_events("Hello"),
+    ]
+    agent, _ = build_agent(temp_dir, [script])
+    assert agent.latency_fit.has_data is False
+
+    async for _ in agent.run("Hi"):
+        pass
+
+    fit = agent.refine_latency_fit()
+    assert fit.sample_count == 1
+    # The agent's own prompt/schema estimate is what the fit folds in; the
+    # point is that the measured TTFT made it into a usable rate.
+    assert fit.prefill_tokens_per_second > 0
+
+
+@pytest.mark.asyncio
+async def test_agent_prefers_a_provider_reported_schema_cost(temp_dir):
+    """The transport measures the tools payload it actually put on the wire."""
+    script = [
+        AssistantMetadataEvent(
+            metadata={
+                "latency": {
+                    "ttft_ms": 10.0,
+                    "prompt_tokens": 40,
+                    "schema_tokens": 1234,
+                    "streamed": True,
+                }
+            }
+        ),
+        *make_text_events("Hello"),
+    ]
+    agent, _ = build_agent(temp_dir, [script])
+
+    async for _ in agent.run("Hi"):
+        pass
+
+    assert agent.latency.last_sample is not None
+    assert agent.latency.last_sample.schema_tokens == 1234

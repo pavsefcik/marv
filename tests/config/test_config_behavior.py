@@ -5,6 +5,7 @@ from __future__ import annotations
 import textwrap
 
 from marv.config import Config, ProviderConfig
+from marv.config.state import LastUsedSelection
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.settings import ThinkingLevel
 
@@ -403,3 +404,59 @@ def test_config_server_manager_from_env(temp_dir, monkeypatch):
 def test_config_server_manager_round_trips_through_construction():
     assert Config(server_manager="marv-mlx").server_manager == "marv-mlx"
     assert Config().server_manager == "embedded"
+
+
+# --- read-only mode --------------------------------------------------------
+
+
+def test_read_only_defaults_to_off():
+    assert Config().read_only is False
+
+
+def test_read_only_from_env(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_READ_ONLY", "true")
+
+    assert Config.load().read_only is True
+
+
+def test_read_only_from_config_file(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text("read_only = true\n")
+
+    assert Config.load().read_only is True
+
+
+def test_read_only_projects_into_agent_settings():
+    assert Config(read_only=True).to_agent_settings().read_only is True
+    assert Config().to_agent_settings().read_only is False
+
+
+def test_latency_fit_for_reads_persisted_state(temp_dir):
+    from marv.llm.latency import LatencyFit, LatencySample
+
+    session_dir = temp_dir / "sessions"
+    fit = LatencyFit.from_samples(
+        [LatencySample(ttft_ms=1000.0, prompt_tokens=5000, streamed=True)]
+    )
+    LastUsedSelection(model="model-a").with_fit("model-a", fit).save(session_dir)
+
+    config = Config(session_dir=session_dir)
+
+    assert config.latency_fit_for("model-a").prefill_tokens_per_second == 5000.0
+    assert config.latency_fit_for("never-measured").has_data is False

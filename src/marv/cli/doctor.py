@@ -80,9 +80,11 @@ def _check_config(config: Config) -> list[CheckResult]:
         results.append(CheckResult("model", FAIL, f"required for provider {config.provider!r}"))
 
     if config.read_only:
-        results.append(CheckResult("read-only", OK, "active tools: read, grep, find, ls"))
+        results.append(
+            CheckResult("guardrails", OK, "read-only: active tools are read, grep, find, ls")
+        )
     elif config.approval_mode.value != "off":
-        results.append(CheckResult("approval", OK, f"mode={config.approval_mode.value}"))
+        results.append(CheckResult("guardrails", OK, f"approval mode={config.approval_mode.value}"))
     else:
         results.append(
             CheckResult(
@@ -242,7 +244,7 @@ def run_checks(
         _check_download_tooling(),
         _check_extensions(config),
     ]
-    if extension_loader is not None:
+    if extension_loader is not None and config.extensions:
         results.append(check_extensions_load(config, extension_loader))
     return DoctorReport(results=results)
 

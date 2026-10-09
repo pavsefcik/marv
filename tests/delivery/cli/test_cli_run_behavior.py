@@ -630,3 +630,62 @@ def test_cli_does_not_touch_providers_without_a_hub(temp_dir, monkeypatch):
 
     assert result.exit_code == 0
     assert "Downloading" not in result.stderr
+
+
+def test_cli_run_propagates_read_only_flag_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[bool] = []
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.read_only)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--read-only"])
+
+    assert result.exit_code == 0
+    assert seen == [True]
+
+
+def test_cli_run_read_only_defaults_off(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[bool] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.read_only)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    result = CliRunner().invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert seen == [False]
+
+
+def test_config_show_reports_the_read_only_tool_set(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_READ_ONLY", "true")
+
+    result = CliRunner().invoke(cli.app, ["config-show"])
+
+    assert result.exit_code == 0
+    assert "Read Only: True" in result.output
+    assert "read" in result.output
