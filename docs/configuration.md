@@ -85,6 +85,25 @@ This file is the weakest configuration source: an explicit config file value, an
 `AGENT_*` environment variable, or a CLI flag (`-m`/`-p`/`-t`) always overrides it.
 Delete the file to forget the selection.
 
+The same file also holds the per-model **prefill calibration** learned from your
+own turns (and seeded by `marv bench`). That is what lets the wait predictor and
+the model menu's latency tier show measured numbers instead of hardcoded ones;
+see [`llm.md`](llm.md#prefilldecode-calibration). A model with no recorded
+calibration simply shows nothing.
+
+## Read-only mode
+
+`read_only` narrows the active tool set to the read-only tools
+(`read`, `grep`, `find`, `ls`), so no write, edit, or shell tool is even offered
+to the model. Useful for "explain this repo" runs. It is `false` by default.
+
+- Config: `read_only = true`
+- Environment: `AGENT_READ_ONLY=1` (`1`/`true`/`yes`/`on`)
+- CLI: `marv run --read-only`
+
+Like `approval_mode`, this is a guardrail, not a sandbox: the read-only tools
+run with your full permissions. See [SECURITY.md](../SECURITY.md).
+
 ## Tool approval
 
 `approval_mode` controls whether tool calls need explicit confirmation before they
@@ -110,3 +129,21 @@ with a message rather than run. This is a guardrail, not a sandbox — see
 ## Extension config snapshot
 
 Extensions do not receive the raw `Config` object, but `ctx.config` exposes a safe snapshot of the resolved runtime configuration. That includes the resolved provider/model selection, prompt/context directories, and provider bootstrap values needed for extension-managed child agents.
+
+## `marv doctor`
+
+`marv doctor` checks the parts of a setup that otherwise fail as a cryptic TUI
+error, each with an independent one-line verdict:
+
+- the resolved config (provider, model, session dir, and the active tool set /
+  guardrails — it reports read-only mode when active)
+- the local Hugging Face hub, and whether the selected model is downloaded
+- the local model server: command present, reachable, and serving the selected
+  model
+- server-manager delegation (`embedded` vs `marv-mlx`)
+- the clamped output budget
+- download tooling (a Python with `huggingface_hub`)
+- whether the configured extensions exist and load
+
+It never raises; use `marv doctor --json` for machine consumption. `marv config
+show` prints the resolved configuration values themselves.

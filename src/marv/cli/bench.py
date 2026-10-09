@@ -17,7 +17,8 @@ import json
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from marv.llm.latency import LatencyMetrics
+from marv.config.state import remember_latency_fit
+from marv.llm.latency import LatencyFit, LatencyMetrics
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -48,6 +49,10 @@ class BenchReport:
     model: str
     prompts: list[str] = field(default_factory=list)
     metrics: LatencyMetrics = field(default_factory=LatencyMetrics)
+    #: The per-model calibration these samples imply. ``bench`` is where a
+    #: fresh machine seeds it, so the wait predictor has measured constants
+    #: rather than a hardcoded guess.
+    fit: LatencyFit = field(default_factory=LatencyFit)
 
     def to_dict(self) -> dict[str, Any]:
         """Serializable view for ``--json`` consumers."""
@@ -55,6 +60,13 @@ class BenchReport:
             "provider": self.provider,
             "model": self.model,
             "turns": self.metrics.turns,
+            "calibration": {
+                "prefill_tokens_per_second": round(self.fit.prefill_tokens_per_second, 2),
+                "cold_start_ms": round(self.fit.cold_start_ms, 1),
+                "samples": self.fit.sample_count,
+                "cold_samples": self.fit.cold_samples,
+                "cache_hits": self.fit.cache_hits,
+            },
             "ttft_ms": {
                 "p50": round(self.metrics.ttft_ms, 1),
                 "p90": round(self.metrics.ttft_p90_ms, 1),
@@ -122,6 +134,7 @@ async def run_bench(
             model=provider.model,
             prompts=selected,
             metrics=metrics,
+            fit=LatencyFit.from_samples(metrics.samples),
         )
     finally:
         await agent.close()
@@ -143,6 +156,12 @@ def format_report(report: BenchReport) -> str:
     else:
         verdict = f"{growth:.0f} ms/turn — flat (prompt is not costing more per turn)"
 
+    fit = report.fit
+    calibration = (
+        f"{fit.prefill_tokens_per_second:,.0f} tok/s" if fit.has_data else "not calibrated yet"
+    )
+    cold_start = f"{fit.cold_start_ms:.0f} ms" if fit.cold_start_ms > 0 else "not measured"
+
     lines = [
         f"{report.provider} / {report.model}",
         f"  turns            {metrics.turns}",
@@ -151,7 +170,11 @@ def format_report(report: BenchReport) -> str:
         f"  prefill (median) {metrics.prefill_tokens:,} tokens",
         f"  prompt/turn      {metrics.prompt_tokens_per_turn:,.0f} tokens",
         f"  growth           {verdict}",
+        f"  prefill rate     {calibration}",
+        f"  cold start       {cold_start}",
     ]
+    if fit.cache_hits:
+        lines.append(f"  cache hits       {fit.cache_hits} (below the fit, kept out of the rate)")
     return "\n".join(lines)
 
 
@@ -175,6 +198,10 @@ def bench_command(
         stop = getattr(provider, "stop_if_serving", None)
         if callable(stop):
             stop()
+
+    # Seeding calibration is why ``marv bench`` exists: this machine now has
+    # measured prefill constants the wait predictor can use on the next turn.
+    remember_latency_fit(config.session_dir, provider.model, report.fit)
 
     if as_json:
         print(json.dumps(report.to_dict(), indent=2))
