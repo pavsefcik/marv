@@ -6,13 +6,25 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from marv.config.state import load_last_used
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.settings import AgentSettings, ThinkingLevel
+
+if TYPE_CHECKING:
+    from marv.llm.latency import LatencyFit
+
+
+def _as_bool(value: object) -> bool:
+    """Coerce a config/env value to a bool (strings are common from env)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 @dataclass(slots=True)
@@ -37,6 +49,8 @@ class Config:
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
     approval_mode: ApprovalMode = ApprovalMode.OFF
+    #: Read-only mode: the active tool set is narrowed to read/grep/find/ls.
+    read_only: bool = False
     theme: str = "auto"
     #: Local-server lifecycle: "embedded" (marv launches mlx_vlm.server) or
     #: "marv-mlx" (delegate to the marv-mlx runtime CLI when present).
@@ -81,6 +95,7 @@ class Config:
             temperature=self.temperature,
             thinking_level=self.thinking_level,
             approval_mode=self.approval_mode,
+            read_only=self.read_only,
             session_dir=self.session_dir,
             skills_dirs=list(self.skills_dirs),
             extensions=list(self.extensions),
@@ -93,6 +108,14 @@ class Config:
     def provider_overrides(self) -> dict[str, ProviderConfig]:
         """Return provider override values for provider bootstrap."""
         return dict(self.providers)
+
+    def latency_fit_for(self, model: str | None) -> LatencyFit:
+        """The persisted per-model prefill calibration for ``model``.
+
+        Empty when this machine has not measured a turn for the model yet, in
+        which case the wait predictor honestly reports no ETA.
+        """
+        return load_last_used(self.session_dir).fit_for(model)
 
     @classmethod
     def _load_config_file(cls, config_dir: Path) -> dict[str, Any]:
@@ -139,6 +162,7 @@ class Config:
             "AGENT_TEMPERATURE": "temperature",
             "AGENT_THINKING": "thinking_level",
             "AGENT_APPROVAL": "approval_mode",
+            "AGENT_READ_ONLY": "read_only",
             "AGENT_THEME": "theme",
             "AGENT_SERVER_MANAGER": "server_manager",
         }
@@ -149,6 +173,13 @@ class Config:
                     config_data[config_key] = int(value)
                 elif config_key in ("temperature",):
                     config_data[config_key] = float(value)
+                elif config_key == "read_only":
+                    config_data[config_key] = value.strip().lower() in (
+                        "1",
+                        "true",
+                        "yes",
+                        "on",
+                    )
                 else:
                     config_data[config_key] = value
 
@@ -210,6 +241,7 @@ class Config:
             temperature=data.get("temperature", 0.7),
             thinking_level=thinking_level,
             approval_mode=approval_mode,
+            read_only=_as_bool(data.get("read_only")),
             theme=str(data.get("theme") or "auto"),
             server_manager=str(data.get("server_manager") or "embedded"),
             session_dir=session_dir,

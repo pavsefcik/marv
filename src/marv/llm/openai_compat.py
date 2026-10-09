@@ -44,6 +44,7 @@ from marv.llm.events import (
     ToolCallStartEvent,
     Usage,
 )
+from marv.llm.latency import estimate_tokens_from_json
 from marv.llm.retry import RetryConfig, with_retry
 from marv.llm.stream import AssistantMessageEventStream
 
@@ -140,7 +141,7 @@ _CHARS_PER_TOKEN = 4
 
 def _estimate_payload_tokens(payload_messages: list[dict[str, Any]]) -> int:
     """Estimate prompt tokens from the serialized message payload."""
-    return len(json.dumps(payload_messages)) // _CHARS_PER_TOKEN
+    return estimate_tokens_from_json(payload_messages)
 
 
 def _map_stop_reason(openai_reason: str | None) -> StopReason:
@@ -373,7 +374,7 @@ class OpenAICompatibleProvider:
         first_token_at: float | None = None
         token_events = 0
         prompt_tokens_est = 0
-        schema_tokens_est = 0 if not tools else len(json.dumps(tools)) // _CHARS_PER_TOKEN
+        schema_tokens_est = estimate_tokens_from_json(tools) if tools else 0
 
         def _note_first_token() -> None:
             nonlocal first_token_at, token_events

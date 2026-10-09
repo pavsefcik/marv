@@ -85,6 +85,8 @@ class AgentSettings:
     temperature: float = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
     approval_mode: ApprovalMode = ApprovalMode.OFF
+    #: Narrow the active tool set to read/grep/find/ls (no mutation at all).
+    read_only: bool = False
     session_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "marv" / "sessions")
     skills_dirs: list[Path] = field(default_factory=list)
     extensions: list[Path] = field(default_factory=list)
