@@ -5,6 +5,43 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+### Added
+
+- **`marv doctor` — self-diagnosing setup.** One command checks the resolved
+  config, the local Hugging Face hub, whether the selected model is present,
+  whether the model server is reachable and serving what you expect, the
+  download tooling, the clamped output budget, and whether configured
+  extensions actually load. Every check is independent, prints a one-line
+  verdict, and never raises; `--json` for machines. Setup problems explain
+  themselves instead of surfacing later as a cryptic TUI error.
+- **`--read-only` mode.** `marv run --read-only` (or `AGENT_READ_ONLY=true`,
+  or `read_only = true` in config) narrows the active tool set to
+  `read`/`grep`/`find`/`ls`. This is a real narrowing — the mutating tools are
+  absent from the model schemas and refused by the registry — so an "explain
+  this repo" run cannot write, edit, or run shell commands even if the model
+  asks. `marv config show` reports the active tool set.
+- **Per-model prefill calibration.** marv now learns the two constants the wait
+  prediction needs from turns it already measures: the prefill rate
+  (tokens/second) and a separate **cold-start** constant for weight loading.
+  Both are fit through the origin over warm samples, and a sample far below the
+  fit is treated as a server-side **cache hit** rather than as a faster prefill.
+  The fit is persisted per model in `state.toml` beside the last-used selection.
+- **A wait estimate before the request is sent.** The agent emits a
+  `WaitEstimate` (prompt tokens, tool-schema tokens, a measured `eta_ms`) on its
+  output channel *before* the provider request goes out, so delivery can
+  narrate the prefill instead of showing an undifferentiated spinner. Tool
+  schemas — previously dropped from the latency path — are now threaded
+  through, so the estimate reflects everything the server must prefill. On a
+  first-ever run the estimate is honestly `None`, not a hardcoded constant.
+
+### Fixed
+
+- **Tool-schema tokens are no longer invisible to latency figures.** `Agent`
+  now threads `schema_tokens` (estimated before the request and refined from the
+  transport's measured `tools` payload) into the latency tracker, so the TUI
+  prefill figure and `marv bench` include the schemas that are on the wire every
+  turn. The long-standing "known gap" in the figures is closed.
+
 ## [0.110.0] - 2026-10-08
 
 Docs: audit pass against the working tree — corrected the prefill-figure claim
@@ -254,14 +291,11 @@ First tagged release.
 ### Notes
 
 - Local-first backends only: `marv-mlx` (default) and `apple-fm`.
-- **Known gap in the latency figures.** The transport reports both
-  `prompt_tokens` and `schema_tokens`, but `Agent` currently threads only the
-  prompt count into the latency tracker (`_apply_provider_ttft` refines
-  `ttft_ms` only, and `note_request` passes `prompt_tokens` only), so the TUI
-  `ttft <ms>/<N>t` figure and the bench `prefill (median)` line are
-  **prompt-only** — tool-schema tokens are not yet included. `marv bench` also
-  reports TTFT and prefill, not decode tok/s. Both are tracked in
-  [`docs/coworking-plan.md`](docs/coworking-plan.md).
+- **Latency figures were prompt-only in 0.110.0.** The transport reported
+  `prompt_tokens` and `schema_tokens`, but `Agent` discarded the schema count,
+  so the TUI `ttft <ms>/<N>t` figure and the bench `prefill (median)` line
+  omitted tool schemas. Fixed in the next release (see Unreleased): `Agent`
+  threads schema tokens through, and `marv bench` reports them.
 
 [0.110.0]: https://github.com/pavsefcik/marv/releases/tag/v0.110.0
 [0.109.0]: https://github.com/pavsefcik/marv/releases/tag/v0.109.0
