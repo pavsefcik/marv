@@ -31,9 +31,9 @@ def build_config(temp_dir, **overrides) -> Config:
 
 
 def test_report_names_a_model_missing_for_a_cloud_provider(temp_dir):
-    config = build_config(temp_dir, model=None, provider="anthropic")
+    config = build_config(temp_dir, model=None, provider="openai")
 
-    report = run_checks(config, LLMProviderFake(name="anthropic", model=""))
+    report = run_checks(config, LLMProviderFake(name="openai", model=""))
 
     model = next(result for result in report.results if result.name == "model")
     assert model.status == FAIL

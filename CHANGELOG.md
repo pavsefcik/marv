@@ -3,6 +3,20 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [Unreleased]
+
+### Changed
+
+- **Docs consolidated; Claude/Anthropic leftovers removed.** The historical
+  `PLAN.md`, `marv-merge-plan.md`, and project handoff are gone. The coworking
+  proposal is folded into `ROADMAP.md` as the local-LLM coworking direction,
+  `docs/delivery.md` is merged into `docs/cli.md`, and `docs/agent-loop.md`
+  into `docs/architecture.md`. The `CLAUDE.md` symlink and CLAUDE.md
+  context-file loading are removed — `AGENTS.md` is the only context file —
+  along with the unused Anthropic/Claude model catalog and its capability
+  policy. The OpenAI catalog remains for the `openai` / `openai-codex` /
+  `openai-compat` providers.
+
 ## [0.111.0] - 2026-10-09
 
 Predictable waits and a self-diagnosing setup.

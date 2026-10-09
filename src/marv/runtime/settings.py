@@ -35,7 +35,7 @@ THINKING_LEVELS_WITH_XHIGH: list[ThinkingLevel] = [
     ThinkingLevel.XHIGH,
 ]
 
-# Default token budgets for thinking levels (used by Anthropic)
+# Default token budgets for thinking levels
 THINKING_BUDGETS: dict[ThinkingLevel, int] = {
     ThinkingLevel.MINIMAL: 1024,
     ThinkingLevel.LOW: 2048,

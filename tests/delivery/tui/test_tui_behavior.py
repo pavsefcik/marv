@@ -580,12 +580,14 @@ async def test_tui_runner_model_menu_updates_model_and_thinking(temp_dir):
 
 @pytest.mark.asyncio
 async def test_tui_runner_model_command_switches_and_rejects_invalid_model(temp_dir):
-    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    config = Config(
+        provider="openai-codex", model="gpt-5-codex", api_key="test", session_dir=temp_dir
+    )
     provider = LLMProviderFake(
         [],
-        name="openai",
-        model="gpt-4o",
-        available_models=["gpt-4o", "gpt-5"],
+        name="openai-codex",
+        model="gpt-5-codex",
+        available_models=["gpt-5-codex", "gpt-5"],
     )
     app = AgentApp(config, provider=provider)
 
@@ -597,9 +599,9 @@ async def test_tui_runner_model_command_switches_and_rejects_invalid_model(temp_
         assert any("switched to gpt-5" in msg for msg in system_messages(app))
         assert "gpt-5" in status_left_text(app)
 
-        await submit(app, pilot, "/model claude-sonnet-4-5")
+        await submit(app, pilot, "/model gpt-4o")
         assert app.agent.provider.model == "gpt-5"
-        assert any("not valid for provider 'openai'" in msg for msg in system_messages(app))
+        assert any("not valid for provider 'openai-codex'" in msg for msg in system_messages(app))
         assert "gpt-5" in status_left_text(app)
 
 

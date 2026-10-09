@@ -124,7 +124,7 @@ with a message rather than run. This is a guardrail, not a sandbox — see
 
 ## Context files
 
-`AGENTS.md` and `CLAUDE.md` are auto‑loaded from the project and its ancestors to seed the system prompt.
+`AGENTS.md` files are auto‑loaded from the project and its ancestors to seed the system prompt.
 
 ## Extension config snapshot
 

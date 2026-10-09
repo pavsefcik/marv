@@ -251,7 +251,7 @@ def test_cli_run_fails_on_invalid_provider_model_pair():
     runner = CliRunner()
     result = runner.invoke(
         cli.app,
-        ["run", "--headless", "hi", "--provider", "openai", "--model", "claude-sonnet-4-5"],
+        ["run", "--headless", "hi", "--provider", "openai-codex", "--model", "gpt-4o"],
     )
 
     assert result.exit_code != 0

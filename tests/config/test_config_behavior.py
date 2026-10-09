@@ -98,16 +98,16 @@ def test_config_load_reads_yaml_when_toml_missing(temp_dir, monkeypatch):
     (global_dir / "config.yaml").write_text(
         textwrap.dedent(
             """
-            provider: anthropic
-            model: claude-sonnet-4-5
+            provider: openai
+            model: gpt-5.4
             """
         )
     )
 
     config = Config.load()
 
-    assert config.provider == "anthropic"
-    assert config.model == "claude-sonnet-4-5"
+    assert config.provider == "openai"
+    assert config.model == "gpt-5.4"
 
 
 def test_config_load_reads_yml_when_other_formats_missing(temp_dir, monkeypatch):

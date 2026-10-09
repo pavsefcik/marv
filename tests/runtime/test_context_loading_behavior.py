@@ -48,9 +48,14 @@ def test_symlinked_context_file_is_injected_only_once(temp_dir, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
 
     write_ctx(project / "AGENTS.md", "shared guidance")
-    (project / "CLAUDE.md").symlink_to(project / "AGENTS.md")
+    link = temp_dir / "linked.md"
+    link.symlink_to(project / "AGENTS.md")
 
-    contexts = load_all_context(cwd=project, include_ancestors=False)
+    contexts = load_all_context(
+        cwd=project,
+        explicit_paths=[link],
+        include_ancestors=False,
+    )
 
     assert len(contexts) == 1
     assert contexts[0].content == "shared guidance"

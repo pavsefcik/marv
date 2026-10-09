@@ -1,6 +1,6 @@
 # AGENTS.md — marv
 
-Project instructions for coding agents. `CLAUDE.md` is a symlink to this file.
+Project instructions for coding agents.
 
 ## What this is
 
@@ -52,11 +52,11 @@ Prefer Makefile targets over direct commands. Run `make help` to list them.
 - `src/marv/tui/` — Textual UI; `src/marv/cli/` — Typer surface + headless
   (`bench.py` = `marv bench` latency benchmark)
 - `src/marv/extensions/`, `skills/`, `prompts/`
-- `docs/` — source of truth for behaviour. `PLAN.md`, `marv-merge-plan.md`,
-  and `project-handoff-*.md` are archived/historical; `docs/coworking-plan.md`
-  is a proposal (P0 shipped, P1+ not implemented).
-- `ROADMAP.md` — candidate next work (a menu, not committed scope). Its
-  "Current state" line is a snapshot, not authoritative — `VERSION` is.
+- `docs/` — source of truth for behaviour (architecture + agent loop, delivery,
+  config, sessions, tools, skills, prompts, extensions, llm, tui).
+- `ROADMAP.md` — candidate next work (a menu, not committed scope), including
+  the long-range local-LLM coworking direction. Its "Current state" line is a
+  snapshot, not authoritative — `VERSION` is.
 - `tests/` — mirrors `src/`, with fakes in `tests/test_doubles/`; the
   `tests/delivery/tui/snapshots/` suite pins TUI presentation.
 

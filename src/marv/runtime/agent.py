@@ -318,7 +318,7 @@ class Agent:
 
     def _init_system_prompt(self) -> None:
         """Initialize system prompt with context using the prompt builder."""
-        # Load context files (AGENTS.md, CLAUDE.md from project and ancestors)
+        # Load context files (AGENTS.md from project and ancestors)
         context_files = load_all_context(
             cwd=self._cwd,
             explicit_paths=self.config.context_file_paths,
@@ -456,7 +456,7 @@ class Agent:
 
     @property
     def context_files(self) -> list[ContextFile]:
-        """Get loaded context files (AGENTS.md, CLAUDE.md, etc.)."""
+        """Get loaded context files (AGENTS.md, etc.)."""
         return self._context_files
 
     @property

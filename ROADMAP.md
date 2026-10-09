@@ -4,138 +4,258 @@ Candidate work, roughly ordered by value. Sizes are rough: **S** < 1h,
 **M** ~ half a day, **L** > a day. Nothing here is committed scope — it is a
 menu, not a promise.
 
-Current state: `v0.109.0` (plus uncommitted P0 latency work pending release).
-`VERSION` is authoritative — this line is a snapshot. See
-[`CHANGELOG.md`](CHANGELOG.md) for what shipped, and
-[`docs/coworking-plan.md`](docs/coworking-plan.md) for the local-LLM
-coworking direction (its P0 latency work is shipped; P1–P5 remain).
+Current state: `v0.111.0`. `VERSION` is authoritative — this line is a snapshot.
+See [`CHANGELOG.md`](CHANGELOG.md) for what shipped. The **coworking direction**
+below is the long-range track (its measurement step and the harness-side
+"predictable wait" work are shipped); the P2/P3 sections after it are the
+harness backlog.
 
 ---
 
-## P1 — Safety and robustness
+## Direction — local-LLM coworking
 
-### Sandbox / read-only mode
-`approval_mode` is a heuristic guardrail, not isolation. Add a first-class
-`--read-only` mode that narrows the active tool set to `read`/`grep`/`find`/`ls`
-(useful for "explain this repo" runs), and optionally a workspace-root
-confinement for `write`/`edit`. Today the only path guards are the opt-in
-extension examples (`examples/extensions/protected-paths.py`).
-- Where: `src/marv/tools/registry.py`, `src/marv/runtime/agent.py`,
-  `src/marv/config/runtime.py`, `src/marv/cli/__init__.py`
-- Effort: M · Risk: medium (touches tool activation)
+Status: **direction, not committed scope.** The measurement baseline (TTFT in
+the TUI + `marv bench`) shipped in 0.110.0, and the harness-side predictable
+wait (calibrate → predict → narrate → advise) shipped in 0.111.0. The steps
+below remain open.
 
-### `marv doctor`
-One command that checks the resolved config, the HF hub, model presence, server
-reachability, and whether configured extensions load. Makes setup problems
-self-diagnosing instead of surfacing as a cryptic TUI error.
-- Where: `src/marv/cli/__init__.py`, `src/marv/llm/local_server.py`
-- Effort: S · Risk: low
+### The shift
 
----
+Today marv is organised around one unit of work: *a repo in a working
+directory, edited by a tool-calling coding agent*. The default persona
+(`BASE_PROMPT`), the tool suite (`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`),
+the approval defaults, and even the app name are all coding-shaped.
 
-## P1 — Predictable wait: tell the user how long before they wait
+A coworking harness is organised around a different unit: *a conversation plus
+artifacts* — a draft, a table, a set of files, a decision. The work is
+read-mostly, interruption-heavy, and mostly questions. Code is one artifact
+type among several (documents, images, data).
 
-> **Status: shipped (items 1–3, 5, and the `say why` + `/compact` half of 4).**
-> `LatencyFit` calibration, the pre-request `WaitEstimate`, the TUI narration,
-> the latency tier, and on-demand `/compact` are implemented and tested. The
-> *schema-light retry* half of item 4 is **not** done — it needs the
-> coworking-plan model router (P2.1), which does not exist yet; today the
-> schema-dominated case names the cost honestly instead of offering a retry
-> that is not wired.
+The consequence for architecture is not a rewrite. It is three changes of
+emphasis:
 
-A local model's first token can be two minutes away on a large prompt, and
-`mlx_vlm` sends nothing while it prefills. With the prefill read timeout now
-removed (so we no longer kill the wait), the raw experience is *silence with no
-end in sight*: the user cannot tell "still prefilling" from "wedged", and has no
-signal to decide whether to wait, cancel, or `/compact`. The fix is not to make
-prefill faster (that is [`docs/coworking-plan.md`](docs/coworking-plan.md) P1)
-but to **make the wait legible**: predict it, narrate it while it happens, and
-offer the ways out when it is going to be long.
+1. **Latency becomes a correctness property, not a nicety.** A coworking
+   partner you wait 40s for is not a coworking partner. Every design choice gets
+   judged by time-to-first-token.
+2. **Generation is planned before it starts, not steered during it.** Local
+   models have coarse abort granularity; you must budget the turn up front.
+3. **Input and output become multimodal.** Text-only messages and a
+   text-only `to_api_dict` cannot support coworking.
 
-This is deliberately ordered **calibrate → predict → narrate → advise**, so
-every number shown to a user is derived from that machine's own measurements
-rather than a hardcoded constant.
+Everything below is ordered so that **measurement precedes optimisation** and
+**cheap wins precede new capability**.
 
-### 1. Per-model prefill/decode calibration *(S–M)*
-Learn the two constants the prediction needs from turns we already measure.
-`TTFT ≈ prefill_seconds + decode_seconds`, and both terms are linear in a token
-count, so a handful of samples are enough for a least-squares fit:
-`prefill_tok_per_s` from `prompt_tokens`/`ttft_ms`, and decode `tok/s` from the
-existing `TokenSpeedTracker`. Persist the fit per model in `state.toml` beside
-the last-used selection, refresh it opportunistically after each turn, and seed
-it from `marv bench` when available. Handle the two regimes explicitly: a
-*cold* model start (weights loading, tens of seconds — a separate constant) and
-a *cache hit* (a server-side prefix cache makes a large prompt cheap, so a
-sample that is far below the fit must not be treated as noise).
-- Where: `src/marv/llm/latency.py` (fit helpers), `src/marv/runtime/agent.py`
-  (`note_request`/`note_first_token` already bracket the interval
-  exactly), `src/marv/config/state.py`, `src/marv/cli/bench.py`
-- Effort: S–M · Risk: low (pure, offline fit; worst case the ETA is scruffy)
+### Latency budget: where the time actually goes
 
-### 2. Predict the wait before it starts *(S)*
+With the current architecture, a turn's wall time decomposes as:
 
-Compute the estimate when the request is built, not after the first token.
-`Agent._agent_loop` already knows the exact prompt size from
-`count_messages_tokens(messages_for_llm)` at `note_request`, and the transport
-knows the schema size; the missing piece is that `Agent` currently threads only
-`prompt_tokens` and **drops `schema_tokens`** (noted in the coworking audit),
-so tool schemas are invisible to the estimate. Thread both through, then emit a
-prediction on the same `assistant_metadata` channel as an `eta_ms` the delivery
-layer can render.
-- Where: `src/marv/runtime/agent.py` (`_apply_provider_ttft`/`note_request`),
-  `src/marv/llm/openai_compat.py` (`_latency_metadata`, `schema_tokens`),
-  `src/marv/llm/latency.py`
-- Effort: S · Risk: low
+```
+TTFT  = prefill(all prompt tokens + all tool schemas)   <-- DOMINANT, and it grows
+      + decode(first token)
+      + transport/queue
+```
 
-### 3. Narrate the prefill in the waiting indicator *(S–M)*
+Three structural facts in the current code make prefill the dominant term and
+make it *grow* with the conversation:
 
-The `WaitingIndicator` currently spins with no sense of progress. Give it the
-prediction and an elapsed clock: `prefilling 32k tokens · ~2:00 · 1:14 elapsed`
-with a live/cancellable affordance. Percent is *derived from elapsed vs the
-estimate*, and must be presented as an estimate that revises itself rather than
-a progress bar that jumps or stalls at 99% — a wrong-but-honest ETA builds more
-trust than a frozen one. When the estimate is exceeded, switch to a different
-message ("taking longer than predicted") instead of reaching 100% and lying.
-Also add an elapsed timer to the generating phase so decode time is visible too.
-- Where: `src/marv/tui/chat.py` (`WaitingIndicator`),
-  `src/marv/tui/renderer.py`, `src/marv/tui/status.py`
-- Effort: S–M · Risk: low (display only; no protocol change)
+- **The whole history is re-sent every turn.** `Agent._agent_loop` calls
+  `self.provider.stream(messages_for_llm, ...)` each iteration (after hook
+  preprocessing), over stateless HTTP. Unless the server has a persistent
+  prefix cache, the full context is re-prefilled *on every turn* — TTFT rises
+  roughly linearly with conversation length. This is the single largest latency
+  cost in the product.
+- **The system prompt contains a timestamp.** `_build_environment_section()`
+  emits `datetime.now()` into the *first* message. It is stable within a turn,
+  but `Agent.refresh_system_prompt()` re-stamps it whenever the tool set or an
+  extension changes mid-session, and it always differs across launches,
+  sessions, and resumes — so the prompt prefix defeats any cross-session prefix
+  cache (shared persona + the project's `AGENTS.md`). A prefix-stable prompt is
+  a prerequisite for caching, and the timestamp silently breaks it.
+- **Tool schemas are always on the wire.** Every turn ships all tool schemas
+  *and* repeats them as prose in `TOOL_DESCRIPTIONS`, even for "what does this
+  paragraph mean?".
 
-### 4. Turn the prediction into an exit offer *(M)*
+Secondary, smaller costs:
 
-When the predicted TTFT crosses a threshold, the wait is a decision, not just a
-fact — surface the options where the user already looks:
+- **Rendering is per-token.** `MessageWidget.append_text` → `_update_content`
+  runs `rich.Markdown(...)` + `update()` + `scroll_to_bottom()` on **every**
+  delta, not per frame (`src/marv/tui/chat.py`). This is cheap relative to
+  prefill but is pure waste and shows up as jank on long replies.
+- **Session writes are synchronous** on the event loop: `Session.append` →
+  `_append_message_entry` does a blocking `open()`/`write()` per entry
+  (`src/marv/runtime/session.py`).
+- **Thinking is irreversible once on.** `enable_thinking` is a request-level
+  flag (`marv_mlx._build_payload`), and for Ministral Reasoning the trace is
+  inherent to the model. You cannot disable reasoning mid-generation, so a turn
+  that decides to "think" has already paid for it.
 
-- **`/compact` before sending.** If the estimate is dominated by prompt size,
-  offer to compact first and re-estimate, using the existing manual-compaction
-  work (ROADMAP P2 "/compact on demand").
-- **Drop avoidable cost.** Tool schemas are on the wire for every turn; a
-  chat-shaped turn predicted to be slow is a signal to use the coworking-plan
-  router (P2.1) to re-send without schemas and shave TTFT.
-- **Say why.** Attribute the wait to prompt vs schemas vs cold start, reusing
-  the `prompt_tokens`/`schema_tokens` split, so the advice is specific rather
-  than "your context is long".
-- Where: `src/marv/tui/controller.py`, `src/marv/runtime/context.py`,
-  `src/marv/runtime/agent.py`
-- Effort: M · Risk: medium (must not nag every turn or fight the model router)
+**Implication:** the highest-leverage work is *sending fewer prompt tokens per
+turn* and *making the prefix cacheable*. Everything else is second-order until
+that is measured.
 
-### 5. Latency tier in model choice *(S)*
-Surface the calibrated TTFT/tok/s per curated model in the model menu and `marv
-bench`, so a slow-but-smart model is chosen knowingly rather than discovered
-mid-session. Overlaps coworking-plan P5.3; the calibration in (1) is what makes
-it honest.
-- Where: `src/marv/tui/model_panel.py`, `src/marv/llm/model_download.py`
-- Effort: S · Risk: low
+### C1 — Kill prefill: cacheable prefix, smaller prompt *(M–L)*
 
-**Acceptance:** on a machine with a few recorded turns, sending a 30k-token
-prompt shows an ETA within ~25% of the eventual TTFT, the waiting indicator
-tracks elapsed against it, and a predicted-long turn offers `/compact` / a
-schema-light retry that measurably lowers the estimate. On a first-ever run with
-no history, the UI degrades to elapsed-only (no fabricated ETA).
+1. **Prefix stability.** Move the volatile `Date/Time` out of the cached prefix:
+   either drop it, reduce it to a date (no time), or place it *after* all static
+   content. Add a regression test asserting the system prompt is byte-identical
+   across two builds within the same day.
+2. **Prefix warm-up.** After a session load or model start, send one cheap
+   request containing only the static prefix (persona + `AGENTS.md` + skills
+   list) so the server caches it before the user finishes typing. Gate this on
+   evidence that the server actually caches; if it does not, skip it and pursue
+   1.4 instead.
+3. **Tool schema diet.** Send compact schemas, and gate the tool *set* per turn
+   (see C2.1) so a chat turn ships no schemas at all. Remove the duplicate
+   prose descriptions for tools the model already sees as schemas, or keep prose
+   and drop nothing — but measure both.
+4. **History trimming for the wire.** Keep full history in the session (truth),
+   but send a *latency-trimmed* view: collapse old tool results (especially
+   `read`/`grep`/`find` output) to short summaries, and reuse the existing
+   `ContextManager` summarisation machinery. This is "lossy context for
+   latency", distinct from compaction-for-space.
+5. **Configurable prompt budget.** Add `prompt_sections` / per-section caps to
+   `Config` + `AgentSettings`, so a workload can disable skills, or context
+   files, or trim `AGENTS.md`.
 
-**Explicitly not this:** a spinner that implies progress we do not have, a
-hardcoded "this takes ~2 min" constant, or a timeout that kills a slow prefill.
-The prediction is advisory; the wait itself stays uncapped.
+**Acceptance:** a 10-turn conversation holds TTFT roughly flat instead of
+climbing; a chat turn sends materially fewer prompt tokens than today.
+
+### C2 — Plan the turn before it starts *(M–L)*
+
+Because local generation cannot be steered mid-flight, the fast path must be
+chosen up front.
+
+1. **A heuristic turn router (no model call).** Before streaming, classify the
+   resolved input into `chat` / `read` / `act` using signals that are already in
+   the runtime: presence of a `/template`, `$skill`, an attached artifact,
+   prior-turn tool use, and simple lexical cues (question vs imperative, file
+   references). Map:
+
+   - `chat` → no tools, tight prompt, thinking off.
+   - `read` → read-only tool subset, thinking off.
+   - `act` → full tool set, thinking per user setting.
+
+   This is the single biggest TTFT win available *today*, because most coworking
+   turns are `chat` and currently pay for the full tool schemas and a coding
+   persona.
+2. **Tool-choice discipline.** Ask the model to batch independent tool calls in
+   one turn (fewer round-trips = fewer full prefills). Prefer this over
+   speculative execution, which is riskier.
+3. **Thinking budget as a routing decision**, not a preference. Thinking off by
+   default; escalate only in `act`. Document the irreversibility constraint
+   where users will see it.
+4. **Early exit.** When a `read`-mode answer is complete, end the turn without
+   offering another tool round. Some local models always emit a tool call if one
+   is available; the router removes the option.
+
+**Acceptance:** in a benchmark of question-shaped prompts, all turns route to
+`chat` and TTFT drops measurably with no quality regression on a small eval set.
+
+This router is also what the harness-side "wait is long and schema-dominated"
+advice needs to be able to act on: today that case names the cost honestly, but
+the schema-light retry it would offer is not wired until C2.1 exists.
+
+### C3 — Streaming and UI responsiveness *(S–M)*
+
+1. **Frame-rate rendering.** Coalesce text deltas into ~16–33ms batches and
+   render once per frame (`chat.py` / `renderer.render_agent_run`). Keep the
+   accumulating string as the source of truth so final content is exact.
+2. **Stop re-parsing Markdown per token.** Render plain text while streaming,
+   parse once on `end_assistant_message`.
+3. **Cancellation parity.** Make cancellation take effect at tool boundaries
+   and in the decode loop, not only between turns.
+4. **Off-thread session writes** (or a buffered writer) so persistence never
+   blocks the loop.
+5. **Status honesty.** Showing TTFT and prompt tokens (shipped) makes
+   regressions visible the moment they land.
+
+**Acceptance:** a long streamed reply renders without visible stutter; typing
+during generation never blocks.
+
+### C4 — Coworking capabilities (the actual product surface) *(L, staged)*
+
+These are what make it *coworking* rather than "a coding agent pointed at
+documents". None of them are latency wins; they are why the latency work
+matters.
+
+1. **Multimodal input.** Today `Message.content` is a `str` and `to_api_dict`
+   emits text only. Make content a list of parts (`text` | `image`) or add an
+   `attachments` field, and wire it through the streaming payload. `mlx_vlm` is
+   vision-capable — screenshots, whiteboards and charts are the highest-value
+   coworking input and are currently impossible.
+2. **Document ingest.** PDF/Markdown/CSV → extract → context, with token
+   accounting so a 200-page PDF does not silently blow the prefill budget.
+3. **Artifacts as first-class output.** A workspace `outputs/` concept with a
+   rendered panel: the agent's deliverable is a file, not a wall of chat.
+4. **Personas/modes.** Make the base prompt a *setting* (`mode = coworking |
+   coding | research`), not a constant, and let the router select a default.
+   `BASE_PROMPT_NO_TOOLS` already exists and is the right shape for `chat`.
+5. **Read-only-by-default posture.** Coworking should mostly not write. The
+   shipped `--read-only` mode is the mechanism; make it the default for
+   `chat`/`read` under the router.
+6. **Sessions for conversations.** Titles + search + export (below) matter far
+   more in coworking than in coding, because there are many more, shorter
+   sessions.
+7. **Workspace framing.** Drop the assumption that the CWD is a git repo; a
+   workspace is a folder of arbitrary documents.
+
+**Acceptance:** a user can paste a screenshot, attach a PDF, ask a question, and
+get an answer whose first token lands inside the budget — with the answer saved
+as an artifact.
+
+### C5 — Server warmth and model choice *(M)*
+
+1. **Resident model.** Add `unload_on_idle` (inverse of today's
+   unload-on-exit). A cold model start is 20s+ of TTFT; for coworking the model
+   should stay warm.
+2. **Warm-up prefill** after model start and idle-timeout resets (see C1.2).
+3. **Model choice by latency tier.** *(Shipped in 0.111.0: the model menu shows
+   the calibrated TTFT / tok/s per model.)*
+4. **Draft-model / speculative decoding** and any server-side prefix-cache
+   tuning live in `marv-mlx`, not marv — but marv should *measure* them via
+   `marv bench` so the runtime work is guided by the same numbers.
+
+### Sequencing
+
+| Milestone | Contents | Outcome |
+| --- | --- | --- |
+| M1 | measurement — **done** | TTFT is visible in the TUI and in `marv bench`. Every later claim is falsifiable. |
+| M2 | C1.1, C1.3, C2.1, C2.3, C3.1 | "Chat feels instant": chat turns ship no schemas, prefix is cacheable, rendering is frame-batched. |
+| M3 | C1.2, C1.4, C5.1, C5.2 | TTFT stays flat as a conversation grows. |
+| M4 | C4.1, C4.3 | Multimodal in, artifacts out — the coworking surface exists. |
+| M5 | C4.2, C4.4, C4.5, C4.6, C4.7 | Positions marv as a coworking harness, not a coding agent. |
+
+M2 is the milestone that decides whether the premise works. If a chat turn
+cannot be made to feel instant on the target hardware, the rest is decoration,
+and the honest answer is that marv-mlx (server-side prefix caching, speculative
+decoding) is the critical path — in which case M2's router work still pays off
+but the roadmap shifts toward the runtime.
+
+### Explicitly not proposed
+
+- **A rewrite.** The `llm → runtime → delivery` layering already supports this:
+  the router is a runtime concern, attachment plumbing is a `Message` +
+  provider-payload concern, rendering is delivery. No layer violations needed.
+- **Cloud fallback.** Contradicts local-first; also the one thing that would
+  trivially "fix" latency while destroying the product.
+- **Speculative/parallel tool execution before the router.** More eager work
+  makes TTFT worse, not better, for the common chat turn.
+- **Multi-model hot-swapping.** RAM-bound on Apple Silicon; the win is a warm
+  single model, not two cold ones.
+
+### Risks
+
+- **The server may not cache prefixes at all.** Then C1.2/C1.4 shrink the prompt
+  but cannot stop per-turn re-prefill, and the bottleneck moves to `marv-mlx`.
+  Measurement shows this immediately; plan accordingly rather than assuming.
+- **Router misclassification.** A `chat`-routed turn that needed a tool becomes
+  a bad answer. Mitigate by making the router permissive (bias to `read`) and by
+  letting the model escalate within a turn when it emits file/URL references.
+- **Lossy history (C1.4) can drop needed detail.** Keep the session as the
+  source of truth and render trimmed views from it, so `/context` still shows
+  the real thing.
+- **Multimodal input changes wire format** and needs provider-side support;
+  `apple-fm` is chat-only and will not gain it.
 
 ---
 
@@ -148,13 +268,6 @@ cheap summary) and show it in the picker; add search/filter once there are dozen
 - Where: `src/marv/runtime/session.py` (`SessionMetadata`), `src/marv/tui/session_panels.py`,
   `src/marv/cli/sessions.py`
 - Effort: M · Risk: low
-
-### `/compact` on demand + context pressure indicator
-Compaction exists but is automatic. Expose a manual `/compact` command and make
-the status-bar token figure show pressure (it already shows `tokens/max (%)`).
-- Where: `src/marv/runtime/context.py`, `src/marv/tui/controller.py`,
-  `src/marv/tui/status.py`
-- Effort: S–M · Risk: low
 
 ### Session export
 `/export` (and `marv export`) to write a session as Markdown or JSON for sharing
@@ -179,7 +292,7 @@ TUI, and delete/size accounting.
 ### Server swap UX
 Make model switching explicit: a clear "swapping model…" progress state, and an
 optional unload-on-idle so a big model doesn't hold RAM forever. Complements the
-new RAM/speed status readout.
+RAM/speed status readout. Overlaps C5.1.
 - Where: `src/marv/llm/local_server.py`, `src/marv/tui/app.py`
 - Effort: M · Risk: medium
 
@@ -249,7 +362,7 @@ token (`Markdown(self._content)` per delta), which is quadratic: a 4000-delta /
 message changes, so render incrementally (re-parse a paragraph on its blank-line
 boundary, or style the in-flight tail as plain text and re-render once the block
 settles). Also consider coalescing deltas on a short timer so bursty providers
-do not re-render per token.
+do not re-render per token. Overlaps C3.1–C3.2.
 - Where: `src/marv/tui/chat.py` (`MessageWidget`), `src/marv/tui/renderer.py`
 - Effort: M · Risk: medium (Markdown correctness at block boundaries)
 
@@ -260,10 +373,9 @@ lines), like other modern terminal agents.
 - Where: `src/marv/tui/chat.py` (a new diff view), `src/marv/tools/edit.py`
 - Effort: L · Risk: medium
 
-### Elapsed-time and cost in the footer
-The footer shows tok/s but not how long a turn has taken or what it cost.
-Add a live elapsed timer to the waiting indicator and a turn cost estimate for
-providers that report pricing.
+### Turn cost in the footer
+The waiting indicator now shows elapsed time (shipped). Still missing: a turn
+cost estimate for providers that report pricing.
 - Where: `src/marv/tui/chat.py`, `src/marv/tui/status.py`
 - Effort: M · Risk: low
 
@@ -281,6 +393,21 @@ first extension" tutorial. The examples are good reference material.
 
 ## Recently completed (do not re-suggest)
 
+- **Predictable waits (0.111.0).** Per-model prefill/cold-start calibration
+  persisted in `state.toml`, a pre-request `WaitEstimate` with tool-schema
+  tokens threaded through, the narrated waiting indicator (`prefilling N tokens
+  · ~eta · elapsed`), the exit offer for a long-predicted wait, `/compact` on
+  demand, and the calibrated latency tier in the model menu. The schema-light
+  retry half of the exit offer waits on the C2.1 router.
+- **`marv doctor` (0.111.0).** Self-diagnosing setup: config, HF hub, model
+  presence, server reachability, download tooling, output budget, extensions.
+- **`--read-only` mode (0.111.0).** Narrows the active tool set to
+  `read`/`grep`/`find`/`ls`; mutating tools are absent from the schemas and
+  refused by the registry.
+- **Turn-latency measurement (0.110.0).** TTFT in the status bar, `marv bench`
+  with p50/p90 and per-turn growth, and prefill reads no longer killed by a
+  read timeout.
+- **Menus replace modal windows (0.110.0)** — inline panels at the input line.
 - Opt-in tool approval (`approval_mode`, `AGENT_APPROVAL`, `--approval`) with a
   TUI confirm panel and headless deny.
 - `marv --version`; `VERSION` as the single version source.
@@ -288,7 +415,6 @@ first extension" tutorial. The examples are good reference material.
   build+smoke-test CI job.
 - `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, Dependabot.
 - `pyproject.toml` metadata (license, authors, keywords, classifiers, URLs).
-- Docs drift fixes; `PLAN.md` archived.
 - Last-used model/thinking persistence + model server auto-start on launch.
 - Visible, opt-in model downloads: a missing remembered model opens the download
   picker instead of downloading silently; the picker shows live progress and
@@ -296,11 +422,3 @@ first extension" tutorial. The examples are good reference material.
 - Status bar shows model RAM usage and generation speed.
 - Terminal-native theming (`auto` follows the terminal background) with a quiet,
   rule-based TUI layout, plus screen snapshots guarding it against regressions.
-- Prefill waits are no longer killed: local-server backends have no read timeout
-  by default, a pre-token read timeout is surfaced without retrying, and
-  `AGENT_LLM_READ_TIMEOUT` sets a cap.
-- `--read-only` mode (active tool set narrowed to read/grep/find/ls) and
-  `marv doctor` for self-diagnosing setup failures.
-- Prefill waits are *legible*: per-model prefill/cold-start calibration, a
-  pre-request wait estimate, the TUI narration with an exit offer, and on-demand
-  `/compact` — see P1 "Predictable wait" above.

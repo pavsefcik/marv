@@ -1,4 +1,4 @@
-"""Context file loader - loads AGENTS.md, CLAUDE.md from project and ancestors."""
+"""Context file loader - loads AGENTS.md from project and ancestors."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from marv.runtime.prompt_builder import ContextFile
 
 # Context file names to search for (in priority order)
-CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"]
+CONTEXT_FILE_NAMES = ["AGENTS.md"]
 
 
 def _load_context_file(path: Path, source: str = "explicit") -> ContextFile | None:
@@ -33,7 +33,7 @@ def _load_context_file(path: Path, source: str = "explicit") -> ContextFile | No
 def _load_project_context(cwd: Path | None = None) -> list[ContextFile]:
     """Load context files from the current project directory.
 
-    Looks for AGENTS.md and CLAUDE.md in cwd.
+    Looks for AGENTS.md in cwd.
 
     Args:
         cwd: Current working directory (defaults to Path.cwd())
@@ -55,7 +55,7 @@ def _load_project_context(cwd: Path | None = None) -> list[ContextFile]:
 def load_ancestor_context(cwd: Path | None = None, stop_at_home: bool = True) -> list[ContextFile]:
     """Load context files from ancestor directories.
 
-    Walks up the directory tree looking for AGENTS.md and CLAUDE.md files.
+    Walks up the directory tree looking for AGENTS.md files.
     Stops at the user's home directory by default.
 
     Args:
@@ -111,7 +111,7 @@ def _load_explicit_context(paths: list[Path]) -> list[ContextFile]:
 
 
 def _dedupe_by_file_identity(context_files: list[ContextFile]) -> list[ContextFile]:
-    """Drop files that are the same underlying file (e.g. CLAUDE.md -> AGENTS.md).
+    """Drop files that are the same underlying file (e.g. a symlink to AGENTS.md).
 
     Identity is the device/inode pair, so symlinks and hardlinks to an
     already-loaded file are collapsed. The first occurrence wins, preserving
@@ -146,8 +146,8 @@ def load_all_context(
     2. Ancestor context (parent directories up to home)
     3. Explicit paths (additional files specified in config)
 
-    Files that resolve to the same underlying file (e.g. a `CLAUDE.md`
-    symlink pointing at `AGENTS.md`) are injected only once.
+    Files that resolve to the same underlying file (e.g. a symlink to
+    `AGENTS.md`) are injected only once.
 
     Args:
         cwd: Current working directory

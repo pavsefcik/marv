@@ -185,7 +185,7 @@ class Config:
 
         # Fallback API key sources
         if not config_data.get("api_key"):
-            for env_var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
+            for env_var in ("OPENAI_API_KEY", "OPENROUTER_API_KEY"):
                 if value := os.environ.get(env_var):
                     config_data["api_key"] = value
                     break

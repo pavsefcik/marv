@@ -311,7 +311,7 @@ class TUIController:
 
         if not self._app.agent.supports_thinking():
             chat.add_system_message(f"model {self._app.agent.model_name} does not support thinking")
-            chat.add_system_message("supported: claude-*, o1-*, o3-*, gpt-5-*")
+            chat.add_system_message("supported: o1-*, o3-*, gpt-5-*")
             return
 
         try:

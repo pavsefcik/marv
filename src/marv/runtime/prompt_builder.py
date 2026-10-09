@@ -210,7 +210,7 @@ def build_system_prompt(options: SystemPromptOptions | None = None) -> str:
     1. Custom prompt OR base prompt
     2. Tool descriptions (only enabled tools)
     3. Dynamic guidelines (based on tool combinations)
-    4. Context files (AGENTS.md, CLAUDE.md from ancestors)
+    4. Context files (AGENTS.md from ancestors)
     5. Skills XML
     6. Environment (date/time, working directory)
     7. Appended content (if any)

@@ -154,40 +154,21 @@ A commented template ships at `config/default.toml`. The default provider is
 `marv-mlx` on `http://localhost:11500`; `apple-fm` uses
 `http://127.0.0.1:1976`. Neither needs an API key.
 
-## The agent loop
-
-1. Input intake & preprocessing — slash commands, skills, input extensions.
-2. Session + context guardrails — persist to JSONL, compact if needed.
-3. Prompt construction & model stream — provider streams text/thinking/tools.
-4. Tool execution cycle — calls parsed, validated, executed, results appended.
-5. Turn finalization — events emitted, extension messages drained, token stats.
-
 ## Layout
 
-```
-runtime/     Agent loop, sessions, context compaction, prompts
-llm/         Provider adapters (mlx-vlm + Apple FM + OpenAI-compatible) + streaming events
-config/      Runtime config loading
-tools/       Built-in tool registry + implementations
-skills/      Skill discovery + validation
-prompts/     Prompt templates + argument expansion
-extensions/  Event hooks + runtime/session/model/tool/UI host
-tui/         Textual UI (interactive mode)
-cli/         Typer command surface + headless/session helpers
-```
+`runtime/` (agent loop, sessions, compaction) → `llm/` (provider adapters) →
+`config/`, `tools/`, `skills/`, `prompts/`, `extensions/` → delivery (`tui/`,
+`cli/`). See [`docs/architecture.md`](docs/architecture.md) for the module
+layout and responsibilities.
 
 ## Development
 
-```sh
-make test
-make lint
-make format
-make can-release   # lint + tests
-```
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev setup and `make` targets.
 
 Measure local latency with `marv bench` — a scripted multi-turn conversation
 through the real agent loop that reports TTFT p50/p90 and how much TTFT grows
-per turn (`--json` for machine consumption):
+per turn (`--json` for machine consumption); it also seeds the per-model
+calibration that drives the wait estimate:
 
 ```sh
 uv run marv bench

@@ -1,6 +1,16 @@
-# CLI
+# Delivery: CLI, headless, and the TUI boundary
 
-The CLI lives in `src/marv/cli/` and is the lighter delivery surface alongside the TUI.
+Delivery is the outermost layer of the system. The CLI lives in
+`src/marv/cli/` and is the lighter delivery surface alongside the Textual TUI.
+
+The important architectural point:
+
+- `marv.runtime` owns the agent loop and session/model/tool behavior
+- `marv.extensions` is an optional hook host on top of the runtime
+- delivery layers decide how users interact with that runtime
+
+So the same agent can be delivered through multiple shells without changing the
+runtime itself.
 
 ## Structure
 
@@ -12,20 +22,63 @@ The CLI is split by role rather than by framework detail:
 
 ## Delivery modes
 
-### Interactive handoff
+### Interactive handoff / TUI
 
-`marv run` with no prompt/headless flag creates config + provider + session state, then hands off to the Textual TUI.
+- Implementation: `src/marv/tui/`
+- Entry from the CLI: `marv run` with no prompt/headless flag
+
+`marv run` with no prompt/headless flag creates config + provider + session
+state, then hands off to the Textual TUI.
+
+The TUI is the richest delivery surface because it supports:
+
+- interactive chat
+- model/session controls
+- extension-owned UI prompts and widgets
+- incremental rendering of thinking, text, and tool activity
 
 ### Headless mode
 
-`marv run --headless "..."` or `make run-headless` runs one prompt through the same runtime and renders:
+- Implementation: `src/marv/cli/headless.py`
+- Entry: `marv run --headless "..."` or `make run-headless`
+
+It builds the same runtime stack, optionally attaches the extension host, and
+renders runtime chunks directly to stdout:
 
 - thinking markers
 - streamed text
 - tool activity
 - system messages
 
-directly to stdout.
+This is a thin delivery shell over the same runtime. It is useful for one-shot
+prompts, scripting, CI or automation flows, and low-ceremony debugging.
+
+## Delivery contract
+
+A delivery layer is responsible for:
+
+- loading config
+- creating the provider
+- loading or selecting the session
+- creating the `Agent`
+- optionally attaching an `ExtensionHost`
+- rendering runtime output
+- mapping delivery-specific controls back into runtime actions
+
+A delivery layer should **not** own:
+
+- the agent loop
+- session semantics
+- tool execution semantics
+- provider behavior
+- extension dispatch semantics
+
+Those belong below delivery.
+
+The boundary between the two shells is:
+
+- CLI owns command parsing, headless stdout delivery, and session utility commands
+- TUI owns interactive chat delivery, model/session controls, and extension-hosted UI
 
 ## Session commands
 
@@ -67,7 +120,8 @@ rather than a required step. A `--no-warmup` run measures the cold-start
 constant too.
 
 See [`llm.md`](llm.md#prefilldecode-calibration) for the prediction model and
-[`coworking-plan.md`](coworking-plan.md) for how it feeds the latency work.
+the "Predictable waits" entry in [`../ROADMAP.md`](../ROADMAP.md) for where this
+feeds the latency work.
 
 ## Design role
 
@@ -87,3 +141,7 @@ It should not own:
 - extension dispatch behavior
 
 Those stay below the delivery boundary.
+
+When adding a new delivery mode, prefer reusing `Agent` and `ExtensionHost` and
+keeping delivery-specific rendering and input handling at the edge. Avoid moving
+runtime concerns upward into delivery just because one shell needs them.

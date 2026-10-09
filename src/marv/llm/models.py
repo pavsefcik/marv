@@ -7,7 +7,7 @@ This avoids brittle name-prefix matching for capability detection.
 from dataclasses import dataclass
 from typing import Literal
 
-Provider = Literal["anthropic", "openai", "openai-compat", "marv-mlx", "apple-fm"]
+Provider = Literal["openai", "openai-compat", "marv-mlx", "apple-fm"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,168 +24,6 @@ class ModelInfo:
 # Known models with their capabilities
 # Models not in this registry will use provider defaults
 MODELS: dict[str, ModelInfo] = {
-    # =========================================================================
-    # ANTHROPIC CLAUDE MODELS
-    # =========================================================================
-    # Claude 3 models - NO extended thinking
-    "claude-3-haiku-20240307": ModelInfo(
-        id="claude-3-haiku-20240307",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=4096,
-    ),
-    "claude-3-sonnet-20240229": ModelInfo(
-        id="claude-3-sonnet-20240229",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=4096,
-    ),
-    "claude-3-opus-20240229": ModelInfo(
-        id="claude-3-opus-20240229",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=4096,
-    ),
-    # Claude 3.5 models - NO extended thinking
-    "claude-3-5-haiku-20241022": ModelInfo(
-        id="claude-3-5-haiku-20241022",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=8192,
-    ),
-    "claude-3-5-haiku-latest": ModelInfo(
-        id="claude-3-5-haiku-latest",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=8192,
-    ),
-    "claude-3-5-sonnet-20240620": ModelInfo(
-        id="claude-3-5-sonnet-20240620",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=8192,
-    ),
-    "claude-3-5-sonnet-20241022": ModelInfo(
-        id="claude-3-5-sonnet-20241022",
-        provider="anthropic",
-        reasoning=False,
-        max_output_tokens=8192,
-    ),
-    # Claude 3.7 models - HAS extended thinking
-    "claude-3-7-sonnet-20250219": ModelInfo(
-        id="claude-3-7-sonnet-20250219",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=16384,
-    ),
-    "claude-3-7-sonnet-latest": ModelInfo(
-        id="claude-3-7-sonnet-latest",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=16384,
-    ),
-    # Claude 4 Haiku - HAS extended thinking
-    "claude-haiku-4-5": ModelInfo(
-        id="claude-haiku-4-5",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-haiku-4-5-20251001": ModelInfo(
-        id="claude-haiku-4-5-20251001",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    # Claude 4 Sonnet - HAS extended thinking
-    "claude-sonnet-4-0": ModelInfo(
-        id="claude-sonnet-4-0",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-sonnet-4-20250514": ModelInfo(
-        id="claude-sonnet-4-20250514",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-sonnet-4-5": ModelInfo(
-        id="claude-sonnet-4-5",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-sonnet-4-5-20250929": ModelInfo(
-        id="claude-sonnet-4-5-20250929",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-sonnet-4-6": ModelInfo(
-        id="claude-sonnet-4-6",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=128000,
-    ),
-    # Aliases
-    "claude-sonnet-4": ModelInfo(
-        id="claude-sonnet-4",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    # Claude 4 Opus - HAS extended thinking
-    "claude-opus-4-0": ModelInfo(
-        id="claude-opus-4-0",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-20250514": ModelInfo(
-        id="claude-opus-4-20250514",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-1": ModelInfo(
-        id="claude-opus-4-1",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-1-20250805": ModelInfo(
-        id="claude-opus-4-1-20250805",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-5": ModelInfo(
-        id="claude-opus-4-5",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-5-20251101": ModelInfo(
-        id="claude-opus-4-5-20251101",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
-    "claude-opus-4-6": ModelInfo(
-        id="claude-opus-4-6",
-        provider="anthropic",
-        reasoning=True,
-        xhigh=True,  # Anthropic adaptive thinking supports "max" effort
-        max_output_tokens=128000,
-    ),
-    # Aliases
-    "claude-opus-4": ModelInfo(
-        id="claude-opus-4",
-        provider="anthropic",
-        reasoning=True,
-        max_output_tokens=64000,
-    ),
     # =========================================================================
     # OPENAI MODELS
     # =========================================================================
@@ -450,8 +288,6 @@ XHIGH_MODELS = {
 
 def resolve_capability_provider(provider: str | None) -> Provider | None:
     """Map config/runtime provider names to capability provider families."""
-    if provider == "anthropic":
-        return "anthropic"
     if provider == "marv-mlx":
         return "marv-mlx"
     if provider == "apple-fm":
@@ -475,9 +311,6 @@ def _normalize_capability_model_id(model_id: str) -> tuple[str, str | None]:
     if "/" in normalized:
         prefix, normalized = normalized.split("/", 1)
 
-    # Normalize common alias variants to registry keys.
-    normalized = normalized.replace("claude-opus-4.6", "claude-opus-4-6")
-    normalized = normalized.replace("claude-sonnet-4.6", "claude-sonnet-4-6")
     return normalized, prefix
 
 
@@ -496,13 +329,7 @@ def _effective_capability_provider(
     # OpenAI-compatible routes often encode upstream provider in the model ID.
     if model_prefix == "openai":
         return "openai"
-    if model_prefix == "anthropic":
-        return "anthropic"
     return capability_provider
-
-
-def _looks_like_opus_46(model_id: str) -> bool:
-    return "opus-4-6" in model_id or "opus-4.6" in model_id
 
 
 def _model_supports_xhigh(model_id: str) -> bool:
@@ -512,18 +339,6 @@ def _model_supports_xhigh(model_id: str) -> bool:
         return True
     info = MODELS.get(normalized_model)
     return bool(info and info.xhigh)
-
-
-def _provider_allows_xhigh(model_id: str, provider: str | None = None) -> bool:
-    """Apply provider/API policy on top of model-level xhigh capability."""
-    normalized_model, _ = _normalize_capability_model_id(model_id)
-    capability_provider = resolve_capability_provider(provider)
-
-    # Anthropic adaptive effort "max" is only available via native Anthropic API.
-    if _looks_like_opus_46(normalized_model):
-        return capability_provider == "anthropic"
-
-    return _model_supports_xhigh(normalized_model)
 
 
 def get_model_info(model_id: str) -> ModelInfo | None:
@@ -560,17 +375,6 @@ def supports_reasoning(model_id: str, provider: str | None = None) -> bool:
     # Fallback: name-based heuristics for models not in registry
     model_lower = normalized_model
 
-    # Anthropic: claude-3.7+, claude-4+ support reasoning
-    if effective_provider == "anthropic" or "claude" in model_lower:
-        # Claude 3.7+ supports extended thinking
-        if "claude-3-7" in model_lower or "claude-3.7" in model_lower:
-            return True
-        # Claude 4+ models support extended thinking
-        if "claude-4" in model_lower or "claude-haiku-4" in model_lower:
-            return True
-        # Older models don't
-        return "claude-sonnet-4" in model_lower or "claude-opus-4" in model_lower
-
     # marv-mlx: capability is per MLX model family.
     if effective_provider == "marv-mlx":
         from marv.llm.mlx_models import model_supports_thinking
@@ -597,8 +401,8 @@ def supports_reasoning(model_id: str, provider: str | None = None) -> bool:
 def supports_xhigh(model_id: str, provider: str | None = None) -> bool:
     """Check if a model supports xhigh thinking level.
 
-    Currently only certain OpenAI models support this,
-    based on the explicit xhigh registry.
+    xhigh is a model-level capability (certain OpenAI models) recorded in the
+    registry; the provider argument is accepted for call-site compatibility.
 
     Args:
         model_id: The model ID to check
@@ -606,41 +410,29 @@ def supports_xhigh(model_id: str, provider: str | None = None) -> bool:
     Returns:
         True if model supports xhigh thinking
     """
-    if provider is None:
-        return _model_supports_xhigh(model_id)
-    return _provider_allows_xhigh(model_id, provider)
+    return _model_supports_xhigh(model_id)
 
 
 def is_model_valid_for_provider(model_id: str, provider: str) -> bool:
     """Return whether a model id is valid for a provider family.
 
-    Native providers (`openai`, `openai-codex`, `anthropic`) are validated for
-    clear cross-family mismatches. OpenAI-compatible providers are treated as
+    Native providers (`openai`, `openai-codex`) are validated for clear
+    cross-family mismatches. OpenAI-compatible providers are treated as
     pass-through and validated at runtime (when model lists are available).
     """
     normalized_model, _ = _normalize_capability_model_id(model_id)
     info = get_model_info(normalized_model)
 
-    if provider == "anthropic":
-        if info is not None:
-            return info.provider == "anthropic"
-        # Clear mismatch: OpenAI-family names on Anthropic provider.
-        return not normalized_model.startswith(("gpt-", "o1", "o3", "o4", "codex"))
-
     if provider == "openai":
         if info is not None:
             return info.provider == "openai"
-        # Clear mismatch: Claude-family names on OpenAI provider.
-        return "claude" not in normalized_model
+        return True
 
     if provider == "openai-codex":
         if info is not None:
             return info.provider == "openai" and (
                 "codex" in normalized_model or normalized_model.startswith("gpt-5")
             )
-        # Clear mismatch: Claude-family names on OpenAI Codex provider.
-        if "claude" in normalized_model:
-            return False
         # Codex provider is GPT-5/Codex-focused; reject explicit GPT-4 family.
         return not normalized_model.startswith("gpt-4")
 

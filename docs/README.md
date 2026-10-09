@@ -2,10 +2,8 @@
 
 Start here if you’re new to the project.
 
-- [`architecture.md`](architecture.md) — system overview and module responsibilities
-- [`delivery.md`](delivery.md) — TUI and headless CLI delivery surfaces over the same runtime
-- [`cli.md`](cli.md) — Typer command surface, headless mode, and session utilities
-- [`agent-loop.md`](agent-loop.md) — step‑by‑step loop walkthrough
+- [`architecture.md`](architecture.md) — system overview, module layout, and the agent loop
+- [`cli.md`](cli.md) — delivery surfaces: Typer command surface, TUI boundary, headless mode, and session utilities
 - [`tools.md`](tools.md) — tool schemas, registry, and built‑ins
 - [`skills.md`](skills.md) — skill format, validation rules, search paths
 - [`prompts.md`](prompts.md) — template format and argument expansion
@@ -14,7 +12,6 @@ Start here if you’re new to the project.
 - [`tui.md`](tui.md) — Textual UI behavior and commands
 - [`configuration.md`](configuration.md) — config files, env vars, context files
 - [`sessions.md`](sessions.md) — JSONL sessions, forking, compaction
-- [`coworking-plan.md`](coworking-plan.md) — proposal: from coding agent to local-LLM coworking harness (P0 latency work shipped)
 
 See [`../ROADMAP.md`](../ROADMAP.md) for planned next work.
 

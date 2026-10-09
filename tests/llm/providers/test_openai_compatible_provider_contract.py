@@ -294,16 +294,16 @@ async def test_openai_compatible_list_models_fetches_models_endpoint() -> None:
     assert models == ["model-a", "model-b"]
 
 
-def test_openai_compatible_set_model_allows_cross_family_model_ids() -> None:
+def test_openai_compatible_set_model_allows_arbitrary_model_ids() -> None:
     provider = OpenAICompatibleProvider(
         base_url="https://example.com",
         api_key="sk-test",
         model="gpt-4o",
     )
 
-    provider.set_model("claude-sonnet-4-5")
+    provider.set_model("meta-llama/Llama-3.1-8B-Instruct")
 
-    assert provider.model == "claude-sonnet-4-5"
+    assert provider.model == "meta-llama/Llama-3.1-8B-Instruct"
 
 
 @pytest.mark.asyncio
