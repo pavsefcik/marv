@@ -457,7 +457,7 @@ def _parse_event(payload: Mapping[str, object]) -> DownloadEvent:
     if kind not in ("plan", "progress", "done", "error"):
         return DownloadEvent(kind="progress")
     return DownloadEvent(
-        kind=kind,  # type: ignore[arg-type]
+        kind=kind,
         downloaded_bytes=_as_int(payload.get("bytes")),
         total_bytes=_as_int(payload.get("total")),
         files=_as_int(payload.get("files")),
