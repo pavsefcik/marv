@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from rich.markup import escape
@@ -15,6 +16,7 @@ from marv.runtime.chunk import (
     ToolCallChunk,
     ToolCallStartChunk,
     ToolResultChunk,
+    WaitEstimateChunk,
 )
 from marv.tui.chat import ChatView, MessageWidget, ThinkingWidget
 from marv.tui.speed import TokenSpeedTracker
@@ -22,6 +24,7 @@ from marv.tui.status import StatusBar
 
 if TYPE_CHECKING:
     from asyncio import Event
+    from collections.abc import Callable
 
     from marv.runtime.session import Session
     from marv.tui.app import AgentApp
@@ -46,12 +49,34 @@ def banner_text(model: str, thinking: str) -> str:
 class TUIRenderer:
     """Render runtime output and session state into Textual widgets."""
 
-    __slots__ = ("_app", "_loaders", "_speed")
+    __slots__ = ("_app", "_loaders", "_speed", "_clock", "_decoding_since")
 
-    def __init__(self, app: AgentApp, *, loaders: TUILoaders) -> None:
+    def __init__(
+        self,
+        app: AgentApp,
+        *,
+        loaders: TUILoaders,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._app = app
         self._loaders = loaders
         self._speed = TokenSpeedTracker(lambda text: self._app.agent.provider.count_tokens(text))
+        self._clock = clock
+        self._decoding_since: float | None = None
+
+    def tick(self) -> None:
+        """Refresh the generating elapsed reading (called by the 0.2s UI timer)."""
+        if self._decoding_since is None:
+            return
+        self._status().set_elapsed(self._clock() - self._decoding_since)
+
+    def _status(self) -> StatusBar:
+        return self._app.query_one("#status-line", StatusBar)
+
+    def _note_decoding(self) -> None:
+        """Start the decode clock on the turn's first streamed token."""
+        if self._decoding_since is None:
+            self._decoding_since = self._clock()
 
     def render_banner(self) -> None:
         """Render the compact startup header in chat."""
@@ -146,16 +171,25 @@ class TUIRenderer:
                     break
 
                 match chunk:
+                    case WaitEstimateChunk(payload=estimate):
+                        # Emitted before the request goes out, so the pending
+                        # turn's prediction replaces the previous turn's reading.
+                        chat.apply_wait_estimate(estimate)
+                        self._decoding_since = None
+                        self._status().set_eta(estimate.eta_ms)
+                        self._status().set_elapsed(None)
                     case ThinkingDeltaChunk(payload=thinking):
                         if not in_thinking:
                             await chat.start_thinking()
                             in_thinking = True
+                        self._note_decoding()
                         chat.append_to_thinking(thinking.text)
                         self._track_speed(thinking.text)
                     case TextDeltaChunk(payload=text):
                         if in_thinking:
                             chat.end_thinking()
                             in_thinking = False
+                        self._note_decoding()
                         await chat.append_to_assistant(text)
                         self._track_speed(text)
                     case ToolCallStartChunk(payload=tool_call_start):
@@ -192,10 +226,13 @@ class TUIRenderer:
             chat.end_assistant_message()
             chat.add_system_message(f"error: {type(exc).__name__}: {exc}")
         finally:
-            status = self._app.query_one("#status-line", StatusBar)
+            self._decoding_since = None
+            status = self._status()
             status.set_tokens(self._app.agent.total_tokens, self._app.agent.context_max_tokens)
             sample = self._app.agent.latency.last_sample
             if sample is not None and sample.streamed:
+                # The measured ttft replaces the prediction it was checked against.
+                status.set_eta(None)
                 status.set_ttft(sample.ttft_ms, sample.prefill_tokens)
 
     def _track_speed(self, text: str) -> None:
@@ -204,7 +241,7 @@ class TUIRenderer:
             return
         rate = self._speed.add(text)
         if rate is not None:
-            self._app.query_one("#status-line", StatusBar).set_speed(rate)
+            self._status().set_speed(rate)
 
     def clear_chat(self) -> None:
         """Clear the chat view and show confirmation."""
