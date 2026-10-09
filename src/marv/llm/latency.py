@@ -17,7 +17,7 @@ import json
 import math
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -357,6 +357,74 @@ class WaitEstimate:
     def has_eta(self) -> bool:
         """Whether a measured prediction is available."""
         return self.eta_ms is not None
+
+    @property
+    def dominant_cost(self) -> Literal["cold", "prompt", "schemas"]:
+        """What this wait is mostly made of.
+
+        The point of the estimate is to make the wait *actionable*: a wait
+        dominated by prompt size is one the user can shrink with compaction,
+        a wait dominated by tool schemas is one a schema-light turn would
+        avoid, and a cold start is neither — it is a one-off cost of loading
+        weights. Reusing the prompt/schema split is what makes the advice
+        specific rather than "your context is long".
+        """
+        if self.cold:
+            return "cold"
+        return "schemas" if self.schema_tokens > self.prompt_tokens else "prompt"
+
+    @property
+    def prompt_share(self) -> float:
+        """Fraction of prefill tokens that are conversation, not schemas."""
+        total = self.prefill_tokens
+        return (self.prompt_tokens / total) if total else 0.0
+
+
+#: A predicted wait above this is a decision, not just a fact: long enough
+#: that offering an exit is worth the interruption. Deliberately generous so
+#: an ordinary turn never nags.
+LONG_WAIT_THRESHOLD_MS = 20_000.0
+
+
+def wait_advice(estimate: WaitEstimate, threshold_ms: float = LONG_WAIT_THRESHOLD_MS) -> str | None:
+    """A one-line, specific exit offer for a long-predicted wait (or None).
+
+    Returns advice only when the estimate crosses ``threshold_ms`` *and* is
+    actionable: a wait dominated by conversation can be shrunk with
+    ``/compact``, one dominated by tool schemas points at a schema-light turn,
+    and a cold start gets no advice because there is nothing to shrink. The
+    attribution comes from the ``prompt_tokens``/``schema_tokens`` split, so
+    the advice names the actual cost rather than "your context is long".
+
+    Pure and display-only: it never nags on an ordinary turn, and it never
+    claims a fix exists where one does not.
+    """
+    eta_ms = estimate.eta_ms
+    if eta_ms is None or eta_ms < threshold_ms:
+        return None
+
+    seconds = eta_ms / 1000.0
+    minutes, remainder = divmod(int(seconds), 60)
+    predicted = f"~{minutes}:{remainder:02d}" if minutes else f"~{int(seconds)}s"
+    tokens = estimate.prefill_tokens
+    prompt = estimate.prompt_tokens
+    schemas = estimate.schema_tokens
+
+    if estimate.dominant_cost == "cold":
+        return (
+            f"predicted wait {predicted} ({tokens:,} tokens) -- mostly a cold model "
+            "start; loading weights is a one-off, so there is nothing here to shrink"
+        )
+    if estimate.dominant_cost == "schemas":
+        return (
+            f"predicted wait {predicted} ({tokens:,} tokens) -- {schemas:,} of it is "
+            "tool schemas, sent on every turn; a chat-shaped turn with tools disabled "
+            "would cut most of it"
+        )
+    return (
+        f"predicted wait {predicted} ({tokens:,} tokens) -- {prompt:,} of it is "
+        "conversation; /compact would summarize older turns and shorten it"
+    )
 
 
 class LatencyTracker:

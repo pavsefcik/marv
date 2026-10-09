@@ -192,8 +192,11 @@ class TUIController:
         if prompt.lower() == "/help":
             chat.add_system_message(
                 "ctrl+c quit | ctrl+l clear | /clear | /new | /load | /resume | /fork "
-                "| /tree | /context | /help | /model | /quit"
+                "| /tree | /context | /compact | /help | /model | /quit"
             )
+            return True
+        if prompt.lower() == "/compact":
+            await self.action_compact()
             return True
         if prompt.lower() == "/context":
             self._app.open_panel(ContextPanel(self._app.agent))
@@ -239,6 +242,32 @@ class TUIController:
         await self._app.agent.new_session()
         self._app._session = self._app.agent.session
         self._app._renderer.render_new_session()
+
+    async def action_compact(self) -> None:
+        """Compact the conversation on demand.
+
+        The automatic path only fires near the context limit; this makes the
+        same summarization available as an exit from a long-predicted wait,
+        which is the decision a user actually wants to make *before* sending.
+        """
+        chat = self._app.query_one("#chat-view", ChatView)
+        agent = self._app.agent
+        before = agent.total_tokens
+        self._app.is_processing = True
+        try:
+            await agent.compact()
+        finally:
+            self._app.is_processing = False
+        status = self._app.query_one("#status-line", StatusBar)
+        status.set_tokens(agent.total_tokens, agent.context_max_tokens)
+        after = agent.total_tokens
+        if before and after and after < before:
+            chat.add_system_message(
+                f"compacted: {before:,} -> {after:,} tokens "
+                f"({int((1 - after / before) * 100)}% smaller)"
+            )
+        else:
+            chat.add_system_message("compacted: nothing old enough to summarize yet")
 
     def remember_selection(self) -> None:
         """Persist the active model/thinking so the next start preselects it."""

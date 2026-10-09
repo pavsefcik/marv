@@ -33,6 +33,18 @@ All notable changes to marv are documented here. The version in
   schemas — previously dropped from the latency path — are now threaded
   through, so the estimate reflects everything the server must prefill. On a
   first-ever run the estimate is honestly `None`, not a hardcoded constant.
+- **The wait is narrated, and a long one offers a way out.** The TUI waiting
+  indicator shows `prefilling 32k tokens · ~2:00 · 1:14 elapsed (62%)`, a
+  revising estimate recomputed each tick; an overrun says `taking longer than
+  predicted` rather than sitting at 99%. When the prediction crosses ~20 s it
+  attributes the cost and offers an exit: `/compact` for a
+  conversation-dominated wait, the schema-light alternative for a schema-
+  dominated one, and a plain "cold start, nothing to shrink" for weight
+  loading. The footer also gets a decode `elapsed` timer and an `eta` reading.
+  An ordinary turn shows none of this.
+- **`/compact` on demand.** The automatic path only fires near the context
+  limit; the same summarization is now available as a command (and as the exit
+  offered from a long-predicted wait), reporting how much it shrank.
 
 ### Fixed
 

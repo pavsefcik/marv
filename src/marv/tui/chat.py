@@ -10,6 +10,8 @@ from rich.text import Text
 from textual.containers import ScrollableContainer
 from textual.widgets import Static
 
+from marv.llm.latency import wait_advice
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -469,10 +471,24 @@ class WaitingIndicator(Static):
             f" \u00b7 {format_clock(elapsed)} elapsed ({percent}%)"
         )
 
+    def _advice(self) -> str | None:
+        """The exit offer for a long-predicted wait, shown beneath the spinner.
+
+        Only when the wait is long enough to be a decision, and only when the
+        estimate attributes the cost to something the user can change, so an
+        ordinary turn never nags and a cold start never lies about a fix.
+        """
+        if self._estimate is None:
+            return None
+        return wait_advice(self._estimate)
+
     def _update_display(self) -> None:
         """Update display based on current mode."""
         frames = self.THINKING_FRAMES if self._thinking else self.FRAMES
-        self.update(f"[$primary]{frames[self._frame]}[/] [$text-muted]{self._narration()}[/]")
+        row = f"[$primary]{frames[self._frame]}[/] [$text-muted]{self._narration()}[/]"
+        if advice := self._advice():
+            row += f"\n[$text-disabled]  {advice}[/]"
+        self.update(row)
 
     def advance(self) -> None:
         """Advance to the next animation frame and refresh the narration."""

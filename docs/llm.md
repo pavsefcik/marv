@@ -186,3 +186,23 @@ per model in `state.toml` beside the last-used selection
 
 See [`configuration.md`](configuration.md#last-used-selection) for where the fit
 is stored.
+
+## Wait prediction
+
+`WaitEstimate` carries the pre-request prediction to delivery. It is computed
+when the request is built (`Agent._agent_loop`, which already knows the exact
+prompt size and the tool-schema cost) and emitted as a `WaitEstimateChunk`
+before the provider request goes out, so the UI can narrate the prefill from
+its first second. `schema_tokens` is threaded through here rather than dropped,
+so tool schemas — on the wire every turn — are part of the estimate.
+
+- `eta_ms is None` is a first-class value: on a machine with no measured turns
+there is no honest ETA, and delivery must degrade to elapsed-only.
+- `dominant_cost` (`cold` | `prompt` | `schemas`) and `prompt_share` reuse the
+  prompt/schema split to attribute the wait.
+- `wait_advice()` turns a long prediction into a specific exit offer (compact,
+or a schema-light turn), and returns `None` for an ordinary wait or a cold
+start where nothing can be shrunk. It is pure and display-only; the prediction
+is advisory and never caps the wait.
+
+See [`tui.md`](tui.md#legible-waits) for how the indicator renders it.

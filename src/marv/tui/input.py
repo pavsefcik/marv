@@ -31,6 +31,7 @@ BUILTIN_COMMANDS = [
     "/fork",
     "/tree",
     "/context",
+    "/compact",
     "/help",
     "/model",
     "/quit",

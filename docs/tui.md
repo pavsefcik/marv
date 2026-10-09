@@ -28,6 +28,36 @@ straight back into input mode; `Esc` cancels.
 - Model selector, model-download picker with live progress, and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
 
+### Legible waits
+
+A local model can send nothing for minutes while it prefills, so the waiting
+indicator narrates the wait instead of spinning opaquely:
+
+```
+⠹ prefilling 32k tokens · ~2:00 · 1:14 elapsed (62%)
+```
+
+The `~` figure and the percentage are a *revising* estimate, recomputed on
+every tick from elapsed against the prediction — not a progress bar that jumps
+or freezes at 99%. When the estimate is exceeded the indicator says
+`taking longer than predicted`, which is information about the machine rather
+than a failed bar.
+
+The prediction comes from this machine's own measured turns (see
+[`llm.md`](llm.md#prefill-calibration)). A first-ever run has no measured
+history, so the indicator degrades to elapsed-only (`prefilling 32k tokens ·
+1:14 elapsed`) — no ETA and no hardcoded constant is ever shown.
+
+When the predicted wait crosses ~20 s, the indicator also attributes it, so the
+wait is a decision rather than just a fact:
+
+- conversation-dominated → "`/compact` would summarize older turns and shorten it"
+- schema-dominated → the tool schemas are named, with the schema-light option
+- a cold start → said plainly, with no fix claimed (nothing to shrink)
+
+An ordinary turn never shows this advice. While generating, the footer shows an
+`elapsed` timer next to the measured `ttft`.
+
 ## Appearance
 
 The TUI follows the terminal rather than imposing a palette. The default
@@ -86,6 +116,7 @@ handler, so an unsolicited reply would be reissued as key input.
 - `/fork` — fork from a message
 - `/tree` — move session leaf (tree view; linear list when no branches)
 - `/context` — show context files
+- `/compact` — summarize older turns to shrink the prompt on demand
 - `/model` — open the model/thinking menu
 - `/model <name>` — switch model directly
 - `/help` — quick help

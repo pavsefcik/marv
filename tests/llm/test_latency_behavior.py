@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from marv.llm.latency import LatencyTracker, fit_slope, percentile
+from marv.llm.latency import LatencyTracker, WaitEstimate, fit_slope, percentile
 
 
 def test_ttft_is_measured_from_request_to_first_token() -> None:
@@ -235,3 +235,70 @@ def test_tracker_fit_folds_its_own_samples() -> None:
     assert fit.sample_count == 2
     # 32k tokens prefilled in 6s (2s + 4s).
     assert fit.prefill_tokens_per_second == 32000.0 / 6.0
+
+
+# --- turning a prediction into an exit offer --------------------------------
+
+
+def _estimate(**kwargs: object) -> WaitEstimate:
+    return WaitEstimate(**kwargs)  # type: ignore[arg-type]
+
+
+def test_advice_is_silent_for_an_ordinary_wait() -> None:
+    from marv.llm.latency import wait_advice
+
+    # A short wait is not a decision, so it must not nag.
+    assert wait_advice(_estimate(prompt_tokens=100, schema_tokens=100, eta_ms=1500.0)) is None
+
+
+def test_advice_is_silent_when_there_is_no_estimate() -> None:
+    from marv.llm.latency import wait_advice
+
+    assert wait_advice(_estimate(prompt_tokens=50000, eta_ms=None)) is None
+
+
+def test_advice_points_at_compaction_when_conversation_dominates() -> None:
+    from marv.llm.latency import wait_advice
+
+    advice = wait_advice(_estimate(prompt_tokens=40000, schema_tokens=2000, eta_ms=120_000.0))
+
+    assert advice is not None
+    assert "/compact" in advice
+    assert "40,000" in advice
+    assert "2:00" in advice
+
+
+def test_advice_points_at_tool_schemas_when_schemas_dominate() -> None:
+    from marv.llm.latency import wait_advice
+
+    advice = wait_advice(_estimate(prompt_tokens=1000, schema_tokens=40_000, eta_ms=60_000.0))
+
+    assert advice is not None
+    assert "tool schemas" in advice
+    assert "/compact" not in advice
+
+
+def test_advice_is_honest_about_a_cold_start() -> None:
+    from marv.llm.latency import wait_advice
+
+    advice = wait_advice(
+        _estimate(prompt_tokens=40000, schema_tokens=2000, eta_ms=60_000.0, cold=True)
+    )
+
+    assert advice is not None
+    assert "cold" in advice
+    # Nothing to shrink, so no fix is claimed.
+    assert "/compact" not in advice
+
+
+def test_estimate_attributes_the_dominant_cost() -> None:
+    assert _estimate(prompt_tokens=1000, schema_tokens=100).dominant_cost == "prompt"
+    assert _estimate(prompt_tokens=100, schema_tokens=1000).dominant_cost == "schemas"
+    assert _estimate(prompt_tokens=1000, schema_tokens=100, cold=True).dominant_cost == "cold"
+
+
+def test_prompt_share_is_the_conversation_fraction_of_prefill() -> None:
+    estimate = _estimate(prompt_tokens=3000, schema_tokens=1000)
+
+    assert estimate.prompt_share == 0.75
+    assert _estimate().prompt_share == 0.0

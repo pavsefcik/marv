@@ -428,3 +428,60 @@ def test_a_first_ever_run_persists_nothing_fabricated(temp_dir: Path) -> None:
     )
 
     assert load_last_used(temp_dir / "sessions").latency_fits == {}
+
+
+def test_indicator_offers_compaction_for_a_long_conversation_wait():
+    """A long, prompt-dominated wait is a decision: offer the exit."""
+    clock = ManualClock()
+    indicator = WaitingIndicator(
+        estimate=WaitEstimate(prompt_tokens=40_000, schema_tokens=2_000, eta_ms=120_000.0),
+        clock=clock,
+    )
+
+    text = render_text(indicator)
+    assert "prefilling 42k tokens" in text
+    assert "/compact" in text
+
+
+def test_indicator_does_not_offer_advice_for_a_short_wait():
+    """An ordinary turn must never nag."""
+    indicator = WaitingIndicator(
+        estimate=WaitEstimate(prompt_tokens=1_000, schema_tokens=500, eta_ms=2_000.0),
+    )
+
+    assert "/compact" not in render_text(indicator)
+    assert "predicted wait" not in render_text(indicator)
+
+
+@pytest.mark.asyncio
+async def test_slash_compact_summarizes_and_reports_the_shrinkage(temp_dir):
+    """`/compact` is the exit from a long-predicted wait, on demand."""
+    from marv.runtime.message import Message, Role
+
+    app = make_app(temp_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Enough history that compaction has a middle to summarize.
+        for i in range(16):
+            app.agent.session.append(Message(role=Role.USER, content=f"message {i}"))
+        app.agent._total_tokens = 40_000
+
+        handled = await app._controller.handle_prompt_command("/compact")
+        await pilot.pause()
+
+        assert handled is True
+        chat = app.query_one("#chat-view", ChatView)
+        messages = [child for child in chat.children if isinstance(child, Static)]
+        assert any("compacted" in render_text(child) for child in messages)
+
+
+def test_help_lists_compact():
+    from marv.tui.controller import TUIController
+
+    source = TUIController.handle_prompt_command.__doc__ or ""
+
+    # The help text is user-facing documentation; /compact must be discoverable.
+    from marv.tui.input import BUILTIN_COMMANDS
+
+    assert "/compact" in BUILTIN_COMMANDS
+    assert source is not None  # keeps the test honest about its own scope

@@ -35,6 +35,14 @@ self-diagnosing instead of surfacing as a cryptic TUI error.
 
 ## P1 — Predictable wait: tell the user how long before they wait
 
+> **Status: shipped (items 1–3, 5, and the `say why` + `/compact` half of 4).**
+> `LatencyFit` calibration, the pre-request `WaitEstimate`, the TUI narration,
+> the latency tier, and on-demand `/compact` are implemented and tested. The
+> *schema-light retry* half of item 4 is **not** done — it needs the
+> coworking-plan model router (P2.1), which does not exist yet; today the
+> schema-dominated case names the cost honestly instead of offering a retry
+> that is not wired.
+
 A local model's first token can be two minutes away on a large prompt, and
 `mlx_vlm` sends nothing while it prefills. With the prefill read timeout now
 removed (so we no longer kill the wait), the raw experience is *silence with no
@@ -290,5 +298,9 @@ first extension" tutorial. The examples are good reference material.
   rule-based TUI layout, plus screen snapshots guarding it against regressions.
 - Prefill waits are no longer killed: local-server backends have no read timeout
   by default, a pre-token read timeout is surfaced without retrying, and
-  `AGENT_LLM_READ_TIMEOUT` sets a cap. Making that wait *legible* (ETA/narration)
-  is **not** done yet — see P1 "Predictable wait" above.
+  `AGENT_LLM_READ_TIMEOUT` sets a cap.
+- `--read-only` mode (active tool set narrowed to read/grep/find/ls) and
+  `marv doctor` for self-diagnosing setup failures.
+- Prefill waits are *legible*: per-model prefill/cold-start calibration, a
+  pre-request wait estimate, the TUI narration with an exit offer, and on-demand
+  `/compact` — see P1 "Predictable wait" above.
