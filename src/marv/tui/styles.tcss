@@ -1,4 +1,17 @@
-/* Minimal Nord-inspired theme for marv */
+/* marv TUI theme — quiet, terminal-native.
+ *
+ * Colors are referenced through theme variables only ($primary, $text-muted,
+ * ...) so switching themes (ansi-dark/ansi-light/nord/minimal) needs no CSS
+ * change. Under the ANSI themes $surface/$panel resolve to transparent, so no
+ * rule here may rely on them for contrast.
+ *
+ * Layout idea: transparent chrome, thin rules instead of boxes, glyph+verb
+ * tool rows, and a two-line footer.
+ */
+
+* {
+    scrollbar-size: 1 1;
+}
 
 Screen {
     background: $background;
@@ -11,12 +24,13 @@ Screen {
 #chat-view {
     height: 1fr;
     width: 1fr;
-    padding: 1 0;
+    padding: 0 2;
+    background: transparent;
     scrollbar-size: 1 1;
 }
 
 .extension-slot {
-    background: $surface;
+    background: transparent;
     color: $foreground-muted;
 }
 
@@ -28,6 +42,7 @@ Screen {
     width: 32;
     height: 1fr;
     padding: 1 2;
+    background: transparent;
     border-left: solid $panel;
 }
 
@@ -35,43 +50,47 @@ Screen {
     dock: bottom;
     height: auto;
     padding: 0 2;
-    background: $surface;
+    background: transparent;
     color: $foreground-muted;
 }
 
+/* ---------------------------------------------------------------- messages */
+
 .message-user {
     color: $foreground;
-    background: $surface;
+    background: transparent;
     margin: 1 0 0 0;
-    padding: 1 2;
+    padding: 0;
     width: 100%;
 }
 
 .message-assistant {
-    color: $foreground-muted;
-    margin: 1 0;
-    padding: 0 2;
+    color: $foreground;
+    margin: 1 0 0 0;
+    padding: 0 0 0 2;
+    background: transparent;
 }
 
 .message-system {
-    color: $foreground-disabled;
-    margin: 1 0;
-    padding: 0 2;
+    color: $text-disabled;
+    margin: 1 0 0 0;
+    padding: 0;
+    background: transparent;
 }
 
+/* ------------------------------------------------------------- tool calls */
+
 .tool-widget {
-    margin: 1 2;
-    padding: 1 2;
-    background: $surface;
-    border: solid $secondary;
-    border-title-color: $secondary;
-    border-title-style: bold;
+    margin: 1 0 0 0;
+    padding: 0 0 0 2;
+    background: transparent;
+    color: $foreground;
+    height: auto;
 }
 
 .tool-widget.tool-collapsed {
     height: auto;
     min-height: 1;
-    padding: 0 2;
 }
 
 .tool-widget.tool-collapsed:hover {
@@ -79,17 +98,16 @@ Screen {
 }
 
 .skill-widget {
-    margin: 1 2;
-    padding: 1 2;
-    background: $surface;
-    border: solid $accent;
-    border-title-color: $accent;
+    margin: 1 0 0 0;
+    padding: 0 0 0 2;
+    background: transparent;
+    color: $foreground;
+    height: auto;
 }
 
 .skill-widget.skill-collapsed {
     height: auto;
     min-height: 1;
-    padding: 0 2;
 }
 
 .skill-widget.skill-collapsed:hover {
@@ -97,34 +115,35 @@ Screen {
 }
 
 .tool-result {
-    color: $foreground-muted;
+    color: $text-muted;
 }
 
+/* -------------------------------------------------------------- thinking */
+
 .thinking-widget {
-    margin: 1 2;
-    padding: 1 2;
-    background: $panel;
-    border: round $warning;
-    border-title-color: $warning;
-    border-title-style: bold;
-    color: $foreground;
+    margin: 1 0 0 0;
+    padding: 0 0 0 2;
+    background: transparent;
+    color: $text-muted;
+    height: auto;
 }
 
 .thinking-widget.thinking-collapsed {
     height: auto;
     min-height: 1;
-    padding: 0 2;
 }
 
 .thinking-widget.thinking-collapsed:hover {
-    background: $surface;
+    background: $panel;
 }
+
+/* ------------------------------------------------------------------ input */
 
 #input-container {
     height: auto;
     dock: bottom;
-    padding: 1 2;
-    background: $surface;
+    padding: 0 2 1 2;
+    background: $background;
 }
 
 #prompt-input {
@@ -133,12 +152,23 @@ Screen {
 
 #prompt-inner {
     border: none;
+    border-top: solid $foreground-muted;
+    border-bottom: solid $foreground-muted;
     background: transparent;
-    padding: 0;
+    padding: 0 1;
+    height: auto;
+    min-height: 1;
+    max-height: 12;
 }
 
 #prompt-inner:focus {
     border: none;
+    border-top: solid $primary;
+    border-bottom: solid $primary;
+}
+
+#prompt-inner > .text-area--placeholder {
+    color: $text-disabled;
 }
 
 #suggestions {
@@ -155,84 +185,122 @@ Screen {
     background: $accent;
 }
 
+/* ----------------------------------------------------------------- footer */
+
 #status-line {
     dock: bottom;
     height: 1;
-    background: $panel;
-    color: $foreground-muted;
+    background: $background;
+    color: $text-muted;
     padding: 0 2;
 }
 
 #status-left {
     width: 1fr;
+    color: $text-muted;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #status-right {
     width: auto;
+    max-width: 24;
     text-align: right;
+    color: $text-muted;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* Extension UI Modals */
-PromptModal,
-ConfirmModal,
-SelectModal,
-PresentedViewModal {
-    align: center middle;
-}
+/* ------------------------------------------------------ input-docked menus */
+/* Pickers and prompts replace the prompt input line: they render between the
+   two rules around the input (same borders, growing upward as needed) instead
+   of floating over the chat. */
 
-#extension-modal {
-    width: 80%;
-    max-width: 70;
+.inline-panel {
     height: auto;
-    max-height: 80%;
-    background: $surface;
-    border: round $primary;
-    padding: 1 2;
+    background: transparent;
+    border-top: solid $primary;
+    border-bottom: solid $primary;
+    padding: 0 1;
 }
 
-.extension-prompt-modal {
-    max-width: 62;
-    padding: 2 3;
-    background: $panel;
-    border-title-color: $primary;
-}
-
-.extension-modal-kicker {
+.panel-title {
     color: $secondary;
     text-style: bold;
-    margin: 0 0 1 0;
 }
 
-.extension-modal-title {
-    margin: 0 0 1 0;
-    text-style: bold;
-    color: $primary;
-}
-
-.extension-modal-subtitle {
+.panel-subtitle {
     color: $foreground-muted;
-    margin: 0 0 1 0;
 }
 
-.extension-modal-hint {
-    margin: 1 0 0 0;
-    color: $foreground-disabled;
+.panel-empty {
+    color: $text-disabled;
+    padding: 1 0;
 }
 
-.extension-input-shell {
-    border: round $secondary;
-    background: $surface;
-    padding: 0 1;
-    margin: 0 0 1 0;
+.panel-hint {
+    color: $text-disabled;
 }
 
-#extension-prompt-input {
-    border: none;
+.panel-menu {
+    height: auto;
+    max-height: 10;
     background: transparent;
 }
 
-#extension-prompt-input:focus {
+.panel-menu > .option-list--option-highlighted {
+    background: $accent;
+}
+
+/* Model menu */
+#model-info {
+    min-height: 1;
+}
+
+/* Context menu */
+#context-scroll {
+    height: auto;
+    max-height: 24;
+}
+
+#summary-content,
+#messages-content,
+#system-content {
+    padding: 0 1;
+}
+
+/* Download menu */
+
+/* Two-line entries — taller so they are not clipped. */
+#download-options {
+    max-height: 14;
+}
+
+#download-custom,
+#extension-prompt-input {
+    background: transparent;
     border: none;
+    padding: 0;
+    width: 100%;
+}
+
+#download-bar {
+    width: 100%;
+}
+
+/* Extension presented views */
+#extension-presented-scroll {
+    height: auto;
+    max-height: 18;
+}
+
+.extension-presented-control-label {
+    color: $secondary;
+}
+
+.extension-presented-select-content {
+    height: auto;
+    max-height: 8;
 }
 
 .extension-modal-actions {
@@ -243,295 +311,4 @@ PresentedViewModal {
 
 .extension-modal-actions Button {
     margin-right: 1;
-}
-
-.extension-presented-control-label {
-    color: $secondary;
-    margin: 0 0 1 0;
-}
-
-.extension-presented-select-content {
-    height: auto;
-    max-height: 12;
-    margin: 0 0 1 0;
-}
-
-#extension-select-content,
-#extension-presented-scroll {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-/* Context Modal */
-ContextModal {
-    align: center middle;
-}
-
-#context-modal {
-    width: 90%;
-    height: 85%;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#context-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#context-tabs {
-    height: 1fr;
-}
-
-#context-tabs > ContentSwitcher {
-    height: 1fr;
-}
-
-#context-tabs TabPane {
-    height: 1fr;
-    padding: 0;
-}
-
-#context-tabs VerticalScroll {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#summary-content,
-#messages-content,
-#system-content {
-    padding: 1 1;
-}
-
-#context-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Model Modal */
-ModelModal {
-    align: center middle;
-}
-
-#model-modal {
-    width: 80%;
-    height: 70%;
-    max-width: 70;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#model-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#model-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-.section-header {
-    margin: 1 0 0 0;
-}
-
-#model-select {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#thinking-radio {
-    width: 100%;
-    margin: 0 0 1 0;
-}
-
-#summary-info {
-    margin: 0 0 1 0;
-}
-
-#save-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#model-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Load Modal */
-SessionLoadModal {
-    align: center middle;
-}
-
-#session-modal {
-    width: 85%;
-    height: 70%;
-    max-width: 90;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#session-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#session-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#session-list {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-#session-load-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#session-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#session-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Fork Modal */
-SessionForkModal {
-    align: center middle;
-}
-
-#fork-modal {
-    width: 85%;
-    height: 75%;
-    max-width: 100;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#fork-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#fork-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#fork-summary {
-    margin: 0 0 1 0;
-    color: $foreground-muted;
-}
-
-#fork-list {
-    height: 1fr;
-    margin: 0 0 1 0;
-}
-
-#fork-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#fork-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#fork-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
-}
-
-/* Session Tree Modal */
-SessionTreeModal {
-    align: center middle;
-}
-
-#tree-modal {
-    width: 85%;
-    height: 75%;
-    max-width: 100;
-    background: $surface;
-    border: solid $primary;
-    padding: 1 2;
-}
-
-#tree-title {
-    dock: top;
-    height: 1;
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 0 0 1 0;
-}
-
-#tree-content {
-    height: 1fr;
-    scrollbar-size: 1 1;
-}
-
-#tree-view {
-    height: 1fr;
-}
-
-#linear-list {
-    height: 1fr;
-}
-
-#tree-summary {
-    margin: 0 0 1 0;
-    color: $foreground-muted;
-}
-
-#tree-btn {
-    width: 100%;
-    margin: 1 0 0 0;
-}
-
-#tree-empty {
-    color: $foreground-muted;
-    padding: 1 0;
-}
-
-#tree-hint {
-    dock: bottom;
-    height: 1;
-    text-align: center;
-    color: $foreground-muted;
 }

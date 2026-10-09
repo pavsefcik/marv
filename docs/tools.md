@@ -20,6 +20,10 @@ Tools are Pydantic‑typed units of capability with OpenAI‑style JSON schemas.
 4. The registry wraps output into `ToolExecutionResult { content, is_error }`.
 5. Tool results are appended as `Role.TOOL` messages.
 
+`ToolError` raised by a tool is caught by the registry and returned as a
+`ToolExecutionResult { content, is_error=True, error }`; the string result of a
+successful run comes back with `is_error=False`.
+
 ## Extending tools
 
 Extensions can register tools in two ways:

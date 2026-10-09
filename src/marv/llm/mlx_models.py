@@ -1,8 +1,8 @@
 """MLX model-family classification and hub discovery.
 
-Mirrors the logic in YMLX's `ymlx-helpers.zsh` (`_model_family`,
-`_model_thinking_spec`, `_ymlx_ministral_base`) so the agent reasons about
-MLX models the same way the YMLX TUI does: thinking support and markers are
+Mirrors the logic in marv-mlx's `lib/marv-mlx-helpers.zsh` (`_model_family`,
+`_model_thinking_spec`, `_marv_mlx_ministral_base`) so the agent reasons about
+MLX models the same way the marv-mlx TUI does: thinking support and markers are
 per family, and Ministral ships as an Instruct+Reasoning pair.
 
 Kept dependency-free so both the capability registry (`models.py`) and the

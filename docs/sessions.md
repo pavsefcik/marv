@@ -8,8 +8,9 @@ Each session is a JSONL file. The first line is the session header, the rest are
 
 **Session header**
 ```json
-{"type":"session","version":1,"id":"abcd1234","timestamp":"2026-02-06T12:00:00Z","cwd":"/path/to/project","parentSession":"efgh5678"}
+{"type":"session","version":1,"id":"abcd1234","timestamp":"2026-02-06T12:00:00Z","cwd":"/path/to/project","parentSession":"efgh5678","provider":"marv-mlx","model":"mlx-community/Qwen3.5-4B-MLX-4bit"}
 ```
+The header may also carry `provider`/`model` for the session's starting selection.
 
 **Entry types**
 ```json

@@ -66,6 +66,53 @@ def test_supports_thinking_matches_family():
     assert make_provider(MinistralReasoning).supports_thinking() is True
 
 
+def test_max_output_tokens_is_clamped_for_the_local_server():
+    from marv.llm.marv_mlx import DEFAULT_MAX_OUTPUT_TOKENS
+
+    provider = MarvMlxProvider(
+        base_url="http://localhost:11500", api_key="", model=Qwen, max_tokens=8192
+    )
+
+    assert provider.max_tokens == DEFAULT_MAX_OUTPUT_TOKENS == 2048
+
+
+def test_payload_clamps_stream_option_max_tokens():
+    provider = make_provider()
+
+    payload = provider._build_payload([_Msg()], None, StreamOptions(max_tokens=8192))
+
+    assert payload.get("max_tokens") == 2048
+
+
+def test_max_output_tokens_env_override(monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 4096
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "0")
+    assert marv_mlx.resolve_max_output_tokens(8192) == 8192
+
+
+def test_max_output_tokens_reads_legacy_env_with_deprecation(monkeypatch, capsys):
+    from marv.llm import marv_mlx
+
+    monkeypatch.delenv("AGENT_MLX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 4096
+    assert "MARV_MLX_MAX_OUTPUT_TOKENS is deprecated" in capsys.readouterr().err
+
+
+def test_max_output_tokens_prefers_new_env_over_legacy(monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setenv("AGENT_MLX_MAX_OUTPUT_TOKENS", "5120")
+    monkeypatch.setenv("MARV_MLX_MAX_OUTPUT_TOKENS", "4096")
+
+    assert marv_mlx.resolve_max_output_tokens(8192) == 5120
+
+
 def test_launch_argv_runs_mlx_vlm_server_for_the_model():
     provider = make_provider(server_command="mlx_vlm.server")
 
@@ -100,3 +147,32 @@ def test_list_models_scans_the_local_hub(tmp_path: Path, monkeypatch):
         "mlx-community/Gemma-3-4B-it",
         "mlx-community/Qwen3.5-4B-MLX-4bit",
     ]
+
+
+def test_is_model_downloaded_reads_the_hub(tmp_path: Path, monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setattr(marv_mlx, "running_model_id", lambda base_url: None)
+    (tmp_path / "models--mlx-community--Qwen3.5-4B-MLX-4bit" / "snapshots" / "rev").mkdir(
+        parents=True
+    )
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded("mlx-community/Qwen3.5-4B-MLX-4bit") is True
+    assert provider.is_model_downloaded("mlx-community/Absent-4bit") is False
+
+
+def test_is_model_downloaded_keeps_the_currently_served_model(tmp_path: Path, monkeypatch):
+    from marv.llm import marv_mlx
+
+    monkeypatch.setattr(marv_mlx, "running_model_id", lambda base_url: Qwen)
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded(Qwen) is True
+
+
+def test_is_model_downloaded_treats_non_hub_ids_as_present(tmp_path: Path):
+    provider = make_provider(hub_dir=tmp_path)
+
+    assert provider.is_model_downloaded("/opt/models/local") is True
+    assert provider.is_model_downloaded("just-a-name") is True

@@ -13,23 +13,31 @@ from textual.reactive import reactive
 from textual.theme import Theme
 from textual.widgets import Static
 
+from marv.config.state import remember_latency_fit
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
+from marv.tui.download_panel import DownloadPanel
 from marv.tui.extension_bridge import TUIExtensionBridge
 from marv.tui.input import PromptInput
-from marv.tui.model_modal import ModelModal
+from marv.tui.memory import snapshot
+from marv.tui.model_panel import ModelChoice, ModelPanel
 from marv.tui.renderer import TUIRenderer
 from marv.tui.status import StatusBar
+from marv.tui.theme import resolve_theme_name
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from textual.timer import Timer
 
     from marv.config import Config
     from marv.extensions.host import ExtensionHost
+    from marv.llm.model_download import DownloadHandle
     from marv.llm.provider import LLMProvider
     from marv.runtime.agent import Agent
     from marv.runtime.session import Session
+    from marv.tui.panel import DockPanel
 
 # Minimal Nord-inspired theme
 MINIMAL_THEME = Theme(
@@ -57,6 +65,7 @@ class AgentApp(App[None]):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear", "Clear"),
+        Binding("ctrl+o", "copy_last_reply", "Copy last reply"),
         Binding("escape", "escape_pressed", "Cancel/Focus", show=False),
     ]
 
@@ -77,12 +86,21 @@ class AgentApp(App[None]):
         self._controller = TUIController(self)
         self._extension_bridge = TUIExtensionBridge(self)
         self._renderer = TUIRenderer(self, loaders=self._loaders)
+        # Appearance is probed here, before Textual owns the terminal, and the
+        # resolved name is applied in on_mount (built-in themes are registered
+        # by Textual already; MINIMAL_THEME is registered at mount).
+        self._theme_name, self._theme_warning = resolve_theme_name(config.theme)
         self._spinner_timer: Timer | None = None
         self._extension_widget_timer: Timer | None = None
+        self._memory_timer: Timer | None = None
+        self._active_panel: DockPanel[Any] | None = None
+        self._panel_callback: Callable[[Any], None] | None = None
 
         self._cancel_event: asyncio.Event | None = None
         self._model_start_task: asyncio.Task[None] | None = None
         self._model_start_for: str | None = None
+        #: Model whose persisted wait calibration is currently installed.
+        self._fit_seeded_for: str | None = None
 
     @property
     def runtime(self) -> TUIRuntime:
@@ -116,9 +134,10 @@ class AgentApp(App[None]):
             self._spinner_timer = None
 
     def _animate_spinner(self) -> None:
-        """Animate the spinner in the chat waiting indicator."""
+        """Animate the spinner and refresh the generating elapsed reading."""
         chat = self.query_one("#chat-view", ChatView)
         chat.advance_waiting()
+        self._renderer.tick()
 
     def compose(self) -> ComposeResult:
         """Compose the UI."""
@@ -141,16 +160,19 @@ class AgentApp(App[None]):
         if self._session is None:
             self._session = self.agent.session
 
-        # Register and apply theme
+        # Register and apply theme (built-in themes are already registered)
         self.register_theme(MINIMAL_THEME)
-        self.theme = "minimal"
+        self.theme = self._theme_name
 
         # Show banner
         self._renderer.render_banner()
 
+        if self._theme_warning:
+            self.query_one("#chat-view", ChatView).add_system_message(self._theme_warning)
+
         # Update status bar
         status = self.query_one("#status-line", StatusBar)
-        status.set_model(self.agent.model_name)
+        status.set_model(self.agent.model_name or "(no model)")
         status.set_thinking(self.agent.thinking_level)
         status.set_session(
             self.agent.session_id,
@@ -160,10 +182,26 @@ class AgentApp(App[None]):
 
         # Focus input
         self.query_one("#prompt-input", PromptInput).focus()
+        self._refresh_prompt_models()
 
-        # If no model is selected yet, prompt the user to pick one right away.
+        # The wait prediction is only as good as this machine's own measured
+        # turns; a first-ever run gets an empty fit and therefore no ETA.
+        self.seed_latency_fit()
+
+        # No model is selected/downloaded yet: offer whatever is already in the
+        # local hub, or ask which one to fetch when the hub is empty. Either way
+        # nothing is downloaded without the user asking for it.
         if not self.agent.model_name:
-            await self._open_model_modal()
+            if await self._installed_models():
+                await self._open_model_panel()
+            else:
+                await self._open_download_panel()
+        elif self._model_is_absent():
+            # A model is remembered but is not in the local hub — this is the
+            # case that used to trigger an invisible download on startup.
+            chat = self.query_one("#chat-view", ChatView)
+            chat.add_system_message(f"model {self.agent.model_name} is not downloaded locally")
+            await self._open_download_panel(remembered=True)
         else:
             # A resumed/config model also counts as "last used", and its local
             # server is warmed up now so the first prompt runs immediately.
@@ -187,6 +225,15 @@ class AgentApp(App[None]):
             0.2,
             self._extension_bridge.render_widgets,
         )
+        self._memory_timer = self.set_interval(2.0, self._refresh_memory)
+        await self._refresh_memory()
+
+    async def _refresh_memory(self) -> None:
+        """Refresh the RAM reading in the status bar from host helpers."""
+        provider = self.agent.provider
+        server_pid = await asyncio.to_thread(lambda: getattr(provider, "server_pid", None))
+        usage = await asyncio.to_thread(snapshot, server_pid)
+        self.query_one("#status-line", StatusBar).set_memory(usage)
 
     @on(PromptInput.Submitted, "#prompt-input")
     async def on_input_submitted(self, event: PromptInput.Submitted) -> None:
@@ -210,7 +257,10 @@ class AgentApp(App[None]):
 
         if not self.agent.model_name:
             chat.add_system_message("no model selected — pick one with the picker (or /model <id>)")
-            await self._open_model_modal()
+            if await self._installed_models():
+                await self._open_model_panel()
+            else:
+                await self._open_download_panel()
             return
 
         # Start processing - show thinking indicator if thinking is enabled
@@ -224,19 +274,158 @@ class AgentApp(App[None]):
         self._run_agent(prompt)
 
     def _restore_input_focus(self, _result: object = None) -> None:
-        """Focus the prompt input (used as a modal close callback)."""
+        """Focus the prompt input once no menu is up."""
+        if self._active_panel is not None:
+            return
         self.query_one("#prompt-input", PromptInput).focus()
+        self._refresh_prompt_models()
 
-    async def _open_model_modal(self) -> None:
-        """Open the model picker modal and restore input focus when it closes."""
+    def _refresh_prompt_models(self) -> None:
+        """Refresh the model names offered by the inline `/model` dropdown."""
+
+        async def _scan() -> None:
+            try:
+                models = await self._installed_models()
+            except Exception:  # noqa: BLE001 - the dropdown is best-effort
+                return
+            prompt = self.query_one("#prompt-input", PromptInput)
+            prompt.set_models(models)
+
+        asyncio.create_task(_scan())
+
+    async def _installed_models(self) -> list[str]:
+        """Models already available locally (empty when the scan fails)."""
         try:
-            models = await self.agent.list_models()
-        except Exception:  # noqa: BLE001 - picker still works with the current model
-            models = []
-        self.push_screen(
-            ModelModal(self.agent, self._controller.on_model_modal_change, models=models),
-            callback=self._restore_input_focus,
+            return await self.agent.list_models()
+        except Exception:  # noqa: BLE001 - the pickers work without the scan
+            return []
+
+    def _model_is_absent(self) -> bool:
+        """Whether the selected model is missing from the local hub.
+
+        Providers without a hub (cloud backends, generic OpenAI-compatible
+        endpoints) always report the model as present, so they keep the
+        existing behaviour.
+        """
+        provider = self.agent.provider
+        model = self.agent.model_name
+        if not model:
+            return False
+        is_downloaded = getattr(provider, "is_model_downloaded", None)
+        if not callable(is_downloaded):
+            return False
+        try:
+            return not is_downloaded(model)
+        except Exception:  # noqa: BLE001 - a hub read failure must not block startup
+            return False
+
+    def model_is_available(self, model: str) -> bool:
+        """Whether ``model`` can be run right now (i.e. it is downloaded)."""
+        if not model:
+            return False
+        is_downloaded = getattr(self.agent.provider, "is_model_downloaded", None)
+        if not callable(is_downloaded):
+            return True
+        try:
+            return bool(is_downloaded(model))
+        except Exception:  # noqa: BLE001 - unknown providers stay permissive
+            return True
+
+    def request_model_download(self, model: str) -> None:
+        """Ask the user to download ``model`` before switching to it."""
+        asyncio.create_task(self._open_download_panel(preselected=model))
+
+    def _create_download(self, model: str) -> DownloadHandle:
+        """Create (but do not start) a download for ``model``."""
+        provider = self.agent.provider
+        factory = getattr(provider, "download_model", None)
+        if not callable(factory):
+            raise RuntimeError(f"provider {self.agent.provider_name!r} cannot download models")
+        return factory(model)  # type: ignore[no-any-return]
+
+    @property
+    def active_panel(self) -> DockPanel[Any] | None:
+        """The menu currently replacing the prompt input line, if any."""
+        return self._active_panel
+
+    def open_panel[T](
+        self,
+        panel: DockPanel[T],
+        callback: Callable[[T | None], None] | None = None,
+    ) -> None:
+        """Show a menu in the input dock, replacing the prompt line."""
+        if self._active_panel is not None:
+            self.close_panel(self._active_panel, None)
+        self._active_panel = panel
+        self._panel_callback = callback
+        self.query_one("#prompt-input", PromptInput).display = False
+        self.query_one("#input-container").mount(panel)
+
+    def close_panel(self, panel: DockPanel[Any], result: Any) -> None:
+        """Remove a docked menu and return to input mode."""
+        if self._active_panel is not panel:
+            return
+        self._active_panel = None
+        callback, self._panel_callback = self._panel_callback, None
+        panel.remove()
+        self.query_one("#prompt-input", PromptInput).display = True
+        if callback is not None:
+            callback(result)
+        self._restore_input_focus()
+
+    async def await_panel[T](self, panel: DockPanel[T]) -> T | None:
+        """Open a menu in the input dock and await its dismissal result."""
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[T | None] = loop.create_future()
+
+        def _done(result: T | None) -> None:
+            if not future.done():
+                future.set_result(result)
+
+        self.open_panel(panel, callback=_done)
+        return await future
+
+    async def _open_download_panel(
+        self,
+        *,
+        remembered: bool = False,
+        preselected: str | None = None,
+    ) -> None:
+        """Open the download picker; the chosen model is applied on dismiss.
+
+        The menu is callback-driven (rather than awaited) so it can be opened
+        from ``on_mount`` without stalling startup.
+        """
+        installed = set(await self._installed_models())
+
+        self.open_panel(
+            DownloadPanel(
+                create_download=self._create_download,
+                installed=installed,
+                preselected=preselected if preselected is not None else self.agent.model_name,
+                remembered=remembered,
+            ),
+            callback=self._on_download_panel_closed,
         )
+
+    def _on_download_panel_closed(self, model: str | None) -> None:
+        """Apply the model chosen in the download picker, then refocus input."""
+        if model:
+            self._controller.switch_model(model)
+        self._restore_input_focus()
+
+    async def _open_model_panel(self) -> None:
+        """Open the model menu; a choice is applied when it closes."""
+        models = await self._installed_models()
+        self.open_panel(
+            ModelPanel(self.agent, models=models),
+            callback=self._on_model_panel_closed,
+        )
+
+    def _on_model_panel_closed(self, choice: ModelChoice | None) -> None:
+        """Apply the change chosen in the model menu."""
+        if choice is not None:
+            self._controller.on_model_choice(choice.model, choice.thinking)
 
     def _run_agent(self, prompt: str) -> None:
         """Run the agent loop."""
@@ -279,6 +468,8 @@ class AgentApp(App[None]):
     async def _agent_worker(self, prompt: str) -> None:
         """Execute agent and handle events."""
         try:
+            # A model switch lands here, so the calibration follows the model.
+            self._seed_fit_if_model_changed()
             # Wait for the selected model to be serving (non-blocking event loop;
             # the provider launches a detached server and we just poll).
             task = self.start_model()
@@ -286,13 +477,45 @@ class AgentApp(App[None]):
                 await task
             await self._renderer.render_agent_run(prompt, self._cancel_event)
         finally:
+            self.remember_latency_fit()
             self.is_processing = False
             self._cancel_event = None
-            self.query_one("#prompt-input", PromptInput).focus()
+            if self._active_panel is None:
+                self.query_one("#prompt-input", PromptInput).focus()
+
+    def seed_latency_fit(self) -> None:
+        """Install the persisted wait calibration for the active model."""
+        agent = self.agent
+        self._fit_seeded_for = agent.model_name
+        agent.set_latency_fit(self._bootstrap_config.latency_fit_for(agent.model_name))
+
+    def _seed_fit_if_model_changed(self) -> None:
+        """Re-seed only on a switch, so a run's refinement is not thrown away."""
+        if self._fit_seeded_for != self.agent.model_name:
+            self.seed_latency_fit()
+
+    def remember_latency_fit(self) -> None:
+        """Persist the calibration sharpened by this run's measured turns."""
+        agent = self.agent
+        remember_latency_fit(
+            agent.config.session_dir,
+            agent.model_name,
+            agent.refine_latency_fit(),
+        )
 
     def action_clear(self) -> None:
         """Clear chat history."""
         self._controller.action_clear()
+
+    def action_copy_last_reply(self) -> None:
+        """Copy the most recent assistant reply to the clipboard (OSC 52)."""
+        chat = self.query_one("#chat-view", ChatView)
+        text = chat.last_assistant_text()
+        if text is None:
+            self.notify("No reply to copy", severity="warning")
+            return
+        self.copy_to_clipboard(text)
+        self.notify("Copied last reply to clipboard")
 
     async def action_new(self) -> None:
         """Start a new session."""
@@ -304,6 +527,12 @@ class AgentApp(App[None]):
             self._cancel_agent()
         else:
             self.query_one("#prompt-input", PromptInput).focus()
+
+    def on_click(self) -> None:
+        """Clicking anywhere in the chat puts the caret in the prompt."""
+        if self._active_panel is not None:
+            return
+        self.query_one("#prompt-input", PromptInput).focus()
 
     def _cancel_agent(self) -> None:
         """Cancel the running agent."""
@@ -319,17 +548,7 @@ class AgentApp(App[None]):
         """Clean up on exit."""
         if self._extension_widget_timer:
             self._extension_widget_timer.stop()
+        if self._memory_timer:
+            self._memory_timer.stop()
         if self._runtime:
             await self._runtime.agent.close()
-
-    async def push_extension_screen(self, screen: Any) -> object | None:
-        """Push a modal screen and await its dismissal without Textual workers."""
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[object | None] = loop.create_future()
-
-        def _done(result: object | None) -> None:
-            if not future.done():
-                future.set_result(result)
-
-        self.push_screen(screen, callback=_done)
-        return await future

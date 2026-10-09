@@ -3,29 +3,38 @@
 A local-first coding agent TUI for Apple Silicon. **marv** is a lean, hackable
 agent harness that runs entirely on-device — no cloud accounts, no API keys.
 
-Backends:
+marv runs local MLX models through **`marv-mlx`** (the default backend): it
+launches [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm)'s `mlx_vlm.server`
+itself and runs any MLX model downloaded in the local Hugging Face hub, with
+family-accurate thinking support. Models can be downloaded and managed with
+[marv-mlx](https://github.com/pavsefcik/marv-mlx) — the runtime layer of the
+MARV family (see below) — or with `hf`; marv reads the same hub and has **no
+runtime dependency** on either. `marv mlx …` passes through to the `marv-mlx`
+CLI when it is installed.
 
-- **`marv-mlx`** (default) — marv launches [`mlx-vlm`](https://github.com/Blaizzy/mlx-vlm)'s
-  `mlx_vlm.server` itself and runs any MLX model downloaded in the local Hugging
-  Face hub, with family-accurate thinking support. Models can be downloaded and
-  managed with [YMLX](https://github.com/pavsefcik/ymlx) — marv reads the same
-  hub but has **no runtime dependency** on it.
-- **`apple-fm`** — Apple's built-in Foundation Model via the macOS 27+ `fm` CLI
-  (`system` on-device, or `pcc` on Private Cloud Compute). Chat-only: the
-  endpoint has no function/tool calling.
+## The MARV family
 
-It is a fork of
-[eddmann/my-own-coding-agent](https://github.com/eddmann/my-own-coding-agent)
-(MIT), stripped down to local backends and rebranded:
+**MARV** — *Modular Agent Runtime Valve* — is two layers:
 
-- **Removed:** `web/` FastAPI delivery, the OpenAI / Anthropic / OpenAI-Codex
-  cloud providers, OAuth flows, and pricing tables.
-- **Added:** the `marv-mlx` and `apple-fm` backends, self-managed server
-  lifecycle (start/swap/unload, including on crash), and family-accurate
-  thinking support.
-- **Kept:** the readable agent loop, Textual TUI, skills, prompt templates,
-  extensions, JSONL sessions (fork/resume), context compaction, and the
-  read/write/edit/bash tool suite.
+```
+user ──► marv   (harness: agent loop · tools · sessions · skills · Textual TUI)
+            │  OpenAI-compatible HTTP :11500 + lifecycle CLI
+            ▼
+         marv-mlx (runtime: catalog · download · run/swap · mlx_vlm.server)
+            │
+            ▼
+         Hugging Face hub + Apple Silicon (MLX)
+```
+
+- **[marv](https://github.com/pavsefcik/marv)** (this repo) is the harness. It
+  keeps its name, package, binary and state paths.
+- **[marv-mlx](https://github.com/pavsefcik/marv-mlx)** is the runtime: it
+  manages and serves local models. marv self-manages `mlx_vlm.server`, so the
+  runtime is recommended, not required; `marv mlx …` forwards to its CLI.
+
+The two layers share the Hugging Face hub and the `~/.cache/marv/` cache root
+(harness state at the top, runtime state under `mlx/`), but own disjoint env
+namespaces (`AGENT_*` for the harness, `MARV_MLX_*` for the runtime).
 
 ## Why this exists
 
@@ -39,9 +48,27 @@ yours_.
 - Python 3.14+ and `uv`
 - For `marv-mlx`: the `mlx-vlm` tool — `uv tool install mlx-vlm --with jinja2 --with setproctitle`
   (the `setproctitle` extra is optional and only affects the process name)
-- For `apple-fm`: macOS 27+ with the `fm` CLI licensed (`sudo fm license`)
+
+## Install
+
+marv is distributed as GitHub release artifacts (there is no PyPI package yet).
+Download the wheel from the [latest release](https://github.com/pavsefcik/marv/releases/latest)
+and install it with `uv`:
+
+```sh
+uv tool install "./marv-X.Y.Z-py3-none-any.whl"
+marv --version
+```
+
+Or install straight from the release URL (replace `X.Y.Z` with the version):
+
+```sh
+uv tool install "marv @ https://github.com/pavsefcik/marv/releases/download/vX.Y.Z/marv-X.Y.Z-py3-none-any.whl"
+```
 
 ## Quickstart
+
+From a repository checkout:
 
 ```sh
 make deps      # uv sync
@@ -53,14 +80,13 @@ Headless (single prompt, model loaded on demand):
 ```sh
 make run-headless PROMPT="List all Python files"
 uv run marv run --headless -m mlx-community/Qwen3.5-4B-MLX-4bit "Say hi"
-uv run marv run --headless -p apple-fm "Say hi"
 ```
 
 marv starts the model server itself and stops it when it exits. The model picker
-lists every MLX model downloaded in `~/.cache/huggingface/hub` (or the `system` /
-`pcc` models for `apple-fm`), and selecting one starts/swaps the server. If a
-model is already selected — from config, a resumed session, or the last-used
-state — marv starts its server on launch instead of waiting for the first prompt.
+lists every MLX model downloaded in `~/.cache/huggingface/hub`, and selecting
+one starts/swaps the server. If a model is already selected — from config, a
+resumed session, or the last-used state — marv starts its server on launch
+instead of waiting for the first prompt.
 
 ## Shell launcher
 
@@ -92,42 +118,43 @@ Set `approval_mode` (or `AGENT_APPROVAL`, or `marv run --approval`) to
 mode there is no one to ask, so an unapproved tool is denied. This is a
 guardrail, not a sandbox — see [SECURITY.md](SECURITY.md).
 
+The local-server lifecycle is controlled by `server_manager` (`embedded`, the
+default, where marv launches `mlx_vlm.server` itself, or `marv-mlx`, which
+delegates to the [marv-mlx](https://github.com/pavsefcik/marv-mlx) runtime CLI
+when installed and falls back to embedded otherwise). Override it with
+`AGENT_SERVER_MANAGER` or `marv run --server-manager marv-mlx`.
+
+The TUI status bar shows the last turn's time-to-first-token and prefill cost
+(`ttft <ms>/<tokens>t`); `marv bench` (see below) reports the aggregate.
+
+`AGENT_LLM_READ_TIMEOUT` caps the streaming read timeout for any provider
+(seconds, `off`/`0` disables); local backends wait indefinitely by default so a
+long prefill is not killed.
+
 A commented template ships at `config/default.toml`. The default provider is
-`marv-mlx` on `http://localhost:11500`; `apple-fm` uses
-`http://127.0.0.1:1976`. Neither needs an API key.
-
-## The agent loop
-
-1. Input intake & preprocessing — slash commands, skills, input extensions.
-2. Session + context guardrails — persist to JSONL, compact if needed.
-3. Prompt construction & model stream — provider streams text/thinking/tools.
-4. Tool execution cycle — calls parsed, validated, executed, results appended.
-5. Turn finalization — events emitted, extension messages drained, token stats.
+`marv-mlx` on `http://localhost:11500` and needs no API key.
 
 ## Layout
 
-```
-runtime/     Agent loop, sessions, context compaction, prompts
-llm/         Provider adapters (mlx-vlm + Apple FM + OpenAI-compatible) + streaming events
-config/      Runtime config loading
-tools/       Built-in tool registry + implementations
-skills/      Skill discovery + validation
-prompts/     Prompt templates + argument expansion
-extensions/  Event hooks + runtime/session/model/tool/UI host
-tui/         Textual UI (interactive mode)
-cli/         Typer command surface + headless/session helpers
-```
+`runtime/` (agent loop, sessions, compaction) → `llm/` (provider adapters) →
+`config/`, `tools/`, `skills/`, `prompts/`, `extensions/` → delivery (`tui/`,
+`cli/`). See [`docs/architecture.md`](docs/architecture.md) for the module
+layout and responsibilities.
 
 ## Development
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev setup and `make` targets.
+
+Measure local latency with `marv bench` — a scripted multi-turn conversation
+through the real agent loop that reports TTFT p50/p90 and how much TTFT grows
+per turn (`--json` for machine consumption); it also seeds the per-model
+calibration that drives the wait estimate:
+
 ```sh
-make test
-make lint
-make format
-make can-release   # lint + tests
+uv run marv bench
+uv run marv bench -n 8 --json
 ```
 
 ## License
 
-MIT. Derived from [my-own-coding-agent](https://github.com/eddmann/my-own-coding-agent)
-by eddmann.
+MIT.

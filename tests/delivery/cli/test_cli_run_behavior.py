@@ -127,6 +127,118 @@ def test_cli_run_propagates_approval_mode_to_config(temp_dir, monkeypatch):
     assert seen == [ApprovalMode.DESTRUCTIVE]
 
 
+def test_cli_tui_start_kicks_off_a_catalog_refresh(temp_dir, monkeypatch):
+    """Launching the TUI refreshes the marv-curator list in the background.
+
+    The runtime only rewrites its cached catalog from its own TUI, so a
+    marv-only user would otherwise see a stale download picker forever.
+    """
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    calls: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    class FakeApp:
+        def __init__(self, config, provider, session):
+            pass
+
+        def run(self):
+            calls.append("tui")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    import marv.tui.app
+
+    monkeypatch.setattr(marv.tui.app, "AgentApp", FakeApp)
+    from marv.llm import model_download
+
+    monkeypatch.setattr(model_download, "start_catalog_refresh", lambda: calls.append("refresh"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run"])
+
+    assert result.exit_code == 0
+    assert calls == ["refresh", "tui"]
+
+
+def test_cli_headless_run_does_not_touch_the_catalog(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    calls: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        calls.append("headless")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setattr(cli, "_ensure_model_downloaded", lambda llm_provider: None)
+    from marv.llm import model_download
+
+    monkeypatch.setattr(model_download, "start_catalog_refresh", lambda: calls.append("refresh"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert calls == ["headless"]
+
+
+def test_cli_run_propagates_theme_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.theme)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--theme", "nord"])
+
+    assert result.exit_code == 0
+    assert seen == ["nord"]
+
+
+def test_cli_run_keeps_the_configured_theme_without_the_flag(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.theme)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setenv("AGENT_THEME", "dracula")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert seen == ["dracula"]
+
+
 def test_cli_run_headless_requires_prompt():
     runner = CliRunner()
     result = runner.invoke(cli.app, ["run", "--headless"])
@@ -139,7 +251,7 @@ def test_cli_run_fails_on_invalid_provider_model_pair():
     runner = CliRunner()
     result = runner.invoke(
         cli.app,
-        ["run", "--headless", "hi", "--provider", "openai", "--model", "claude-sonnet-4-5"],
+        ["run", "--headless", "hi", "--provider", "openai-codex", "--model", "gpt-4o"],
     )
 
     assert result.exit_code != 0
@@ -335,3 +447,245 @@ def test_cli_version_flag_prints_package_version():
 
     assert result.exit_code == 0
     assert result.stdout.strip() == f"marv {__version__}"
+
+
+def test_cli_mlx_passthrough_execs_the_runtime_binary(monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: "/usr/local/bin/marv-mlx")
+    monkeypatch.setattr(cli.os, "execv", lambda _bin, argv: calls.append(argv))
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["mlx", "status", "--json"])
+
+    assert result.exit_code == 0
+    assert calls == [["/usr/local/bin/marv-mlx", "status", "--json"]]
+
+
+def test_cli_mlx_passthrough_fails_with_install_hint_when_missing(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["mlx", "status"])
+
+    assert result.exit_code == 1
+    assert "marv-mlx runtime not found" in result.stderr
+    assert "brew install pavsefcik/marv-mlx/marv-mlx" in result.stderr
+
+
+def test_cli_run_propagates_server_manager_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.server_manager)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--server-manager", "marv-mlx"])
+
+    assert result.exit_code == 0
+    assert seen == ["marv-mlx"]
+
+
+def test_cli_run_rejects_invalid_server_manager():
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--server-manager", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Invalid server manager" in result.stderr
+
+
+class HeadlessHubProvider:
+    """Provider double that reports a model as missing and records downloads."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "mlx-community/Qwen3.5-4B-MLX-4bit",
+        downloaded: bool = False,
+        fail: bool = False,
+    ) -> None:
+        self.name = "marv-mlx"
+        self.model = model
+        self._downloaded = downloaded
+        self._fail = fail
+        self.started = 0
+        self.polls = 0
+
+    def is_model_downloaded(self, model: str) -> bool:
+        return self._downloaded
+
+    def download_model(self, model: str) -> object:
+        outer = self
+
+        class _Download:
+            model_id = model
+            state = "running"
+            progress = _progress(512 * 1024**2, 4 * 1024**3)
+            error = "gated repo" if outer._fail else None
+            local_path = None
+
+            @property
+            def finished(self) -> bool:
+                return outer.polls >= 2
+
+            def start(self) -> None:
+                outer.started += 1
+
+            def poll(self) -> list[object]:
+                outer.polls += 1
+                if self.finished:
+                    self.state = "failed" if outer._fail else "done"
+                return []
+
+            def wait(self, timeout: float | None = None) -> None: ...
+
+            def cancel(self) -> None: ...
+
+        return _Download()
+
+
+def _progress(downloaded: int, total: int):
+    from marv.llm.model_download import DownloadProgress
+
+    return DownloadProgress(downloaded_bytes=downloaded, total_bytes=total)
+
+
+def run_headless_with_provider(
+    monkeypatch, provider: HeadlessHubProvider, *extra_args: str
+) -> tuple[int, str, str]:
+    seen: list[str] = []
+
+    def fake_create_provider(config):
+        return provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(prompt)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", *extra_args])
+    return result.exit_code, result.stdout, result.stderr
+
+
+def test_cli_headless_downloads_a_missing_model_with_visible_progress(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=False)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 0
+    assert provider.started == 1
+    assert "Downloading mlx-community/Qwen3.5-4B-MLX-4bit" in stderr
+    assert "512M / 4.0G (12%)" in stderr
+
+
+def test_cli_headless_skips_download_when_the_model_is_present(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=True)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 0
+    assert provider.started == 0
+    assert "Downloading" not in stderr
+
+
+def test_cli_headless_fails_when_the_model_download_fails(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+    provider = HeadlessHubProvider(downloaded=False, fail=True)
+
+    exit_code, _stdout, stderr = run_headless_with_provider(monkeypatch, provider)
+
+    assert exit_code == 1
+    assert "Download failed: gated repo" in stderr
+
+
+def test_cli_does_not_touch_providers_without_a_hub(temp_dir, monkeypatch):
+    monkeypatch.chdir(temp_dir)
+
+    class CloudProvider:
+        name = "openai"
+        model = "gpt-5.4"
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        return None
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: CloudProvider())
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "-m", "gpt-5.4", "-p", "openai"])
+
+    assert result.exit_code == 0
+    assert "Downloading" not in result.stderr
+
+
+def test_cli_run_propagates_read_only_flag_to_config(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[bool] = []
+    sentinel_provider = object()
+
+    def fake_create_provider(config):
+        return sentinel_provider
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.read_only)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--read-only"])
+
+    assert result.exit_code == 0
+    assert seen == [True]
+
+
+def test_cli_run_read_only_defaults_off(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    seen: list[bool] = []
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider):
+        seen.append(config.read_only)
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+
+    result = CliRunner().invoke(cli.app, ["run", "--headless", "hi"])
+
+    assert result.exit_code == 0
+    assert seen == [False]
+
+
+def test_config_show_reports_the_read_only_tool_set(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_READ_ONLY", "true")
+
+    result = CliRunner().invoke(cli.app, ["config-show"])
+
+    assert result.exit_code == 0
+    assert "Read Only: True" in result.output
+    assert "read" in result.output

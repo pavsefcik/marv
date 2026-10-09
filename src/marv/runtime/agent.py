@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from marv.llm.events import StreamEvent, StreamOptions, ToolCallBlock
 from marv.llm.events import ThinkingLevel as StreamThinkingLevel
+from marv.llm.latency import LatencyFit, LatencyTracker, WaitEstimate, estimate_tokens_from_json
 from marv.prompts.loader import PromptTemplateLoader
 from marv.prompts.parser import ParsedCommand, expand_template, parse_command
 from marv.runtime.approval import requires_approval
@@ -21,6 +22,7 @@ from marv.runtime.chunk import (
     ToolCallChunk,
     ToolCallStartChunk,
     ToolResultChunk,
+    WaitEstimateChunk,
 )
 from marv.runtime.context import ContextManager
 from marv.runtime.context_loader import load_all_context
@@ -84,6 +86,10 @@ if TYPE_CHECKING:
     from marv.runtime.approval import ToolApprover
     from marv.tools.base import BaseTool
 
+#: Tools that only inspect the workspace. ``--read-only`` narrows the active
+#: tool set to exactly these, so no mutation is reachable by the model.
+READ_ONLY_TOOLS = ("read", "grep", "find", "ls")
+
 
 @dataclass(slots=True)
 class _StreamConsumptionState:
@@ -95,6 +101,7 @@ class _StreamConsumptionState:
     tool_calls: list[ToolCall] = field(default_factory=list)
     thinking_started: bool = False
     message_started: bool = False
+    first_token_seen: bool = False
     stream_error: str | None = None
     stream_aborted: bool = False
 
@@ -124,6 +131,9 @@ class Agent:
         "_cwd",
         "_context_files",
         "_approver",
+        "_latency",
+        "_latency_fit",
+        "_warm_models",
     )
 
     def __init__(
@@ -168,6 +178,14 @@ class Agent:
         self._approver = approver
         self._in_loop = False
         self._context_files: list[ContextFile] = []
+        self._latency = LatencyTracker()
+        #: Per-machine calibration injected by the delivery layer (which owns
+        #: ``state.toml``). Empty until one is set, so a first-ever run reports
+        #: no ETA rather than a hardcoded one.
+        self._latency_fit = LatencyFit()
+        #: (provider, model) pairs already observed to stream in this run; the
+        #: first turn for a pair may include cold weight loading.
+        self._warm_models: set[str] = set()
 
         # Use provided loaders or create with default directories + config paths
         self._skill_loader = skill_loader or SkillLoader.with_defaults(
@@ -193,6 +211,13 @@ class Agent:
         ]
         for tool in tools:
             self.tools.register(tool)
+
+        # Read-only mode narrows the exposed (and executable) tool set to the
+        # inspection tools, so an "explain this repo" run cannot write, edit or
+        # run shell commands even if the model asks for them. This is a real
+        # narrowing of the active set, not an approval prompt.
+        if config.read_only:
+            self.tools.set_active_tools(list(READ_ONLY_TOOLS))
 
         # Restore model selection from session (if any)
         self._restore_model_from_session()
@@ -293,7 +318,7 @@ class Agent:
 
     def _init_system_prompt(self) -> None:
         """Initialize system prompt with context using the prompt builder."""
-        # Load context files (AGENTS.md, CLAUDE.md from project and ancestors)
+        # Load context files (AGENTS.md from project and ancestors)
         context_files = load_all_context(
             cwd=self._cwd,
             explicit_paths=self.config.context_file_paths,
@@ -431,8 +456,63 @@ class Agent:
 
     @property
     def context_files(self) -> list[ContextFile]:
-        """Get loaded context files (AGENTS.md, CLAUDE.md, etc.)."""
+        """Get loaded context files (AGENTS.md, etc.)."""
         return self._context_files
+
+    @property
+    def latency(self) -> LatencyTracker:
+        """Per-run time-to-first-token samples.
+
+        Delivery shells read ``latency.metrics`` to show TTFT and to attribute
+        a rising TTFT to prompt growth rather than to the transport.
+        """
+        return self._latency
+
+    @property
+    def latency_fit(self) -> LatencyFit:
+        """Per-model prefill calibration used for wait predictions."""
+        return self._latency_fit
+
+    def set_latency_fit(self, fit: LatencyFit | None) -> None:
+        """Install a persisted calibration for the active model.
+
+        The delivery layer owns ``state.toml``; the runtime only consumes the
+        fit, so the runtime stays free of file-format concerns.
+        """
+        self._latency_fit = fit or LatencyFit()
+
+    def refine_latency_fit(self) -> LatencyFit:
+        """Fold this run's measured turns into the calibration.
+
+        Returns the updated fit so the caller can persist it. The fit is
+        monotonic across the agent's lifetime so a later run can keep
+        improving the estimate.
+        """
+        for sample in self._latency.metrics.samples:
+            self._latency_fit = self._latency_fit.with_sample(sample)
+        return self._latency_fit
+
+    async def _turn_is_cold(self) -> bool:
+        """Whether this turn may pay a cold model start (weights loading).
+
+        Only asked once per (provider, model) per agent run: a provider that
+        reports it is already serving is warm, and a provider with no server
+        lifecycle (cloud endpoints) is never cold.
+        """
+        key = f"{self.provider.name}:{self.provider.model}"
+        if key in self._warm_models:
+            return False
+        is_serving = getattr(self.provider, "is_serving", None)
+        if not callable(is_serving) or not self.provider.model:
+            return False
+        try:
+            serving = await asyncio.to_thread(is_serving)
+        except Exception:  # noqa: BLE001 - a probe failure must not block a turn
+            return False
+        if serving:
+            self._warm_models.add(key)
+            return False
+        return True
 
     def set_hooks(self, hooks: AgentHooks) -> None:
         """Replace the active runtime hook host."""
@@ -550,6 +630,9 @@ class Agent:
             and system messages
         """
         pending_inputs: deque[str] = deque([user_input])
+
+        # Each run reports its own latency profile.
+        self._latency.reset()
 
         async with self._hooks.run_scope() as run_control:
             while pending_inputs:
@@ -688,6 +771,7 @@ class Agent:
                     if not state.message_started:
                         await self._emit(MessageStartEvent())
                         state.message_started = True
+                    self._note_first_token(state)
                     state.response_content += event.delta
                     await self._emit(MessageUpdateEvent(delta=event.delta))
                     yield TextDeltaChunk(payload=event.delta)
@@ -701,6 +785,7 @@ class Agent:
                     if not state.thinking_started:
                         await self._emit(ThinkingStartEvent())
                         state.thinking_started = True
+                    self._note_first_token(state)
                     state.thinking_content += event.delta
                     await self._emit(ThinkingDeltaEvent(delta=event.delta))
                     yield ThinkingDeltaChunk(payload=ThinkingContent(text=event.delta))
@@ -725,13 +810,8 @@ class Agent:
 
                 case "assistant_metadata":
                     if isinstance(event.metadata, dict):
-                        for key, value in event.metadata.items():
-                            if isinstance(value, dict) and isinstance(
-                                state.provider_metadata.get(key), dict
-                            ):
-                                state.provider_metadata[key].update(value)
-                            else:
-                                state.provider_metadata[key] = value
+                        self._merge_provider_metadata(state, event.metadata)
+                        self._apply_provider_ttft(state)
 
                 case "error":
                     state.stream_error = event.message.error_message or "LLM stream error"
@@ -739,6 +819,44 @@ class Agent:
                     break
                 case "done":
                     pass
+
+    @staticmethod
+    def _merge_provider_metadata(
+        state: _StreamConsumptionState,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Merge an ``assistant_metadata`` payload into the turn's accumulators.
+
+        Nested dicts are merged so a later payload can extend an earlier one
+        without discarding it (providers may emit latency and provider-specific
+        artifacts separately).
+        """
+        for key, value in metadata.items():
+            if isinstance(value, dict) and isinstance(state.provider_metadata.get(key), dict):
+                state.provider_metadata[key].update(value)
+            else:
+                state.provider_metadata[key] = value
+
+    def _note_first_token(self, state: _StreamConsumptionState) -> None:
+        """Record time-to-first-token for the current turn, once."""
+        if state.first_token_seen:
+            return
+        state.first_token_seen = True
+        self._latency.note_first_token()
+        self._warm_models.add(f"{self.provider.name}:{self.provider.model}")
+        self._apply_provider_ttft(state)
+
+    def _apply_provider_ttft(self, state: _StreamConsumptionState) -> None:
+        """Prefer a provider-reported TTFT and schema cost over local estimates."""
+        report = state.provider_metadata.get("latency")
+        if not isinstance(report, dict) or not report.get("streamed"):
+            return
+        ttft_ms = report.get("ttft_ms")
+        if isinstance(ttft_ms, int | float):
+            self._latency.refine_last_ttft(float(ttft_ms))
+        schema_tokens = report.get("schema_tokens")
+        if isinstance(schema_tokens, int) and not isinstance(schema_tokens, bool):
+            self._latency.refine_last_schema_tokens(schema_tokens)
 
     async def _execute_tool_calls(
         self,
@@ -820,6 +938,7 @@ class Agent:
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
                 result=result,
+                is_error=is_error,
             )
             state.tool_results.append(tr)
             yield ToolResultChunk(payload=tr)
@@ -895,9 +1014,36 @@ class Agent:
 
                 messages_for_llm = await self._hooks.prepare_context(list(self.session.messages))
                 options = self._build_stream_options(cancel_event=cancel_event)
+                tool_schemas = self.tools.get_schemas() if self._supports_tools else None
+
+                # Anchor the TTFT clock for this turn. The prompt estimate is the
+                # same token counter compaction uses, so the number shown to the
+                # user matches the number that drives context management. Tool
+                # schemas are on the wire every turn and cost prefill too, so
+                # they are threaded through here (not dropped) and the wait
+                # prediction is emitted *before* the request so the UI can
+                # narrate the prefill from its first second.
+                prompt_tokens = self.provider.count_messages_tokens(messages_for_llm)
+                schema_tokens = estimate_tokens_from_json(tool_schemas) if tool_schemas else 0
+                cold = await self._turn_is_cold()
+                self._latency.note_request(
+                    prompt_tokens=prompt_tokens,
+                    schema_tokens=schema_tokens,
+                    cold=cold,
+                )
+                yield WaitEstimateChunk(
+                    payload=WaitEstimate(
+                        prompt_tokens=prompt_tokens,
+                        schema_tokens=schema_tokens,
+                        eta_ms=self._latency_fit.predict_ttft_ms(
+                            prompt_tokens, schema_tokens, cold=cold
+                        ),
+                        cold=cold,
+                    )
+                )
                 stream = self.provider.stream(
                     messages_for_llm,
-                    tools=self.tools.get_schemas() if self._supports_tools else None,
+                    tools=tool_schemas,
                     options=options,
                 )
 
@@ -906,6 +1052,9 @@ class Agent:
                     yield chunk
 
                 if stream_state.stream_error:
+                    # The turn never streamed: drop the pending sample so it is
+                    # not attributed to whichever turn streams next.
+                    self._latency.discard_pending()
                     if not stream_state.stream_aborted:
                         error_msg = Message.system(
                             f"[LLM stream error]\n{stream_state.stream_error}"

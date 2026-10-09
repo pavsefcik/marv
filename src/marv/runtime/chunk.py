@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from marv.llm.latency import WaitEstimate
     from marv.runtime.message import Message, ThinkingContent, ToolCall, ToolCallStart, ToolResult
 
 AgentChunkType = Literal[
@@ -15,6 +16,7 @@ AgentChunkType = Literal[
     "tool_call",
     "tool_result",
     "message",
+    "wait_estimate",
 ]
 
 
@@ -66,6 +68,20 @@ class MessageChunk:
     type: Literal["message"] = "message"
 
 
+@dataclass(slots=True)
+class WaitEstimateChunk:
+    """How long the pending turn is predicted to wait before its first token.
+
+    Emitted before the provider request goes out, so a delivery shell can
+    narrate the prefill instead of showing an undifferentiated spinner. The
+    estimate is advisory: it never caps the wait, and ``eta_ms`` is None when
+    there is no measured history to predict from.
+    """
+
+    payload: WaitEstimate
+    type: Literal["wait_estimate"] = "wait_estimate"
+
+
 AgentChunk = (
     TextDeltaChunk
     | ThinkingDeltaChunk
@@ -73,4 +89,5 @@ AgentChunk = (
     | ToolCallChunk
     | ToolResultChunk
     | MessageChunk
+    | WaitEstimateChunk
 )

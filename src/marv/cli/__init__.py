@@ -1,7 +1,10 @@
 """CLI entry point using Typer."""
 
 import asyncio
+import os
+import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -10,6 +13,7 @@ import typer
 from marv import __version__
 from marv.config import Config
 from marv.llm.factory import create_provider
+from marv.runtime.agent import READ_ONLY_TOOLS
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
@@ -67,6 +71,7 @@ def _create_llm_provider(config: Config) -> LLMProvider:
         temperature=config.temperature,
         max_output_tokens=config.max_output_tokens,
         provider_overrides=config.provider_overrides(),
+        server_manager=config.server_manager,
     )
 
 
@@ -88,6 +93,27 @@ def run(
         typer.Option(
             "--approval",
             help="Tool approval mode: off, destructive, all",
+        ),
+    ] = None,
+    read_only: Annotated[
+        bool,
+        typer.Option(
+            "--read-only",
+            help="Narrow the tool set to read/grep/find/ls (no writes or shell)",
+        ),
+    ] = False,
+    theme: Annotated[
+        str | None,
+        typer.Option(
+            "--theme",
+            help="TUI theme: auto, minimal, or any built-in Textual theme",
+        ),
+    ] = None,
+    server_manager: Annotated[
+        str | None,
+        typer.Option(
+            "--server-manager",
+            help="Local server lifecycle: embedded (default) or marv-mlx",
         ),
     ] = None,
     extension: Annotated[
@@ -126,9 +152,16 @@ def run(
             typer.echo("Valid values: off, destructive, all", err=True)
             raise typer.Exit(1) from err
 
+    if server_manager and server_manager not in ("embedded", "marv-mlx"):
+        typer.echo(f"Invalid server manager: {server_manager}", err=True)
+        typer.echo("Valid values: embedded, marv-mlx", err=True)
+        raise typer.Exit(1)
+
     extensions = list(config.extensions)
     if extension:
         extensions.extend(Path(ext) for ext in extension)
+
+    effective_read_only = read_only or config.read_only
 
     config = Config(
         provider=provider or config.provider,
@@ -140,6 +173,9 @@ def run(
         temperature=config.temperature,
         thinking_level=thinking_level,
         approval_mode=approval_mode,
+        read_only=effective_read_only,
+        theme=theme or config.theme,
+        server_manager=server_manager or config.server_manager,
         session_dir=config.session_dir,
         skills_dirs=config.skills_dirs,
         extensions=extensions,
@@ -178,9 +214,45 @@ def run(
 
     if prompt or headless:
         assert prompt is not None  # guaranteed by the headless guard above
+        _ensure_model_downloaded(llm_provider=llm_provider)
         asyncio.run(_run_headless(config, prompt, loaded_session, llm_provider))
     else:
         _run_tui(config, loaded_session, llm_provider)
+
+
+def _ensure_model_downloaded(llm_provider: LLMProvider) -> None:
+    """Fetch a missing model for non-interactive runs, showing progress.
+
+    Headless runs have no picker, so downloading is the only way a remembered
+    model can work. Unlike the old silent startup download, the transfer is
+    reported on stderr so the run is never invisibly stalled.
+    """
+    model = getattr(llm_provider, "model", None)
+    if not model:
+        return
+    is_downloaded = getattr(llm_provider, "is_model_downloaded", None)
+    factory = getattr(llm_provider, "download_model", None)
+    if not callable(is_downloaded) or not callable(factory):
+        return
+    if is_downloaded(model):
+        return
+
+    download = factory(model)
+    typer.echo(f"Downloading {model} (not present in the local Hugging Face hub)…", err=True)
+    download.start()
+    last = ""
+    while not download.finished:
+        download.poll()
+        label = download.progress.label()
+        if label != last:
+            last = label
+            typer.echo(f"  {label}", err=True)
+        download.wait(0.25)
+    download.poll()
+    if download.state == "failed":
+        typer.echo(f"Download failed: {download.error}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Downloaded {model}", err=True)
 
 
 def _stop_provider_server(llm_provider: LLMProvider) -> None:
@@ -192,8 +264,15 @@ def _stop_provider_server(llm_provider: LLMProvider) -> None:
 
 def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
     """Run the interactive TUI."""
+    from marv.llm.model_download import start_catalog_refresh
     from marv.llm.server_lifecycle import install_handlers
     from marv.tui.app import AgentApp
+
+    # Refresh the marv-curator catalog in the background. The download picker
+    # reads the runtime's cached copy; the runtime only rewrites it from its own
+    # TUI, so a marv-only user would otherwise see a stale list. Fire-and-forget:
+    # the download panel waits for this same attempt when it opens.
+    start_catalog_refresh()
 
     install_handlers()
     app = AgentApp(config, provider=llm_provider, session=session)
@@ -207,6 +286,81 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     finally:
         # Unload the model even if the TUI crashed before its own cleanup ran.
         _stop_provider_server(llm_provider)
+
+
+@app.command()
+def bench(
+    prompt: Annotated[
+        list[str] | None,
+        typer.Option("--prompt", help="Prompt to include (repeatable); overrides defaults"),
+    ] = None,
+    turns: Annotated[
+        int | None,
+        typer.Option("-n", "--turns", help="Number of default prompts to run"),
+    ] = None,
+    no_warmup: Annotated[
+        bool,
+        typer.Option("--no-warmup", help="Skip the warm-up turn (measures cold start)"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON"),
+    ] = False,
+    model: Annotated[str | None, typer.Option("-m", "--model", help="Model to use")] = None,
+    provider: Annotated[str | None, typer.Option("-p", "--provider", help="Provider name")] = None,
+) -> None:
+    """Measure time-to-first-token for the active model.
+
+    Reports TTFT p50/p90 and how much it grows per turn. A flat growth number
+    means the prompt is not being re-prefilled in full each turn; a climbing
+    one means it is, and that is the latency bug to fix first.
+    """
+    from .bench import DEFAULT_PROMPTS, bench_command
+
+    base = Config.load()
+    config = replace(base, provider=provider or base.provider, model=model or base.model)
+
+    selected = list(prompt) if prompt else list(DEFAULT_PROMPTS)
+    if turns is not None:
+        if turns < 1:
+            typer.echo("Error: --turns must be at least 1", err=True)
+            raise typer.Exit(1)
+        selected = selected[:turns]
+
+    from marv.llm.server_lifecycle import install_handlers
+
+    install_handlers()
+    bench_command(
+        config=config,
+        create_llm_provider=_create_llm_provider,
+        prompts=selected,
+        warmup=not no_warmup,
+        as_json=json_output,
+    )
+
+
+@app.command()
+def doctor(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON"),
+    ] = False,
+) -> None:
+    """Diagnose config, hub, server, and extension setup.
+
+    One command that checks the resolved config, the local Hugging Face hub,
+    the model server, the download tooling, and whether configured extensions
+    load, so a setup problem explains itself instead of surfacing later as a
+    cryptic TUI error.
+    """
+    from .doctor import doctor_command
+
+    config = Config.load()
+    doctor_command(
+        config=config,
+        create_llm_provider=_create_llm_provider,
+        as_json=json_output,
+    )
 
 
 @app.command()
@@ -261,6 +415,42 @@ def sessions(
     sessions_command(limit)
 
 
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def mlx(
+    ctx: typer.Context,
+) -> None:
+    """Run the marv-mlx runtime CLI (passes through all remaining arguments).
+
+    `marv-mlx` is the recommended local-LLM runtime that sits underneath the
+    harness. marv stays self-sufficient (it can launch the server itself), so
+    this is a convenience passthrough: `marv mlx status --json` runs
+    `marv-mlx status --json`.
+    """
+    passthrough = [arg for arg in ctx.args if arg != "--"]
+    exec_mlx(passthrough)
+
+
+def exec_mlx(args: list[str]) -> None:
+    """Exec the `marv-mlx` runtime CLI, replacing this process.
+
+    Raises ``typer.Exit(1)`` with a hint when the binary is not installed.
+    """
+    binary = shutil.which("marv-mlx")
+    if binary is None:
+        typer.echo(
+            "marv-mlx runtime not found. Install it with:\n"
+            "  brew install pavsefcik/marv-mlx/marv-mlx\n"
+            "or:\n"
+            "  curl -fsSL "
+            "https://raw.githubusercontent.com/pavsefcik/marv-mlx/main/install.sh | sh",
+            err=True,
+        )
+        raise typer.Exit(1)
+    os.execv(binary, [binary, *args])
+
+
 @app.command()
 def config_show() -> None:
     """Show current configuration."""
@@ -276,6 +466,11 @@ def config_show() -> None:
     typer.echo(f"  Max Output Tokens: {config.max_output_tokens}")
     typer.echo(f"  Temperature: {config.temperature}")
     typer.echo(f"  Thinking Level: {config.thinking_level}")
+    tools = ", ".join(READ_ONLY_TOOLS) if config.read_only else "[all registered]"
+    typer.echo(f"  Read Only: {config.read_only}")
+    typer.echo(f"  Active Tools: {tools}")
+    typer.echo(f"  Theme: {config.theme}")
+    typer.echo(f"  Server Manager: {config.server_manager}")
     typer.echo(f"  Session Dir: {config.session_dir}")
     typer.echo(f"  Skills Dirs: {config.skills_dirs or '[none]'}")
     typer.echo(f"  Extensions: {config.extensions or '[none]'}")

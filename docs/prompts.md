@@ -26,6 +26,9 @@ Template content with $1 $2 $@ substitutions.
 2. `prompt_template_dirs` from config
 3. `.marv/prompts/` (project‑local)
 
+`prompt_template_dirs` in config is the medium-priority layer (between user and
+project), matching the skill search order.
+
 ## Execution
 
 - `/template-name args...` expands the template before the model call.

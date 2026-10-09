@@ -79,12 +79,14 @@ def test_agent_set_model_clamps_thinking_level_for_lower_capability_model(temp_d
 
 
 def test_agent_set_model_rejects_invalid_provider_model_pair(temp_dir):
-    agent, provider = build_agent(temp_dir, provider_name="openai", provider_model="gpt-5.4")
+    agent, provider = build_agent(
+        temp_dir, provider_name="openai-codex", provider_model="gpt-5-codex"
+    )
 
     with pytest.raises(ValueError):
-        agent.set_model("claude-sonnet-4-5")
+        agent.set_model("gpt-4o")
 
-    assert provider.model == "gpt-5.4"
+    assert provider.model == "gpt-5-codex"
 
 
 def test_agent_restores_model_selection_from_session_entries(temp_dir):
@@ -104,7 +106,7 @@ def test_agent_restores_model_selection_from_session_entries(temp_dir):
 
 def test_agent_restore_ignores_selection_for_different_provider(temp_dir):
     session = Session.new(temp_dir, provider="openai", model="gpt-5.4")
-    session.append_model_change("anthropic", "claude-sonnet-4-5")
+    session.append_model_change("apple-fm", "system")
 
     agent, provider = build_agent(
         temp_dir,
@@ -114,21 +116,21 @@ def test_agent_restore_ignores_selection_for_different_provider(temp_dir):
     )
 
     assert provider.model == "gpt-5.4"
-    assert agent.session.get_model_selection() == ("anthropic", "claude-sonnet-4-5")
+    assert agent.session.get_model_selection() == ("apple-fm", "system")
 
 
 def test_agent_restore_ignores_invalid_model_for_provider(temp_dir):
-    session = Session.new(temp_dir, provider="openai", model="gpt-5.4")
-    session.append_model_change("openai", "claude-sonnet-4-5")
+    session = Session.new(temp_dir, provider="openai-codex", model="gpt-5-codex")
+    session.append_model_change("openai-codex", "gpt-4o")
 
     agent, provider = build_agent(
         temp_dir,
-        provider_name="openai",
-        provider_model="gpt-5.4",
+        provider_name="openai-codex",
+        provider_model="gpt-5-codex",
         session=session,
     )
 
-    assert provider.model == "gpt-5.4"
+    assert provider.model == "gpt-5-codex"
 
 
 @pytest.mark.asyncio

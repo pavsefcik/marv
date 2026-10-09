@@ -6,6 +6,9 @@ import asyncio
 import socket
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from marv.llm.local_server import LocalServerProvider
 
@@ -89,3 +92,51 @@ def test_single_server_provider_serves_any_selected_model(tmp_path: Path):
         assert provider.ensure_running() is False
     finally:
         provider.stop()
+
+
+def test_server_pid_prefers_the_process_marv_launched(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    provider._server_proc = SimpleNamespace(pid=111, poll=lambda: None)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 111
+
+
+def test_server_pid_falls_back_to_the_port_listener(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 222
+
+
+def test_server_pid_ignores_an_exited_process(tmp_path: Path, monkeypatch):
+    provider = make_provider(tmp_path)
+    provider._server_proc = SimpleNamespace(pid=111, poll=lambda: 1)
+    monkeypatch.setattr("marv.llm.local_server.listener_pid", lambda base_url: 222)
+
+    assert provider.server_pid == 222
+
+
+def test_local_provider_waits_for_prefill_without_a_read_timeout(tmp_path: Path):
+    """A local prefill can be minutes of silence before the first token.
+
+    A finite read timeout would kill the stream mid-prefill (and, before the
+    fix, retry it), so local servers default to waiting indefinitely.
+    """
+    provider = make_provider(tmp_path)
+
+    assert provider.read_timeout is None
+    assert provider.client.timeout.read is None
+    # The connect timeout still guards a wedged server.
+    assert provider.client.timeout.connect == 10.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_read_timeout_is_overridable(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_READ_TIMEOUT", "900")
+    provider = make_provider(tmp_path)
+
+    assert provider.read_timeout == 900.0
+    assert provider.client.timeout.read == 900.0
+
+    await provider.client.aclose()

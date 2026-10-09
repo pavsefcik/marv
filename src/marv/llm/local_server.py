@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from marv.llm.mlx_models import running_model_id
-from marv.llm.openai_compat import OpenAICompatibleProvider
+from marv.llm.openai_compat import DEFAULT_LOCAL_READ_TIMEOUT, OpenAICompatibleProvider
 from marv.llm.server_lifecycle import register_stop, unregister_stop
 from marv.llm.server_process import (
     listener_pid,
@@ -59,6 +59,7 @@ class LocalServerProvider(OpenAICompatibleProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
         log_dir: Path | None = None,
+        read_timeout: float | None = DEFAULT_LOCAL_READ_TIMEOUT,
     ) -> None:
         super().__init__(
             base_url=base_url,
@@ -67,6 +68,7 @@ class LocalServerProvider(OpenAICompatibleProvider):
             name=self.name,
             temperature=temperature,
             max_tokens=max_tokens,
+            read_timeout=read_timeout,
         )
         self._server_proc: subprocess.Popen[bytes] | None = None
         self._log_dir = log_dir or Path.home() / ".cache" / "marv" / "logs"
@@ -100,6 +102,18 @@ class LocalServerProvider(OpenAICompatibleProvider):
         if not self.restart_on_model_change:
             return self._server_is_up()
         return running_model_id(self.base_url) == self.model
+
+    @property
+    def server_pid(self) -> int | None:
+        """PID of the model server marv is using, or None when none is running.
+
+        Prefers the process marv launched; falls back to whatever is listening
+        on the port so a server started outside marv is still accounted for.
+        """
+        proc = self._server_proc
+        if proc is not None and proc.poll() is None:
+            return proc.pid
+        return listener_pid(self.base_url)
 
     def ensure_running(self) -> bool:
         """Ensure the server is up for the selected model.

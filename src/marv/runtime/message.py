@@ -55,6 +55,7 @@ class ToolResult(BaseModel):
     tool_call_id: str
     name: str
     result: str
+    is_error: bool = False
 
 
 class ToolCallStart(BaseModel):
@@ -72,7 +73,7 @@ class ThinkingContent(BaseModel):
     """Thinking/reasoning block from LLM.
 
     Represents model reasoning that may be shown to users but is not
-    part of the main response. Used by models like Claude (extended thinking)
+    part of the main response. Used by models with extended thinking
     and O1/O3 (reasoning effort).
     """
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
@@ -37,9 +38,41 @@ class ResolvedProviderConfig:
 _LOCAL_PROVIDERS = ("marv-mlx", "apple-fm")
 
 
+#: Provider-specific base-URL env vars. These are fallbacks used when neither an
+#: explicit ``base_url`` nor a provider override supplies one. The harness owns the
+#: ``AGENT_*`` namespace (the runtime owns ``MARV_MLX_*``).
+_ENV_BASE_URLS = {
+    "marv-mlx": "AGENT_MLX_BASE_URL",
+    "apple-fm": "APPLE_FM_BASE_URL",
+    "openai-compat": "OPENAI_COMPAT_BASE_URL",
+    "ollama": "OLLAMA_BASE_URL",
+}
+
+
+def _env_base_url(provider: str) -> str | None:
+    """Provider-specific base URL from the environment, if set."""
+    env_var = _ENV_BASE_URLS.get(provider)
+    if env_var:
+        value = os.environ.get(env_var)
+        if value:
+            return value
+        # One-release deprecation: MARV_MLX_BASE_URL was the old name. The
+        # runtime owns MARV_MLX_* now; the harness uses AGENT_MLX_*. Accept and
+        # warn, then drop next release.
+        if provider == "marv-mlx":
+            legacy = os.environ.get("MARV_MLX_BASE_URL")
+            if legacy:
+                print(
+                    "marv: MARV_MLX_BASE_URL is deprecated; use AGENT_MLX_BASE_URL",
+                    file=sys.stderr,
+                )
+                return legacy
+    return None
+
+
 def _env_provider_key(provider: str) -> str | None:
     mapping = {
-        "marv-mlx": "MARV_MLX_BASE_URL",
+        "marv-mlx": "AGENT_MLX_BASE_URL",
         "apple-fm": "APPLE_FM_BASE_URL",
         "openai-compat": "OPENAI_COMPAT_BASE_URL",
         "ollama": "OLLAMA_BASE_URL",
@@ -87,7 +120,6 @@ def resolve_provider_config(
             model=_resolve_model(provider, model, override.model),
             api_key=_resolve_api_key(api_key or override.api_key, provider),
         )
-
     default_configs = {
         "marv-mlx": ResolvedProviderConfig(
             base_url="http://localhost:11500",
@@ -109,13 +141,13 @@ def resolve_provider_config(
     if provider in default_configs:
         provider_config = default_configs[provider]
         return ResolvedProviderConfig(
-            base_url=base_url or provider_config.base_url,
+            base_url=base_url or _env_base_url(provider) or provider_config.base_url,
             model=_resolve_model(provider, model, provider_config.model),
             api_key=_resolve_api_key(api_key or provider_config.api_key, provider),
         )
 
     return ResolvedProviderConfig(
-        base_url=base_url or "http://localhost:11500",
+        base_url=base_url or _env_base_url(provider) or "http://localhost:11500",
         model=_resolve_model(provider, model, None),
         api_key=_resolve_api_key(api_key, provider),
     )
@@ -130,6 +162,7 @@ def create_provider(
     temperature: float,
     max_output_tokens: int,
     provider_overrides: ProviderOverrides | None = None,
+    server_manager: str = "embedded",
 ) -> LLMProvider:
     """Create a concrete provider instance from flat provider bootstrap params."""
     from marv.llm.models import is_model_valid_for_provider
@@ -170,6 +203,7 @@ def create_provider(
             model=prov_config.model,
             temperature=temperature,
             max_tokens=max_output_tokens,
+            server_manager=server_manager,
         )
 
     if provider == "apple-fm":

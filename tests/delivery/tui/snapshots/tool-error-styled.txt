@@ -1,0 +1,24 @@
+
+  marv <version>  ·  gpt-4o || bold #88c0d0 on #2e3440 | #ffffff on #2e3440 | #d8dee9 on #2e3440
+  Type /help for commands · shift+enter newline · ctrl+o copy reply || #ffffff on #2e3440 | #88c0d0 on #2e3440
+
+    ✕ Editing  src/nope.py || #be616a on #2e3440 | bold #88c0d0 on #2e3440 | #ffffff on #2e3440
+    Error: String not found || #ffffff on #2e3440
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ──────────────────────────────────────────────────────────────────────────── || #88c0d0 on #2e3440
+   Type here… (shift+enter for a new line) || #2e3440 on #d8dee9 | #7d8188 on #2e3440
+  ──────────────────────────────────────────────────────────────────────────── || #88c0d0 on #2e3440
+  gpt-4o  session:<id>                                     /workspace/marv || #abadb2 on #2e3440

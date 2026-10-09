@@ -8,10 +8,13 @@ from typing import TYPE_CHECKING, Any
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from marv.tui.chat import format_clock
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
     from marv.runtime.settings import ThinkingLevel
+    from marv.tui.memory import MemoryUsage
 
 
 class StatusBar(Horizontal):
@@ -23,9 +26,15 @@ class StatusBar(Horizontal):
         self._thinking = "off"
         self._tokens = 0
         self._max_tokens = 0
+        self._speed = 0.0
+        self._ttft_ms = 0.0
+        self._prefill_tokens = 0
+        self._eta_ms: float | None = None
+        self._elapsed_seconds: float | None = None
         self._extension_status: str | None = None
         self._session_id: str | None = None
         self._session_parent: str | None = None
+        self._memory: MemoryUsage | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(id="status-left")
@@ -53,11 +62,40 @@ class StatusBar(Horizontal):
         elif self._tokens > 0:
             left += f"  {self._tokens:,} tokens"
 
+        if self._speed > 0:
+            left += f"  {self._speed:.0f} tok/s"
+
+        # TTFT is the number that decides whether the model feels responsive;
+        # prefill tokens explain it, so they are shown next to it. The
+        # prediction (when a measured fit exists) sits beside the reading it
+        # was checked against, and is omitted entirely while unknown.
+        readings: list[str] = []
+        if self._ttft_ms > 0:
+            reading = f"ttft {self._ttft_ms:.0f}ms"
+            if self._prefill_tokens > 0:
+                reading += f"/{self._prefill_tokens:,}t"
+            readings.append(reading)
+        if self._eta_ms is not None:
+            readings.append(f"eta ~{format_clock(self._eta_ms / 1000)}")
+        if readings:
+            left += "  " + " ".join(readings)
+
+        # While decoding, how long this turn has been generating so far.
+        if self._elapsed_seconds is not None:
+            left += f"  {format_clock(self._elapsed_seconds)} elapsed"
+
+        if self._memory is not None and self._memory.total > 0:
+            left += f"  {self._memory.label()}"
+
         if self._extension_status:
             left += f"  status:{self._extension_status}"
 
+        home = os.path.expanduser("~")
+        cwd = os.getcwd()
+        if cwd.startswith(home + os.sep) or cwd == home:
+            cwd = "~" + cwd[len(home) :]
         self.query_one("#status-left", Static).update(left)
-        self.query_one("#status-right", Static).update(os.getcwd())
+        self.query_one("#status-right", Static).update(cwd)
 
     def set_model(self, model: str) -> None:
         """Set the model name."""
@@ -75,6 +113,27 @@ class StatusBar(Horizontal):
         self._max_tokens = max_tokens
         self._update_display()
 
+    def set_speed(self, tokens_per_second: float) -> None:
+        """Set the estimated generation speed in tokens per second."""
+        self._speed = tokens_per_second
+        self._update_display()
+
+    def set_ttft(self, ttft_ms: float, prefill_tokens: int = 0) -> None:
+        """Set the last time-to-first-token and its prompt cost."""
+        self._ttft_ms = ttft_ms
+        self._prefill_tokens = prefill_tokens
+        self._update_display()
+
+    def set_eta(self, eta_ms: float | None) -> None:
+        """Set (or clear, with None) the pending turn's predicted TTFT."""
+        self._eta_ms = eta_ms
+        self._update_display()
+
+    def set_elapsed(self, seconds: float | None) -> None:
+        """Set (or clear, with None) how long the current turn has generated."""
+        self._elapsed_seconds = seconds
+        self._update_display()
+
     def set_session(self, session_id: str, parent_id: str | None = None) -> None:
         """Set the session display."""
         self._session_id = session_id
@@ -84,4 +143,9 @@ class StatusBar(Horizontal):
     def set_extension_status(self, text: str | None) -> None:
         """Set extension-provided status text."""
         self._extension_status = text
+        self._update_display()
+
+    def set_memory(self, usage: MemoryUsage | None) -> None:
+        """Set the host memory reading shown in the status bar."""
+        self._memory = usage
         self._update_display()
