@@ -3,7 +3,9 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
-## [Unreleased]
+## [0.111.0] - 2026-10-09
+
+Predictable waits and a self-diagnosing setup.
 
 ### Added
 
@@ -306,9 +308,10 @@ First tagged release.
 - **Latency figures were prompt-only in 0.110.0.** The transport reported
   `prompt_tokens` and `schema_tokens`, but `Agent` discarded the schema count,
   so the TUI `ttft <ms>/<N>t` figure and the bench `prefill (median)` line
-  omitted tool schemas. Fixed in the next release (see Unreleased): `Agent`
+  omitted tool schemas. Fixed in 0.111.0: `Agent`
   threads schema tokens through, and `marv bench` reports them.
 
+[0.111.0]: https://github.com/pavsefcik/marv/releases/tag/v0.111.0
 [0.110.0]: https://github.com/pavsefcik/marv/releases/tag/v0.110.0
 [0.109.0]: https://github.com/pavsefcik/marv/releases/tag/v0.109.0
 [0.108.0]: https://github.com/pavsefcik/marv/releases/tag/v0.108.0
