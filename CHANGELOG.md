@@ -3,6 +3,19 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [1.120.1] - 2026-10-10
+
+Dependabot off.
+
+### Removed
+
+- **`.github/dependabot.yml` removed.** Merging a Dependabot pull request makes
+  GitHub stamp `Co-authored-by: dependabot[bot]` on the squash commit, and
+  co-authors count as repository contributors, so `dependabot[bot]` kept
+  reappearing in the contributors list even after the history was rewritten.
+  Dependency bumps are now done by hand (`make deps`); Dependabot alerts and
+  automated security updates were already disabled.
+
 ## [1.120.0] - 2026-10-10
 
 One-line install, plain-chat mode, and a slimmer tree.

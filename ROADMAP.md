@@ -318,11 +318,6 @@ individually; the full CLI path is not.
 - Where: `tests/delivery/cli/`
 - Effort: S · Risk: low
 
-### Dependabot backlog
-Several dependency PRs are open (textual, mypy, pytest, tiktoken, types-pyyaml,
-actions/checkout). Worth a batch review/merge once green.
-- Effort: S · Risk: low
-
 ---
 
 ## P3 — Delivery and interface
@@ -413,7 +408,7 @@ first extension" tutorial. The examples are good reference material.
 - `marv --version`; `VERSION` as the single version source.
 - Release workflow (VERSION/tag check, build, smoke-test, attach assets) and a
   build+smoke-test CI job.
-- `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, Dependabot.
+- `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates.
 - `pyproject.toml` metadata (license, authors, keywords, classifiers, URLs).
 - Last-used model/thinking persistence + model server auto-start on launch.
 - Visible, opt-in model downloads: a missing remembered model opens the download
