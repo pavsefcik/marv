@@ -80,7 +80,11 @@ agents:
   `✕` on error, a braille spinner while running) with the output indented
   beneath it
 - thinking renders as a dim italic `▾ Thought` row that can be collapsed
-- the startup header is a compact two-line summary instead of an ASCII banner
+- the startup header is a compact two-line summary instead of an ASCII banner,
+  and it tracks the live model and thinking selection
+- transient status (model switch, server warm-up, readiness) is one *replacing*
+  row rather than a stack of near-duplicate system messages; the warm-up row
+  leads with a braille spinner
 
 Styling uses theme variables (`$primary`, `$text-muted`, …) so a theme swap
 needs no CSS change. Note that Textual resolves theme variables in CSS and in
@@ -119,10 +123,17 @@ handler, so an unsolicited reply would be reissued as key input.
 - `/compact` — summarize older turns to shrink the prompt on demand
 - `/model` — open the model/thinking menu
 - `/model <name>` — switch model directly
+- `/chat` — plain chat mode: every tool is off and no schema is sent
+- `/tools` — back to tool-calling mode (the default)
 - `/help` — quick help
 - `/quit` — exit
 
-Model switching is routed through `Agent.set_model(...)` and provider `set_model(...)`. Invalid provider/model pairs are rejected and shown as a system message.
+Chat mode is agent state, not session state: `/new` keeps the current choice,
+while a fresh launch always starts in tools mode (nothing is persisted). The
+status bar shows `[chat]` while tools are off. See
+[tools.md](tools.md#chat-mode).
+
+Model switching is routed through `Agent.set_model(...)` and provider `set_model(...)`. Invalid provider/model pairs are rejected and shown as a system message. A successful switch updates the startup header and updates the single transient status row (`switched to …` → `starting model …` with a spinner → `model ready`).
 
 If the requested model is not present in the local HF hub, `/model <id>` opens the
 download picker instead of switching, and the switch happens once the download

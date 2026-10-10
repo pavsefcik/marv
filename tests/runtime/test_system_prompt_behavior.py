@@ -48,6 +48,36 @@ def test_system_prompt_sections_in_order(temp_dir):
     assert "Working Directory" in prompt
 
 
+def test_plain_chat_prompt_is_not_a_coding_agent(temp_dir):
+    cwd = temp_dir / "work"
+    context_file = ContextFile(path=cwd / "AGENTS.md", content="ctx content", source="project")
+    skill = Skill(
+        name="deploy",
+        description="deploy app",
+        readme_path=cwd / "skills" / "deploy" / "SKILL.md",
+        readme_content="Skill body",
+        base_dir=cwd,
+        source=SkillSource.PROJECT,
+    )
+
+    options = SystemPromptOptions(
+        selected_tools=["read", "bash"],
+        cwd=cwd,
+        context_files=[context_file],
+        skills=[skill],
+        plain_chat=True,
+    )
+
+    prompt = build_system_prompt(options)
+
+    assert "helpful, friendly assistant" in prompt
+    assert "coding assistant" not in prompt
+    assert "Available tools:" not in prompt
+    assert "## Project Context" not in prompt
+    assert "<available_skills>" not in prompt
+    assert str(cwd) not in prompt
+
+
 def test_system_prompt_omits_tools_for_a_tool_less_provider(temp_dir):
     options = SystemPromptOptions(
         selected_tools=["read", "bash"],

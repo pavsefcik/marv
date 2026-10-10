@@ -65,6 +65,7 @@ from marv.runtime.prompt_builder import ContextFile, SystemPromptOptions, build_
 from marv.runtime.session import Session
 from marv.runtime.settings import (
     AgentSettings,
+    InteractionMode,
     ThinkingLevel,
     clamp_thinking_level,
     get_available_thinking_levels,
@@ -134,6 +135,8 @@ class Agent:
         "_latency",
         "_latency_fit",
         "_warm_models",
+        "_interaction_mode",
+        "_active_tools_before_chat",
     )
 
     def __init__(
@@ -177,6 +180,12 @@ class Agent:
         self._hooks: AgentHooks = hooks or NullHooks()
         self._approver = approver
         self._in_loop = False
+        #: Tool-calling by default; chat mode deactivates every tool so the
+        #: model is never offered one. Agent state, not session state, so it
+        #: survives ``/new``. Deliberately not persisted: every launch starts
+        #: back in tools mode (AGENTS.md / user expectation).
+        self._interaction_mode = InteractionMode.TOOLS
+        self._active_tools_before_chat: list[str] | None = None
         self._context_files: list[ContextFile] = []
         self._latency = LatencyTracker()
         #: Per-machine calibration injected by the delivery layer (which owns
@@ -230,6 +239,35 @@ class Agent:
     def _supports_tools(self) -> bool:
         """Whether the active provider can call tools (some local models cannot)."""
         return bool(getattr(self.provider, "supports_tools", True))
+
+    @property
+    def _tools_available(self) -> bool:
+        """Whether tools are both provider-supported and enabled by the mode."""
+        return self._supports_tools and self._interaction_mode is InteractionMode.TOOLS
+
+    @property
+    def interaction_mode(self) -> InteractionMode:
+        """Current mode: tool-calling or plain chat."""
+        return self._interaction_mode
+
+    def set_interaction_mode(self, mode: InteractionMode) -> None:
+        """Switch between tool-calling and plain chat.
+
+        Chat mode deactivates every tool, so no schema is offered to the model
+        and any tool call it emits anyway is refused by the registry. The
+        pre-chat active set is restored on returning to tools mode, so a
+        read-only narrowing survives the round trip.
+        """
+        if mode is self._interaction_mode:
+            return
+        if mode is InteractionMode.CHAT:
+            self._active_tools_before_chat = self.tools.list_active_tools()
+            self.tools.set_active_tools([])
+        elif self._active_tools_before_chat is not None:
+            self.tools.set_active_tools(self._active_tools_before_chat)
+            self._active_tools_before_chat = None
+        self._interaction_mode = mode
+        self.refresh_system_prompt()
 
     @property
     def cwd(self) -> Path:
@@ -338,7 +376,8 @@ class Agent:
             cwd=self._cwd,
             context_files=context_files,
             skills=skills,
-            tools_available=self._supports_tools,
+            tools_available=self._tools_available,
+            plain_chat=self._interaction_mode is InteractionMode.CHAT,
         )
 
         # Build the system prompt
@@ -369,7 +408,8 @@ class Agent:
             cwd=self._cwd,
             context_files=context_files,
             skills=self._skill_loader.get_invocable_skills(),
-            tools_available=self._supports_tools,
+            tools_available=self._tools_available,
+            plain_chat=self._interaction_mode is InteractionMode.CHAT,
         )
         self.session.replace_message(
             first_message.id,
@@ -1014,7 +1054,7 @@ class Agent:
 
                 messages_for_llm = await self._hooks.prepare_context(list(self.session.messages))
                 options = self._build_stream_options(cancel_event=cancel_event)
-                tool_schemas = self.tools.get_schemas() if self._supports_tools else None
+                tool_schemas = self.tools.get_schemas() if self._tools_available else None
 
                 # Anchor the TTFT clock for this turn. The prompt estimate is the
                 # same token counter compaction uses, so the number shown to the

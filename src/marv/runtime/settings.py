@@ -9,6 +9,13 @@ from pathlib import Path
 from marv.runtime.approval import ApprovalMode
 
 
+class InteractionMode(StrEnum):
+    """Whether the agent answers with tools or as a plain chat."""
+
+    TOOLS = "tools"
+    CHAT = "chat"
+
+
 class ThinkingLevel(StrEnum):
     """Thinking/reasoning effort level for supported models."""
 

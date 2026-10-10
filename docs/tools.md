@@ -41,3 +41,19 @@ The registry also tracks an active tool subset.
 - `ctx.tools.set_active([...])` lets extensions narrow the tools exposed to the model.
 - The system prompt is refreshed when the active tool set changes.
 - Inactive tools are omitted from provider tool schemas and cannot be executed through the registry.
+
+## Chat mode
+
+The TUI can switch the agent into a plain chat with no tools at all:
+
+- `/chat` deactivates every tool, so no schema is sent to the model and any
+tool call it emits anyway is refused by the registry as an inactive tool. The
+system prompt becomes a plain, non-coding assistant prompt: no tool list, no
+guidelines, no skills, and no project context files. The date is kept; the
+working directory is dropped.
+- `/tools` restores the previous active set, so a `read_only` narrowing survives
+the round trip.
+
+The mode lives on the agent (`InteractionMode` in `src/marv/runtime/settings.py`),
+not the session: `/new` keeps the last choice, while a fresh launch starts in
+tools mode because it is not persisted.

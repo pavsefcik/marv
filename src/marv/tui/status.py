@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from marv.runtime.settings import InteractionMode
 from marv.tui.chat import format_clock
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ class StatusBar(Horizontal):
         super().__init__(**kwargs)
         self._model = "unknown"
         self._thinking = "off"
+        self._interaction_mode: InteractionMode | None = None
         self._tokens = 0
         self._max_tokens = 0
         self._speed = 0.0
@@ -54,6 +56,12 @@ class StatusBar(Horizontal):
         # Show thinking level if not off
         if self._thinking != "off":
             left += f" [thinking:{self._thinking}]"
+
+        # A durable marker that tools are off; the mode change is otherwise
+        # only announced once in the chat stream.
+        if self._interaction_mode is InteractionMode.CHAT:
+            # Escaped: a bare ``[chat]`` is parsed as markup and swallowed.
+            left += r"  \[chat]"
 
         # Add token usage next to model
         if self._max_tokens > 0:
@@ -105,6 +113,11 @@ class StatusBar(Horizontal):
     def set_thinking(self, level: ThinkingLevel) -> None:
         """Set the thinking level display."""
         self._thinking = level.value
+        self._update_display()
+
+    def set_interaction_mode(self, mode: InteractionMode) -> None:
+        """Show whether the agent is in plain chat mode."""
+        self._interaction_mode = mode
         self._update_display()
 
     def set_tokens(self, tokens: int, max_tokens: int = 0) -> None:

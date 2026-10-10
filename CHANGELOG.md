@@ -5,6 +5,16 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+### Added
+
+- **`/chat` and `/tools` — plain chat vs tool-calling mode.** `/chat` turns
+  every tool off: no schema is sent, the system prompt becomes a plain
+  non-coding assistant prompt (no tool list, skills, or project context), and
+  a tool call the model emits anyway is refused. `/tools` restores the previous
+  active set (a `read_only` narrowing survives). The mode is agent state, so
+  `/new` keeps the last choice while a fresh launch always starts in tools
+  mode. The status bar shows `[chat]` while tools are off.
+
 ### Changed
 
 - **Docs consolidated; Claude/Anthropic leftovers removed.** The historical

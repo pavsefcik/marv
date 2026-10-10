@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from marv.config.state import LastUsedSelection
 from marv.runtime.message import Role
 from marv.runtime.session import MessageEntry, Session
-from marv.runtime.settings import ThinkingLevel
+from marv.runtime.settings import InteractionMode, ThinkingLevel
 from marv.tui.chat import ChatView
 from marv.tui.context_panel import ContextPanel
 from marv.tui.session_panels import SessionForkPanel, SessionLoadPanel, SessionTreePanel
@@ -192,7 +192,7 @@ class TUIController:
         if prompt.lower() == "/help":
             chat.add_system_message(
                 "ctrl+c quit | ctrl+l clear | /clear | /new | /load | /resume | /fork "
-                "| /tree | /context | /compact | /help | /model | /quit"
+                "| /tree | /context | /compact | /help | /model | /chat | /tools | /quit"
             )
             return True
         if prompt.lower() == "/compact":
@@ -200,6 +200,12 @@ class TUIController:
             return True
         if prompt.lower() == "/context":
             self._app.open_panel(ContextPanel(self._app.agent))
+            return True
+        if prompt.lower() == "/chat":
+            self.set_interaction_mode(InteractionMode.CHAT)
+            return True
+        if prompt.lower() == "/tools":
+            self.set_interaction_mode(InteractionMode.TOOLS)
             return True
         if prompt.lower() == "/model":
             await self._app._open_model_panel()
@@ -268,6 +274,22 @@ class TUIController:
             )
         else:
             chat.add_system_message("compacted: nothing old enough to summarize yet")
+
+    def set_interaction_mode(self, mode: InteractionMode) -> None:
+        """Switch the agent between tool-calling and plain chat.
+
+        Delivery mirrors the runtime's mode, which is agent state: a ``/new``
+        keeps the current mode, while a fresh launch always starts in tools
+        mode because nothing is persisted.
+        """
+        chat = self._app.query_one("#chat-view", ChatView)
+        status = self._app.query_one("#status-line", StatusBar)
+        self._app.agent.set_interaction_mode(mode)
+        status.set_interaction_mode(mode)
+        if mode is InteractionMode.CHAT:
+            chat.add_system_message("chat mode - tools off (/tools to re-enable)")
+        else:
+            chat.add_system_message("tool mode - tools enabled (/chat for a plain chat)")
 
     def remember_selection(self) -> None:
         """Persist the active model/thinking so the next start preselects it."""

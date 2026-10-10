@@ -29,6 +29,10 @@ class SystemPromptOptions:
     selected_tools: list[str] | None = None
     append_system_prompt: str | None = None
     tools_available: bool = True
+    #: Plain chat: no coding-agent framing, no tools, no project context. Set
+    #: by ``/chat``; distinct from ``tools_available=False``, which still
+    #: describes a coding agent that merely cannot act (e.g. apple-fm).
+    plain_chat: bool = False
     cwd: Path | None = None
     context_files: list[ContextFile] = field(default_factory=list)
     skills: list[Skill] = field(default_factory=list)
@@ -44,6 +48,14 @@ BASE_PROMPT = (
     "- Debugging and fixing issues\n"
     "- Running commands and scripts\n"
     "- Answering technical questions"
+)
+
+
+# Plain chat: no coding-agent identity at all. Deliberately silent about
+# tools, so the model does not volunteer "I can't read files" boilerplate.
+BASE_PROMPT_CHAT = (
+    "You are a helpful, friendly assistant. Answer the user's questions and "
+    "have a natural conversation."
 )
 
 
@@ -227,42 +239,47 @@ def build_system_prompt(options: SystemPromptOptions | None = None) -> str:
     # 1. Base or custom prompt
     if options.custom_prompt:
         sections.append(options.custom_prompt)
+    elif options.plain_chat:
+        sections.append(BASE_PROMPT_CHAT)
     elif options.tools_available:
         sections.append(BASE_PROMPT)
     else:
         sections.append(BASE_PROMPT_NO_TOOLS)
 
-    # 2. Tool descriptions
-    if (
-        options.tools_available
-        and options.selected_tools
-        and (tool_section := _build_tool_section(options.selected_tools))
-    ):
-        sections.append(tool_section)
+    if not options.plain_chat:
+        # 2. Tool descriptions
+        if (
+            options.tools_available
+            and options.selected_tools
+            and (tool_section := _build_tool_section(options.selected_tools))
+        ):
+            sections.append(tool_section)
 
-    # 3. Dynamic guidelines
-    if (
-        options.tools_available
-        and options.selected_tools
-        and (guidelines := _build_guidelines_section(options.selected_tools))
-    ):
-        sections.append(guidelines)
+        # 3. Dynamic guidelines
+        if (
+            options.tools_available
+            and options.selected_tools
+            and (guidelines := _build_guidelines_section(options.selected_tools))
+        ):
+            sections.append(guidelines)
 
-    # 4. Context files
-    if options.context_files and (context_section := _build_context_section(options.context_files)):
-        sections.append(context_section)
+        # 4. Context files
+        if options.context_files and (
+            context_section := _build_context_section(options.context_files)
+        ):
+            sections.append(context_section)
 
-    # 5. Skills (only if read tool is available)
-    if (
-        options.skills
-        and options.tools_available
-        and (not options.selected_tools or "read" in options.selected_tools)
-        and (skills_section := _build_skills_section(options.skills))
-    ):
-        sections.append(skills_section)
+        # 5. Skills (only if read tool is available)
+        if (
+            options.skills
+            and options.tools_available
+            and (not options.selected_tools or "read" in options.selected_tools)
+            and (skills_section := _build_skills_section(options.skills))
+        ):
+            sections.append(skills_section)
 
-    # 6. Environment
-    env_section = _build_environment_section(options.cwd)
+    # 6. Environment (date only in plain chat; the cwd is irrelevant there)
+    env_section = _build_environment_section(None if options.plain_chat else options.cwd)
     sections.append(env_section)
 
     # 7. Appended content

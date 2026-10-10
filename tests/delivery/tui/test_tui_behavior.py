@@ -34,7 +34,7 @@ from marv.llm.stream import AssistantMessageEventStream
 from marv.runtime.approval import ApprovalMode
 from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
-from marv.runtime.settings import ThinkingLevel
+from marv.runtime.settings import InteractionMode, ThinkingLevel
 from marv.tui import download_panel
 from marv.tui.app import AgentApp
 from marv.tui.chat import (
@@ -895,6 +895,31 @@ async def test_tui_runner_help_new_and_clear_commands_update_runtime_state(temp_
         chat = app.query_one("#chat-view")
         user_messages = [w for w in chat.query(MessageWidget) if w.role == "user"]
         assert not user_messages
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_chat_and_tools_commands_toggle_mode(temp_dir):
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.agent.interaction_mode is InteractionMode.TOOLS
+
+        await submit(app, pilot, "/chat ")
+        assert app.agent.interaction_mode is InteractionMode.CHAT
+        assert "[chat]" in status_left_text(app)
+        assert any("chat mode" in msg for msg in system_messages(app))
+
+        # Mode is agent state, so a new session keeps the last choice.
+        await submit(app, pilot, "/new ")
+        assert app.agent.interaction_mode is InteractionMode.CHAT
+        assert "[chat]" in status_left_text(app)
+
+        await submit(app, pilot, "/tools ")
+        assert app.agent.interaction_mode is InteractionMode.TOOLS
+        assert "[chat]" not in status_left_text(app)
+        assert any("tool mode" in msg for msg in system_messages(app))
 
 
 @pytest.mark.asyncio

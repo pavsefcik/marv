@@ -32,6 +32,8 @@ BUILTIN_COMMANDS = [
     "/tree",
     "/context",
     "/compact",
+    "/chat",
+    "/tools",
     "/help",
     "/model",
     "/quit",
@@ -305,6 +307,8 @@ class PromptInput(Widget, can_focus=False):
                 "/help",
                 "/context",
                 "/model",
+                "/chat",
+                "/tools",
             }
             if lower.startswith("/model "):
                 excluded.add(lower.split(" ", 1)[0])
