@@ -3,9 +3,22 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
-## [Unreleased]
+## [1.120.0] - 2026-10-10
+
+One-line install, plain-chat mode, and a slimmer tree.
 
 ### Added
+
+- **One-line `curl` installer (`install.sh`).** Preflights the machine (Apple
+  Silicon, macOS 14.0+, unified memory), installs the needed toolchain
+  (Xcode CLT check, Homebrew, `uv`, Python 3.14), installs the
+  [marv-mlx](https://github.com/pavsefcik/marv-mlx) runtime and `mlx-vlm`, then
+  installs marv as a `uv` tool from the latest release (or the local checkout)
+  and puts uv's tool bin on `PATH` in `~/.zshrc`. Idempotent and re-runnable;
+  `MARV_DRY_RUN=1` prints the plan without touching the system, and
+  `MARV_SKIP_MLX=1` / `MARV_SKIP_HARDWARE_CHECK=1` / `MARV_NO_ZSH=1` opt out of
+  individual steps. Usage: `curl -fsSL
+  https://raw.githubusercontent.com/pavsefcik/marv/main/install.sh | sh`.
 
 - **`/chat` and `/tools` — plain chat vs tool-calling mode.** `/chat` turns
   every tool off: no schema is sent, the system prompt becomes a plain

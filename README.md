@@ -44,12 +44,31 @@ yours_.
 
 ## Requirements
 
-- Apple Silicon Mac
-- Python 3.14+ and `uv`
-- For `marv-mlx`: the `mlx-vlm` tool — `uv tool install mlx-vlm --with jinja2 --with setproctitle`
+- Apple Silicon Mac (M1 or later) with macOS 14.0+ — the installer preflights this
+- Xcode Command Line Tools and [Homebrew](https://brew.sh)
+- Python 3.14+ and `uv` (the installer brings `uv` in via Homebrew)
+- For `marv-mlx`: the `mlx-vlm` tool — the installer brings it in via marv-mlx;
+  by hand it is `uv tool install mlx-vlm --with jinja2 --with setproctitle`
   (the `setproctitle` extra is optional and only affects the process name)
 
 ## Install
+
+One line — checks the machine is MLX-capable, installs `uv` (Xcode CLT and
+Homebrew are the only manual steps), installs the
+[marv-mlx](https://github.com/pavsefcik/marv-mlx) runtime, installs marv as a
+`uv` tool, and puts it on `PATH` in `~/.zshrc`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pavsefcik/marv/main/install.sh | sh
+```
+
+It is safe to re-run, and `MARV_DRY_RUN=1` prints the plan without changing
+anything. Overrides: `MARV_VERSION=0.111.0` (pin a release), `MARV_SKIP_MLX=1`
+(harness only), `MARV_NO_ZSH=1` (leave the shell alone), and
+`MARV_SKIP_HARDWARE_CHECK=1` (install on non-MLX hardware for a cloud provider
+such as `openai`). Open a new terminal afterwards, then run `marv`.
+
+### Manual install
 
 marv is distributed as GitHub release artifacts (there is no PyPI package yet).
 Download the wheel from the [latest release](https://github.com/pavsefcik/marv/releases/latest)
