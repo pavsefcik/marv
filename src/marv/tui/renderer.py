@@ -49,7 +49,7 @@ def banner_text(model: str, thinking: str) -> str:
 class TUIRenderer:
     """Render runtime output and session state into Textual widgets."""
 
-    __slots__ = ("_app", "_loaders", "_speed", "_clock", "_decoding_since")
+    __slots__ = ("_app", "_loaders", "_speed", "_clock", "_decoding_since", "_banner")
 
     def __init__(
         self,
@@ -63,6 +63,7 @@ class TUIRenderer:
         self._speed = TokenSpeedTracker(lambda text: self._app.agent.provider.count_tokens(text))
         self._clock = clock
         self._decoding_since: float | None = None
+        self._banner: Static | None = None
 
     def tick(self) -> None:
         """Refresh the generating elapsed reading (called by the 0.2s UI timer)."""
@@ -81,14 +82,21 @@ class TUIRenderer:
     def render_banner(self) -> None:
         """Render the compact startup header in chat."""
         chat = self._app.query_one("#chat-view", ChatView)
-        model = self._app.agent.model_name or "(no model downloaded)"
-        thinking = self._app.agent.thinking_level.value
-        chat.mount(
-            Static(
-                banner_text(model, thinking),
-                classes="message-system",
-            )
-        )
+        text = banner_text(self._banner_model(), self._banner_thinking())
+        self._banner = Static(text, classes="message-system")
+        chat.mount(self._banner)
+
+    def refresh_banner(self) -> None:
+        """Keep the header's model and thinking in step with a live switch."""
+        if self._banner is None:
+            return
+        self._banner.update(banner_text(self._banner_model(), self._banner_thinking()))
+
+    def _banner_model(self) -> str:
+        return self._app.agent.model_name or "(no model downloaded)"
+
+    def _banner_thinking(self) -> str:
+        return self._app.agent.thinking_level.value
 
     def render_session_messages(self, session: Session) -> None:
         """Render existing session messages into the chat view."""
@@ -247,6 +255,7 @@ class TUIRenderer:
         """Clear the chat view and show confirmation."""
         chat = self._app.query_one("#chat-view", ChatView)
         chat.clear_chat()
+        self._banner = None
         chat.add_system_message("cleared")
 
     def render_new_session(self) -> None:

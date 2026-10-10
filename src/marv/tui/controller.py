@@ -298,7 +298,8 @@ class TUIController:
 
         status.set_model(model_name)
         status.set_thinking(self._app.agent.thinking_level)
-        chat.add_system_message(f"switched to {model_name}")
+        self._app._renderer.refresh_banner()
+        chat.set_notice(f"switched to {model_name}")
         self.remember_selection()
 
         # Start warming the model up in the background so it's ready to answer.
@@ -324,6 +325,7 @@ class TUIController:
 
         self._app.agent.set_thinking_level(level)
         status.set_thinking(level)
+        self._app._renderer.refresh_banner()
         chat.add_system_message(f"thinking level: {level.value}")
         self.remember_selection()
 

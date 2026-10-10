@@ -37,7 +37,14 @@ from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 from marv.tui import download_panel
 from marv.tui.app import AgentApp
-from marv.tui.chat import ChatView, MessageWidget, SkillInvocationWidget, ThinkingWidget, ToolWidget
+from marv.tui.chat import (
+    ChatView,
+    MessageWidget,
+    SkillInvocationWidget,
+    StatusNotice,
+    ThinkingWidget,
+    ToolWidget,
+)
 from marv.tui.context_panel import ContextPanel
 from marv.tui.download_panel import DownloadPanel
 from marv.tui.extension_ui import ConfirmPanel
@@ -226,6 +233,22 @@ def system_messages(app: AgentApp) -> list[str]:
         renderable = widget.render()
         messages.append(getattr(renderable, "plain", str(renderable)))
     return messages
+
+
+def notices(app: AgentApp) -> list[StatusNotice]:
+    return list(app.query_one("#chat-view").query(StatusNotice))
+
+
+def header_text(app: AgentApp) -> str:
+    """The startup header line (the only system row naming marv)."""
+    for widget in app.query_one("#chat-view").query(Static):
+        if "message-system" not in widget.classes:
+            continue
+        renderable = widget.render()
+        text = getattr(renderable, "plain", str(renderable))
+        if "marv" in text:
+            return text
+    return ""
 
 
 def prompt_input(app: AgentApp) -> TextArea:
@@ -603,6 +626,106 @@ async def test_tui_runner_model_command_switches_and_rejects_invalid_model(temp_
         assert app.agent.provider.model == "gpt-5"
         assert any("not valid for provider 'openai-codex'" in msg for msg in system_messages(app))
         assert "gpt-5" in status_left_text(app)
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_model_switch_updates_the_header_and_replaces_the_notice(temp_dir):
+    """The header follows a live switch and the status is one replacing row."""
+    config = Config(
+        provider="openai-codex", model="gpt-5-codex", api_key="test", session_dir=temp_dir
+    )
+    provider = LLMProviderFake(
+        [],
+        name="openai-codex",
+        model="gpt-5-codex",
+        available_models=["gpt-5-codex", "gpt-5"],
+    )
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "gpt-5-codex" in header_text(app)
+
+        await submit(app, pilot, "/model gpt-5")
+
+        # The header shows the model now in use, not the one we started with.
+        assert "gpt-5" in header_text(app)
+        assert "gpt-5-codex" not in header_text(app)
+        # One status row, replaced in place rather than appended to a log.
+        assert [n.text_content() for n in notices(app)] == ["switched to gpt-5"]
+
+        await submit(app, pilot, "/model gpt-5-codex")
+        assert [n.text_content() for n in notices(app)] == ["switched to gpt-5-codex"]
+
+
+class SlowStartProviderFake(ServerLifecycleProviderFake):
+    """A local server that stays in warm-up until the test releases it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def ensure_running_async(self) -> bool:
+        self.ensure_calls += 1
+        await self.release.wait()
+        self.serving = True
+        return True
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_model_start_is_one_spinning_notice_then_ready(temp_dir):
+    """Warm-up is a single animated row that becomes ``model ready`` in place."""
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+    )
+    provider = SlowStartProviderFake()
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        starting = notices(app)
+        assert [n.text_content() for n in starting] == ["starting model gpt-4o…"]
+        assert starting[0].spinning
+
+        provider.release.set()
+        await pilot.pause()
+        await pilot.pause()
+
+        ready = notices(app)
+        assert [n.text_content() for n in ready] == ["model ready"]
+        assert not ready[0].spinning
+
+
+class FailingStartProviderFake(ServerLifecycleProviderFake):
+    """A local server whose warm-up fails."""
+
+    async def ensure_running_async(self) -> bool:
+        self.ensure_calls += 1
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_failed_model_start_dismisses_the_spinner(temp_dir):
+    """A failed warm-up stops spinning and reports the error permanently."""
+    config = Config(
+        provider="openai",
+        model="gpt-4o",
+        api_key="test",
+        session_dir=temp_dir / "sessions",
+    )
+    app = AgentApp(config, provider=FailingStartProviderFake())
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+
+        assert notices(app) == []
+        assert any("error starting model: boom" in m for m in system_messages(app))
 
 
 @pytest.mark.asyncio
@@ -1391,8 +1514,11 @@ async def test_tui_runner_shows_live_download_progress_then_applies_the_model(te
             await pilot.pause()
 
         assert download.finished
-        assert any("switched to mlx-community/Remembered-4bit" in m for m in system_messages(app))
         assert provider.model == "mlx-community/Remembered-4bit"
+        # The switch and the warm-up share one replacing row, so the header is
+        # what records the applied model; the notice settles on readiness.
+        assert "mlx-community/Remembered-4bit" in header_text(app)
+        assert [n.text_content() for n in notices(app)] == ["model ready"]
 
 
 @pytest.mark.asyncio

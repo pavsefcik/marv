@@ -496,6 +496,67 @@ class WaitingIndicator(Static):
         self._update_display()
 
 
+class StatusNotice(Static):
+    """A single transient status row that replaces its predecessor.
+
+    Where a system message is a permanent historical line, a notice is the
+    *current* status: model switches, server warm-up and readiness are all
+    one thing at a time, so the next notice replaces this one instead of
+    stacking a column of near-duplicates. With ``spinner`` the leading slot
+    is an animated braille frame (the same family tool calls use), so a wait
+    reads the same wherever it appears.
+    """
+
+    FRAMES = WaitingIndicator.FRAMES
+
+    def __init__(self, text: str, *, spinner: bool = False, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._text = text
+        self._spinner = spinner
+        self._frame = 0
+        self._timer: Any = None
+        self.add_class("message-system", "message-notice")
+
+    def on_mount(self) -> None:
+        self._refresh_display()
+        self._start_spinner()
+
+    def _start_spinner(self) -> None:
+        """Run a self-owned timer only while the row is actually waiting."""
+        if self._spinner and self._timer is None:
+            self._timer = self.set_interval(0.1, self._advance)
+        elif not self._spinner and self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+
+    def _advance(self) -> None:
+        self._frame = (self._frame + 1) % len(self.FRAMES)
+        self._refresh_display()
+
+    def _refresh_display(self) -> None:
+        if self._spinner:
+            glyph = self.FRAMES[self._frame]
+            self.update(f"[$primary]{glyph}[/] [$text-disabled]{escape(self._text)}[/]")
+        else:
+            self.update(f"[$text-disabled]-- {escape(self._text)}[/]")
+
+    def text_content(self) -> str:
+        """The plain text of the notice, spinner glyph excluded."""
+        return self._text
+
+    @property
+    def spinning(self) -> bool:
+        """Whether the row is animating a wait."""
+        return self._spinner
+
+    def set_status(self, text: str, *, spinner: bool = False) -> None:
+        """Replace the row's text (and spinner mode) in place."""
+        self._text = text
+        self._spinner = spinner
+        self._start_spinner()
+        self._refresh_display()
+
+
 class ChatView(ScrollableContainer):
     """Scrollable chat container."""
 
@@ -505,6 +566,7 @@ class ChatView(ScrollableContainer):
         self._tool_widgets: dict[str, ToolWidget] = {}  # Track tools by ID
         self._current_thinking: ThinkingWidget | None = None
         self._waiting_indicator: WaitingIndicator | None = None
+        self._notice: StatusNotice | None = None
 
     def scroll_to_bottom(self) -> None:
         self.scroll_end(animate=False)
@@ -521,9 +583,30 @@ class ChatView(ScrollableContainer):
         return None
 
     def add_system_message(self, text: str) -> None:
-        """Add a system message."""
+        """Add a permanent system message."""
         self.mount(Static(f"-- {text}", classes="message-system"))
         self.scroll_to_bottom()
+
+    def set_notice(self, text: str, *, spinner: bool = False) -> None:
+        """Show the single transient status row, replacing the previous one.
+
+        The row stays at the end of the chat so a later notice lands beneath
+        whatever the conversation has grown since; if it is no longer last it
+        is re-mounted rather than silently editing history above.
+        """
+        if self._notice is not None and self.children and self.children[-1] is self._notice:
+            self._notice.set_status(text, spinner=spinner)
+        else:
+            self.dismiss_notice()
+            self._notice = StatusNotice(text, spinner=spinner)
+            self.mount(self._notice)
+        self.scroll_to_bottom()
+
+    def dismiss_notice(self) -> None:
+        """Remove the transient status row, if any."""
+        if self._notice is not None:
+            self._notice.remove()
+            self._notice = None
 
     def add_user_message(self, content: str) -> None:
         """Add a user message."""
@@ -694,4 +777,5 @@ class ChatView(ScrollableContainer):
         self._current_message = None
         self._tool_widgets.clear()
         self._current_thinking = None
+        self._notice = None
         self.remove_children()

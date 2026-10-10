@@ -457,11 +457,12 @@ class AgentApp(App[None]):
         """Start the selected model in a thread (event loop stays responsive)
         and surface progress/errors in the chat."""
         chat = self.query_one("#chat-view", ChatView)
-        chat.add_system_message(f"starting model {self.agent.model_name}… (may take a minute)")
+        chat.set_notice(f"starting model {self.agent.model_name}…", spinner=True)
         try:
             await ensure()
-            chat.add_system_message("model ready")
+            chat.set_notice("model ready")
         except Exception as exc:  # noqa: BLE001 - surface to the user
+            chat.dismiss_notice()
             chat.end_assistant_message()
             chat.add_system_message(f"error starting model: {exc}")
 
