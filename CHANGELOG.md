@@ -5,7 +5,9 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
-Update checks, a proper uninstall, and a shared-server guard.
+## [1.121.0] - 2026-10-14
+
+marv-mlx shape, a proper goodbye, update checks, and a proper uninstall.
 
 ### Added
 
@@ -31,13 +33,6 @@ Update checks, a proper uninstall, and a shared-server guard.
   in `~/.cache/marv/instance.json`; a second TUI that selects a different model
   warns that starting it will restart the shared server instead of doing so
   silently.
-
-## [1.121.0] - 2026-10-11
-
-marv-mlx shape, and a proper goodbye.
-
-### Added
-
 - **Exit sign-off (`src/marv/cli/goodbye.py`).** Quitting the interactive TUI
   clears the screen and leaves a nerd block at the top, in the marv-mlx idiom:
 
