@@ -87,10 +87,32 @@ delivery concerns into `runtime/`.
 - `Agent.set_model` rejects invalid provider/model pairs; thinking levels are
   clamped to model capability.
 
+## Concurrent agents
+
+Several agents may run against this repo at once. Keep them from colliding:
+
+- **One writer per checkout.** Any agent that edits files must run in its own
+  git worktree/branch and commit before it reports back. Never leave two
+  agents' output uncommitted in the same tree — that is how two changelog
+  sections and a half-bumped `VERSION` end up in one working copy.
+- **Single-writer artifacts.** `VERSION`, the version headings in
+  `CHANGELOG.md`, `pyproject.toml`'s version, `uv.lock`, and
+  `config/default.toml` belong to the releaser only. Agents do not touch them.
+- **Changelog fragments.** Rather than editing `CHANGELOG.md`, an agent drops a
+  `changelog.d/<slug>.md` fragment (Keep a Changelog headings). The releaser
+  folds fragments into `CHANGELOG.md` under the new version heading and deletes
+  them, which makes concurrent changelog edits conflict-free by construction.
+- **Disjoint file scopes.** Assign work by module/dir; serialize anything that
+  must touch the same file.
+- **Pre-flight.** The tree must be clean before launching a writer
+  (`git status --porcelain` empty). `make doctor` fails on a duplicated
+  `## [Unreleased]` heading — the tell-tale of two writers in one tree.
+
 ## Releasing
 
-1. Edit `VERSION` and add a `CHANGELOG.md` entry.
-2. `make deps` (refresh metadata) and `make can-release`.
+1. Fold any `changelog.d/*.md` fragments into `CHANGELOG.md` under a new version
+   heading (delete the fragments), then edit `VERSION`.
+2. `make deps` (refresh metadata) and `make can-release` (includes `doctor`).
 3. Commit, push `main`, then create the release with a tag matching `VERSION`:
    `gh release create v<VERSION> --target main --title v<VERSION> --notes ...`.
    The Release workflow verifies `VERSION` against the tag, builds, smoke-tests

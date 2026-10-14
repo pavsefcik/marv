@@ -11,7 +11,14 @@ deps: ## Install dependencies
 test: ## Run tests
 	@uv run python -m pytest -v
 
-can-release: lint test ## Run all checks
+can-release: lint doctor test ## Run all checks
+
+doctor: ## Check release hygiene (one [Unreleased] heading, no split history)
+	@n=$$(grep -c '^## \[Unreleased\]' CHANGELOG.md); \
+	  [ "$$n" -eq 1 ] || { echo "doctor: expected exactly one '## [Unreleased]' heading, found $$n - two writers edited CHANGELOG.md?"; exit 1; }
+	@head=$$(grep -m1 '^## \[' CHANGELOG.md); \
+	  [ "$$head" = "## [Unreleased]" ] || { echo "doctor: first changelog heading must be '## [Unreleased]', got '$$head'"; exit 1; }
+	@echo "doctor: changelog hygiene OK"
 
 ##@ Running
 run: ## Run the agent in interactive mode
