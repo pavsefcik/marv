@@ -186,3 +186,63 @@ def test_fit_for_unknown_model_is_empty(temp_dir):
 
     assert state.fit_for("unknown").has_data is False
     assert state.fit_for(None).has_data is False
+
+
+# --- theme persistence ------------------------------------------------------
+
+
+def test_theme_round_trips_through_state_toml(temp_dir):
+    session_dir = temp_dir / "sessions"
+
+    LastUsedSelection(theme="nord").save(session_dir)
+
+    assert load_last_used(session_dir).theme == "nord"
+
+
+def test_config_load_uses_last_used_theme_as_fallback(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    LastUsedSelection(theme="nord").save(home / ".cache" / "marv" / "sessions")
+
+    assert Config.load().theme == "nord"
+
+
+def test_config_load_explicit_theme_wins_over_last_used(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    LastUsedSelection(theme="nord").save(home / ".cache" / "marv" / "sessions")
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text('theme = "minimal"\n')
+
+    assert Config.load().theme == "minimal"
+
+
+def test_remember_theme_keeps_existing_latency_fits(temp_dir):
+    from marv.config.state import remember_theme
+    from marv.llm.latency import LatencyFit, LatencySample
+
+    session_dir = temp_dir / "sessions"
+    model = "mlx-community/Qwen3.5-4B-MLX-4bit"
+    fit = LatencyFit.from_samples(
+        [LatencySample(ttft_ms=1000.0, prompt_tokens=5000, streamed=True)]
+    )
+    LastUsedSelection(model=model).with_fit(model, fit).save(session_dir)
+
+    remember_theme(session_dir, "marv-mlx")
+
+    loaded = load_last_used(session_dir)
+    assert loaded.theme == "marv-mlx"
+    assert loaded.fit_for(model).sample_count == 1

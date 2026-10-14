@@ -1,9 +1,10 @@
 """Theme resolution for the TUI.
 
 The app never builds hex palettes: it selects one of Textual's built-in theme
-names (all of which Textual registers itself), or marv's ``minimal`` theme,
-which ``AgentApp`` registers. ``auto`` is resolved once at startup by probing
-whether the terminal background is dark.
+names (all of which Textual registers itself), or one of marv's own presets
+(``marv-mlx``, the default, and ``minimal``), which ``AgentApp`` registers.
+``auto`` is resolved once at startup by probing whether the terminal background
+is dark.
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from textual.theme import BUILTIN_THEMES
 
 AUTO_THEME = "auto"
 MINIMAL_THEME_NAME = "minimal"
+#: The marv-mlx look: the marv family's magenta, as a selectable theme.
+MARV_MLX_THEME_NAME = "marv-mlx"
 DARK_THEME = "ansi-dark"
 LIGHT_THEME = "ansi-light"
 
@@ -46,11 +49,48 @@ def resolve_theme_name(configured: str | None) -> tuple[str, str | None]:
     fall back to ``auto`` instead of raising.
     """
     name = (configured or "").strip()
-    if not name or name == AUTO_THEME:
+    if not name:
+        # The default look is the marv family's own palette.
+        return MARV_MLX_THEME_NAME, None
+    if name == AUTO_THEME:
         return _auto_theme_name(), None
-    if name == MINIMAL_THEME_NAME or name in BUILTIN_THEMES:
+    if name in (MINIMAL_THEME_NAME, MARV_MLX_THEME_NAME) or name in BUILTIN_THEMES:
         return name, None
     return _auto_theme_name(), f"unknown theme {name!r}: falling back to auto"
+
+
+def available_theme_names() -> list[str]:
+    """Themes the in-TUI chooser offers.
+
+    ``auto`` first because it is the only terminal-matching choice, then marv's
+    own presets, then every built-in Textual theme in stable alphabetical order.
+    """
+    return [AUTO_THEME, MARV_MLX_THEME_NAME, MINIMAL_THEME_NAME, *sorted(BUILTIN_THEMES)]
+
+
+def is_known_theme(name: str) -> bool:
+    """Whether ``name`` can be applied as-is (a preset, built-in, or ``auto``)."""
+    candidate = (name or "").strip()
+    return candidate in available_theme_names()
+
+
+def cached_auto_theme_name() -> str:
+    """``auto`` resolved to a concrete ANSI theme, without probing the terminal.
+
+    Once Textual owns the terminal an OSC 11 reply would be reissued as key
+    input, so this prefers the startup probe's cached appearance and otherwise
+    falls back to the system appearance (a subprocess, safe at any time).
+    """
+    dark = _cached_appearance if _appearance_cached else _system_appearance()
+    return LIGHT_THEME if dark is False else DARK_THEME
+
+
+def resolve_theme_name_safely(configured: str) -> str:
+    """A concrete theme name for ``configured``, safe to call while the TUI runs."""
+    name = (configured or "").strip()
+    if name == AUTO_THEME:
+        return cached_auto_theme_name()
+    return name
 
 
 def detect_dark_appearance() -> bool | None:

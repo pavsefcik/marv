@@ -140,3 +140,49 @@ async def test_local_provider_read_timeout_is_overridable(tmp_path: Path, monkey
     assert provider.client.timeout.read == 900.0
 
     await provider.client.aclose()
+
+
+def test_unload_records_the_model_it_stopped(tmp_path: Path):
+    """The exit sign-off names what was unloaded, so unload has to report it."""
+    provider = make_provider(tmp_path)
+    assert provider.ensure_running() is True
+
+    record = provider.unload()
+
+    assert record is not None
+    assert record.model == "test-model"
+    assert record.port is not None
+    assert provider.is_serving() is False
+    assert provider.exit_record == record
+
+
+def test_unload_reports_nothing_when_no_server_is_serving(tmp_path: Path):
+    """No server means no claim: the sign-off must not invent an unload."""
+    provider = make_provider(tmp_path)
+
+    assert provider.unload() is None
+    assert provider.exit_record is None
+
+
+def test_unload_twice_keeps_the_first_record(tmp_path: Path):
+    """The CLI's safety net runs after close; it must not erase the record."""
+    provider = make_provider(tmp_path)
+    assert provider.ensure_running() is True
+
+    first = provider.unload()
+    second = provider.unload()
+
+    assert first is not None
+    assert second == first
+
+
+def test_close_records_the_unload_for_the_sign_off(tmp_path: Path):
+    provider = make_provider(tmp_path)
+    assert provider.ensure_running() is True
+
+    asyncio.run(provider.close())
+
+    record = provider.exit_record
+    assert record is not None
+    assert record.model == "test-model"
+    assert provider.is_serving() is False

@@ -3,6 +3,83 @@
 All notable changes to marv are documented here. The version in
 [`VERSION`](VERSION) is the single source of truth.
 
+## [Unreleased]
+
+Update checks, a proper uninstall, and a shared-server guard.
+
+### Added
+
+- **Startup update check (`src/marv/updates.py`).** The TUI probes the latest
+  GitHub release in the background (once a day, cached at
+  `~/.cache/marv/update_check.json`) and, when one is newer, offers to install
+  it. Accepting reinstalls the release wheel with `uv tool install --force`.
+  Offline/rate-limited probes are silent and never stall startup. Opt out with
+  `update_check = false` or `AGENT_UPDATE_CHECK=off`.
+- **`marv update`.** Manually check and install the latest release
+  (`--check` reports only, `--force` reinstalls, `-y` skips the prompt).
+- **`marv uninstall`.** A picker for the removable pieces — marv and
+  its cache/config; the marv-mlx runtime, its cache, and the shell wiring it
+  added to `~/.zshrc`; the `mlx-vlm` uv tool; and models in the
+  shared Hugging Face hub — with sizes shown first and nothing selected by
+  default. marv-mlx is discovered wherever it lives (`~/.marv-mlx`,
+  `~/.local/share/marv-mlx`, the pi launcher/extension, or Homebrew). Uses
+  `gum` in the marv-mlx style (magenta wordmark, `gum choose
+  --no-limit`, `gum confirm`) when it is on PATH, and falls back to a plain
+  numbered prompt otherwise. Scriptable with
+  `--marv`/`--marv-mlx`/`--mlx-vlm`/`--models`/`--all`, `--dry-run`, and `-y`.
+- **Shared-server guard (`src/marv/instance.py`).** Running instances register
+  in `~/.cache/marv/instance.json`; a second TUI that selects a different model
+  warns that starting it will restart the shared server instead of doing so
+  silently.
+
+## [1.121.0] - 2026-10-11
+
+marv-mlx shape, and a proper goodbye.
+
+### Added
+
+- **Exit sign-off (`src/marv/cli/goodbye.py`).** Quitting the interactive TUI
+  clears the screen and leaves a nerd block at the top, in the marv-mlx idiom:
+
+  ```
+  ▌▌ marv says bye!
+     ✓ session saved        s-1a2b3c
+     ✓ model unloaded       mlx-community/Qwen3.5-4B-MLX-4bit :11500
+     ✓ memory released      5.2 GB
+     all systems terminated · marv 1.121.0
+  ```
+
+  Every row is observed, not asserted: the memory figure is read from the model
+  server's footprint (GPU-wired weights included) *before* the unload, a session
+  with no server says `no model was running`, and a server that is somehow still
+  answering says `model still running` (with the `marv-mlx stop` hint) and never
+  prints `all systems terminated`. It runs only for a real terminal on a clean
+  exit, so piped output and crashes are untouched.
+- **`Config.goodbye` (`true`) and `AGENT_BYE`.** Turn the sign-off off with
+  `goodbye = false` or `AGENT_BYE=off`.
+- **`/theme` — an in-TUI theme chooser with live preview.** Highlighting an
+  entry repaints the whole screen, Escape restores the palette that was active,
+  and Enter remembers the choice in `state.toml` (weakest layer, so config/env/
+  CLI still win). `/theme <name>` applies one directly. `auto` resolves from the
+  system appearance rather than a fresh OSC 11 probe, which would be unsafe once
+  Textual owns the terminal. The theme is now part of the remembered last-used
+  selection.
+- **`theme = "marv-mlx"` preset, now the default.** The marv family magenta
+  (the `▌▌` wordmark, dim greys, green/yellow markers) is what marv starts in;
+  `theme = "auto"` opts back into following the terminal background, and
+  `minimal` keeps the Nord-ish palette.
+- **`StoppedServer` / `LocalServerProvider.unload()`.** The exit path records
+  which model it unloaded so the sign-off can name it; the CLI's safety-net
+  stop no longer erases that record.
+
+### Changed
+
+- **TUI shaped like marv-mlx.** The startup wordmark is `▌▌ marv`, the prompt
+  line carries a `▌` mark, failed tool rows use `✗` (was `✕`), and input-docked
+  menus gained `───` separators before their escape hatches plus
+  `↑/↓ nav · enter select · esc back` footers. The `marv-mlx` palette is now the
+  default theme (`theme = "auto"` restores terminal-following).
+
 ## [1.120.1] - 2026-10-10
 
 Dependabot off.

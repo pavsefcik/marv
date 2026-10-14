@@ -100,7 +100,7 @@ async def test_failed_tool_row_snapshot(temp_dir):
         tool.set_result("Error: String not found", is_error=True)
         await pilot.pause()
 
-        # Styled: the ✕ glyph and judgement-bearing verb styling are part of the
+        # Styled: the ✗ glyph and judgement-bearing verb styling are part of the
         # contract, and plain text cannot express them.
         assert_matches_snapshot("tool-error-styled", snapshot_styled(app))
 

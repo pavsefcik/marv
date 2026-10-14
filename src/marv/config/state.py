@@ -24,11 +24,13 @@ STATE_FILE_NAME = "state.toml"
 
 @dataclass(slots=True)
 class LastUsedSelection:
-    """The provider/model/thinking selection plus learned latency fits."""
+    """The provider/model/thinking/theme selection plus learned latency fits."""
 
     provider: str | None = None
     model: str | None = None
     thinking_level: str | None = None
+    #: Theme chosen in the TUI (the weakest config layer; see ``Config.load``).
+    theme: str | None = None
     #: Per-model prefill/decode calibrations, keyed by model id.
     latency_fits: dict[str, LatencyFit] = field(default_factory=dict)
 
@@ -41,6 +43,8 @@ class LastUsedSelection:
             data["model"] = self.model
         if self.thinking_level:
             data["thinking_level"] = self.thinking_level
+        if self.theme:
+            data["theme"] = self.theme
         return data
 
     def fit_for(self, model: str | None) -> LatencyFit:
@@ -58,6 +62,7 @@ class LastUsedSelection:
             provider=self.provider,
             model=self.model,
             thinking_level=self.thinking_level,
+            theme=self.theme,
             latency_fits=fits,
         )
 
@@ -121,6 +126,7 @@ def load_last_used_file(path: Path) -> LastUsedSelection:
         provider=_optional_str(data.get("provider")),
         model=_optional_str(data.get("model")),
         thinking_level=_optional_str(data.get("thinking_level")),
+        theme=_optional_str(data.get("theme")),
         latency_fits=_parse_fits(data.get("latency")),
     )
 
@@ -145,12 +151,21 @@ def remember_selection(
     provider: str | None,
     model: str | None,
     thinking_level: str | None,
+    theme: str | None = None,
 ) -> None:
     """Update the selection without discarding latency fits already on disk."""
     state = load_last_used(session_dir)
     state.provider = provider or state.provider
     state.model = model or state.model
     state.thinking_level = thinking_level or state.thinking_level
+    state.theme = theme or state.theme
+    state.save(session_dir)
+
+
+def remember_theme(session_dir: Path, theme: str) -> None:
+    """Persist the theme chosen in the TUI (merging, so fits are kept)."""
+    state = load_last_used(session_dir)
+    state.theme = theme
     state.save(session_dir)
 
 

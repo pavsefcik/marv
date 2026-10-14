@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 def banner_text(model: str, thinking: str) -> str:
     """The compact startup header (Textual markup), replacing the ASCII banner."""
-    line = f"[bold $primary]marv[/] [$text-muted]{escape(__version__)}[/]"
+    line = f"[bold $primary]\u258c\u258c marv[/] [$text-muted]{escape(__version__)}[/]"
     line += f"  [$text-muted]\u00b7[/]  [$foreground]{escape(model)}[/]"
     if thinking and thinking != "off":
         line += f"  [$text-muted]\u00b7[/]  [$text-muted]thinking: {escape(thinking)}[/]"

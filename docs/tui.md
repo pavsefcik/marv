@@ -14,8 +14,8 @@ The TUI is split into a few clear roles:
 
 The widget and panel files sit underneath that split as the leaf UI components.
 
-Menus are inline: the session picker, model/thinking menu, context viewer,
-download picker, and extension prompt/confirm/select/presented panels render at
+Menus are inline: the session picker, model/thinking menu, theme menu, context
+viewer, download picker, and extension prompt/confirm/select/presented panels render at
 the input line, between the two rules around the prompt, and grow upward as
 needed. They never float over the chat. Picking an item applies it and drops
 straight back into input mode; `Esc` cancels.
@@ -60,24 +60,34 @@ An ordinary turn never shows this advice. While generating, the footer shows an
 
 ## Appearance
 
-The TUI follows the terminal rather than imposing a palette. The default
-`theme = "auto"` probes the terminal background (OSC 11, then the system
-appearance) and applies Textual's built-in `ansi-dark` or `ansi-light` theme, so
-marv matches the terminal it runs in. Any built-in Textual theme name (`nord`,
-`tokyo-night`, `dracula`, …) can be selected instead, and `minimal` keeps the
-old Nord-ish palette available. An unknown name falls back to `auto` with a
-warning instead of failing to start.
+The default `theme = "marv-mlx"` applies the marv family's own palette (the
+magenta wordmark, dim greys and green/yellow markers). Set `theme = "auto"` to
+follow the terminal instead: marv probes the terminal background (OSC 11, then
+the system appearance) and applies Textual's built-in `ansi-dark` or
+`ansi-light` theme, so marv matches the terminal it runs in. Any built-in
+Textual theme name (`nord`, `tokyo-night`, `dracula`, …) can be selected too, and
+`minimal` keeps the old Nord-ish palette available. An unknown name falls back to
+`auto` with a warning instead of failing to start.
 
 Set the theme in config (`theme = "nord"`), with `AGENT_THEME`, or per run with
-`marv run --theme <name>`.
+`marv run --theme <name>`. To switch without restarting, use the `/theme` menu:
+highlighting an entry previews it on the whole screen, Escape restores the
+previous palette, and Enter remembers the choice in `state.toml` (the weakest
+config layer, so config/env/CLI still win). `auto` there resolves from the system
+appearance rather than a fresh OSC 11 probe, which is unsafe once Textual owns
+the terminal.
 
 Layout is intentionally quiet, following the conventions of modern terminal
-agents:
+agents, with the marv family's shapes borrowed from marv-mlx:
 
 - transparent chrome, with thin rules rather than filled panels or per-message
   borders
+- the marv wordmark is `▌▌ marv`, and the prompt line carries the same `▌` mark
+- menus use `───` separators before their escape hatches (a custom id, back to
+  top), dim indented descriptions, and a `↑/↓ nav · enter select · esc back`
+  footer
 - tool calls render as a single `✓ Reading  src/parser.py` row (`✓` on success,
-  `✕` on error, a braille spinner while running) with the output indented
+  `✗` on failure, a braille spinner while running) with the output indented
   beneath it
 - thinking renders as a dim italic `▾ Thought` row that can be collapsed
 - the startup header is a compact two-line summary instead of an ASCII banner,
@@ -111,6 +121,29 @@ Appearance is detected once at startup, before Textual owns the terminal. It is
 deliberately not re-probed mid-session: Textual's input parser has no OSC 11
 handler, so an unsolicited reply would be reissued as key input.
 
+### Signing off
+
+Quitting prints a sign-off on a fresh screen, in the marv-mlx idiom:
+
+```
+▌▌ marv says bye!
+   ✓ session saved        s-1a2b3c
+   ✓ model unloaded       mlx-community/Qwen3.5-4B-MLX-4bit :11500
+   ✓ memory released      5.2 GB
+   all systems terminated · marv 1.120.1
+```
+
+Every row is something marv observed, not a slogan. The memory figure is read
+from the model server's footprint (GPU-wired weights included) *before* it is
+unloaded. If nothing was serving, the block says `no model was running` instead
+of claiming a teardown; if a server is somehow still answering, it says
+`model still running` (with the `marv-mlx stop` hint) and never prints
+`all systems terminated`.
+
+The sign-off only runs for an interactive terminal on a clean exit: piped output
+and crashes leave the screen alone. Turn it off with `goodbye = false` in config
+or `AGENT_BYE=off`.
+
 ## Built‑in commands
 
 - `/clear` — clear chat
@@ -123,6 +156,9 @@ handler, so an unsolicited reply would be reissued as key input.
 - `/compact` — summarize older turns to shrink the prompt on demand
 - `/model` — open the model/thinking menu
 - `/model <name>` — switch model directly
+- `/theme` — open the theme menu (live preview; the choice is remembered)
+- `/theme <name>` — switch theme directly (`auto`, `marv-mlx`, `minimal`, or any
+  built-in Textual theme)
 - `/chat` — plain chat mode: every tool is off and no schema is sent
 - `/tools` — back to tool-calling mode (the default)
 - `/help` — quick help

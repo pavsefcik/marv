@@ -10,7 +10,11 @@ import pytest
 from marv.config import Config
 from marv.tui import theme as theme_module
 from marv.tui.app import AgentApp
-from marv.tui.theme import resolve_theme_name
+from marv.tui.theme import (
+    is_known_theme,
+    resolve_theme_name,
+    resolve_theme_name_safely,
+)
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 
 
@@ -48,9 +52,9 @@ def test_theme_auto_falls_back_to_dark_when_appearance_is_unknown():
     assert warning is None
 
 
-def test_theme_missing_configuration_defaults_to_auto():
-    assert resolve_theme_name(None) == ("ansi-dark", None)
-    assert resolve_theme_name("") == ("ansi-dark", None)
+def test_theme_missing_configuration_defaults_to_marv_mlx():
+    assert resolve_theme_name(None) == ("marv-mlx", None)
+    assert resolve_theme_name("") == ("marv-mlx", None)
 
 
 def test_theme_builtin_names_are_applied_as_is():
@@ -213,3 +217,44 @@ async def test_app_warns_when_the_configured_theme_is_unknown(temp_dir):
             for widget in chat.query(".message-system")
         ]
         assert any("nonsense" in message for message in warnings)
+
+
+def test_theme_marv_mlx_preset_is_accepted():
+    """The marv-mlx look is opt-in, and never falls back with a warning."""
+    assert resolve_theme_name("marv-mlx") == ("marv-mlx", None)
+
+
+def test_is_known_theme_accepts_presets_builtins_and_auto():
+    assert is_known_theme("auto")
+    assert is_known_theme("marv-mlx")
+    assert is_known_theme("minimal")
+    assert is_known_theme("nord")
+    assert not is_known_theme("nonsense")
+    assert not is_known_theme("")
+
+
+def test_resolve_theme_name_safely_never_probes_the_terminal(monkeypatch):
+    """Changing theme mid-session must not issue an OSC 11 query."""
+    monkeypatch.setattr(theme_module, "_system_appearance", lambda: False)
+
+    def _forbidden() -> bool | None:
+        raise AssertionError("theme resolution probed the terminal")
+
+    monkeypatch.setattr(theme_module, "_query_terminal_appearance", _forbidden)
+
+    assert resolve_theme_name_safely("auto") == "ansi-light"
+    assert resolve_theme_name_safely("nord") == "nord"
+
+
+def test_resolve_theme_name_safely_defaults_auto_to_dark_when_unknown(monkeypatch):
+    monkeypatch.setattr(theme_module, "_system_appearance", lambda: None)
+
+    assert resolve_theme_name_safely("auto") == "ansi-dark"
+
+
+@pytest.mark.asyncio
+async def test_app_applies_the_marv_mlx_theme_from_config(temp_dir):
+    app = make_app(temp_dir, theme="marv-mlx")
+
+    async with app.run_test():
+        assert app.theme == "marv-mlx"

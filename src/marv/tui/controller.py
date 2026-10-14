@@ -192,7 +192,8 @@ class TUIController:
         if prompt.lower() == "/help":
             chat.add_system_message(
                 "ctrl+c quit | ctrl+l clear | /clear | /new | /load | /resume | /fork "
-                "| /tree | /context | /compact | /help | /model | /chat | /tools | /quit"
+                "| /tree | /context | /compact | /help | /model | /theme | /chat | /tools "
+                "| /quit"
             )
             return True
         if prompt.lower() == "/compact":
@@ -214,6 +215,12 @@ class TUIController:
             model_name = prompt[7:].strip()
             if model_name:
                 self.switch_model(model_name)
+            return True
+        if prompt.lower() == "/theme":
+            self._app.open_theme_panel()
+            return True
+        if prompt.lower().startswith("/theme "):
+            self._app.apply_theme(prompt[7:].strip())
             return True
         return False
 

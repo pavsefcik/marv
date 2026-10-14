@@ -27,7 +27,7 @@ class SessionLoadPanel(MenuPanel):
         super().__init__(
             "load session",
             self._build_options(session_dir, limit),
-            hint="enter to load · esc to cancel",
+            hint="↑/↓ nav · enter load · esc back",
             empty="no sessions found",
         )
 
@@ -56,7 +56,7 @@ class SessionForkPanel(MenuPanel):
             "fork from message",
             options,
             subtitle=self._build_summary(session),
-            hint="enter to fork · esc to cancel",
+            hint="↑/↓ nav · enter fork · esc back",
             empty="no messages available to fork",
             initial_id=self._default_message_id(session),
         )
@@ -99,7 +99,7 @@ class SessionTreePanel(MenuPanel):
             "session tree",
             self._build_options(session, limit),
             subtitle=self._build_summary(session),
-            hint="enter to branch there · esc to cancel",
+            hint="↑/↓ nav · enter branch · esc back",
             empty="no entries available",
             initial_id=session.leaf_id,
         )

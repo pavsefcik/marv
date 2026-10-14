@@ -30,6 +30,19 @@ thinking_level = "off"
 # shell commands), or all (ask before every tool call).
 approval_mode = "off"
 
+# TUI theme: "marv-mlx" (default; the marv family magenta). "auto" follows the
+# terminal background, "minimal" is the Nord-ish preset, and any built-in
+# Textual theme name (nord, tokyo-night, dracula, ...) also works.
+theme = "marv-mlx"
+
+# Print the exit sign-off (session, unloaded model, memory released) after the
+# interactive TUI closes. Set false to leave the screen as Textual left it.
+goodbye = true
+
+# Check GitHub once a day for a newer release and offer to update at startup.
+# Set false to never probe (equivalent to AGENT_UPDATE_CHECK=off).
+update_check = true
+
 # Session + state directories (defaults to ~/.cache/marv).
 # session_dir = "~/.cache/marv/sessions"
 # skills_dirs = ["~/.cache/marv/skills"]

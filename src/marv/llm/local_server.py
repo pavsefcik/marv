@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,14 @@ if TYPE_CHECKING:
     from marv.llm.events import StreamOptions
     from marv.llm.stream import AssistantMessageEventStream
     from marv.runtime.message import Message
+
+
+@dataclass(frozen=True, slots=True)
+class StoppedServer:
+    """A model server marv unloaded, recorded for the exit sign-off."""
+
+    model: str
+    port: int | None = None
 
 
 class LocalServerProvider(OpenAICompatibleProvider):
@@ -72,6 +81,8 @@ class LocalServerProvider(OpenAICompatibleProvider):
         )
         self._server_proc: subprocess.Popen[bytes] | None = None
         self._log_dir = log_dir or Path.home() / ".cache" / "marv" / "logs"
+        #: What this provider's exit-path unload stopped (for the sign-off).
+        self._exit_record: StoppedServer | None = None
         # Stable bound-method reference so register/unregister can match it.
         self._stop_callback: Callable[[], None] = self.stop_if_serving
 
@@ -192,6 +203,27 @@ class LocalServerProvider(OpenAICompatibleProvider):
         if self.model and self.is_serving():
             self.stop()
 
+    def unload(self) -> StoppedServer | None:
+        """Unload the serving model, reporting what was stopped.
+
+        This is the exit path (``close`` and the CLI's safety net), unlike
+        :meth:`stop`, which also runs on model switches and start failures. The
+        record is what the exit sign-off names; ``None`` means nothing was
+        serving, so no claim is made.
+        """
+        if not (self.model and self.is_serving()):
+            # A previous unload in this exit path already has the answer.
+            return self._exit_record
+        record = StoppedServer(model=self.model, port=port_of(self.base_url))
+        self.stop()
+        self._exit_record = record
+        return record
+
+    @property
+    def exit_record(self) -> StoppedServer | None:
+        """The server this provider unloaded on its exit path, if any."""
+        return self._exit_record
+
     def set_model(self, model: str) -> None:
         """Switch the active model (the server is (re)started lazily)."""
         if not model or model == self.model:
@@ -212,5 +244,5 @@ class LocalServerProvider(OpenAICompatibleProvider):
     async def close(self) -> None:
         """Unload the server, then close the HTTP client."""
         unregister_stop(self._stop_callback)
-        await asyncio.to_thread(self.stop_if_serving)
+        await asyncio.to_thread(self.unload)
         await super().close()

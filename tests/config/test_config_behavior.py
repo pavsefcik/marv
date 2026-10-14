@@ -308,7 +308,7 @@ def test_config_invalid_approval_mode_falls_back_to_off(temp_dir, monkeypatch):
     assert config.approval_mode == ApprovalMode.OFF
 
 
-def test_config_theme_defaults_to_auto(temp_dir, monkeypatch):
+def test_config_theme_defaults_to_marv_mlx(temp_dir, monkeypatch):
     home = temp_dir / "home"
     project = temp_dir / "project"
     home.mkdir()
@@ -317,7 +317,7 @@ def test_config_theme_defaults_to_auto(temp_dir, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(project)
 
-    assert Config.load().theme == "auto"
+    assert Config.load().theme == "marv-mlx"
 
 
 def test_config_load_reads_theme_from_a_config_file(temp_dir, monkeypatch):
@@ -373,7 +373,7 @@ def test_config_theme_from_env_overrides_the_config_file(temp_dir, monkeypatch):
 
 def test_config_theme_round_trips_through_construction():
     assert Config(theme="dracula").theme == "dracula"
-    assert Config().theme == "auto"
+    assert Config().theme == "marv-mlx"
 
 
 def test_config_server_manager_defaults_to_embedded(temp_dir, monkeypatch):
@@ -460,3 +460,60 @@ def test_latency_fit_for_reads_persisted_state(temp_dir):
 
     assert config.latency_fit_for("model-a").prefill_tokens_per_second == 5000.0
     assert config.latency_fit_for("never-measured").has_data is False
+
+
+def test_goodbye_defaults_to_on(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    assert Config.load().goodbye is True
+
+
+def test_goodbye_can_be_turned_off_in_config_file(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    global_dir = home / ".marv"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text("goodbye = false\n")
+
+    assert Config.load().goodbye is False
+
+
+def test_goodbye_can_be_turned_off_from_the_environment(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AGENT_BYE", "off")
+
+    assert Config.load().goodbye is False
+
+
+def test_update_check_defaults_on_and_can_be_turned_off(temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    home.mkdir()
+    project.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    assert Config.load().update_check is True
+
+    monkeypatch.setenv("AGENT_UPDATE_CHECK", "off")
+
+    assert Config.load().update_check is False

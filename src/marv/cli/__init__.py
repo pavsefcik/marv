@@ -1,5 +1,7 @@
 """CLI entry point using Typer."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import shutil
@@ -18,11 +20,14 @@ from marv.runtime.approval import ApprovalMode
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 
+from .goodbye import GoodbyeFacts, announce
 from .headless import run_headless as _run_headless
 from .sessions import fork_command, sessions_command, tree_command
 
 if TYPE_CHECKING:
+    from marv.llm.local_server import StoppedServer
     from marv.llm.provider import LLMProvider
+    from marv.tui.app import AgentApp
 
 app = typer.Typer(
     name="marv",
@@ -174,6 +179,8 @@ def run(
         thinking_level=thinking_level,
         approval_mode=approval_mode,
         read_only=effective_read_only,
+        goodbye=config.goodbye,
+        update_check=config.update_check,
         theme=theme or config.theme,
         server_manager=server_manager or config.server_manager,
         session_dir=config.session_dir,
@@ -255,11 +262,53 @@ def _ensure_model_downloaded(llm_provider: LLMProvider) -> None:
     typer.echo(f"Downloaded {model}", err=True)
 
 
-def _stop_provider_server(llm_provider: LLMProvider) -> None:
-    """Unload the model server, if the provider owns one."""
-    stop = getattr(llm_provider, "stop_if_serving", None)
-    if callable(stop):
-        stop()
+def _stop_provider_server(llm_provider: LLMProvider) -> StoppedServer | None:
+    """Unload the model server, if the provider owns one.
+
+    Returns what the unload stopped (for the exit sign-off), or ``None`` when
+    nothing was serving. Safe to call twice in one exit: the second call finds
+    nothing serving and returns the record the first one made.
+    """
+    from marv.llm.local_server import StoppedServer
+
+    unload = getattr(llm_provider, "unload", None)
+    if callable(unload):
+        record = unload()
+        if isinstance(record, StoppedServer):
+            return record
+    record = getattr(llm_provider, "exit_record", None)
+    return record if isinstance(record, StoppedServer) else None
+
+
+def _server_still_running(llm_provider: LLMProvider) -> bool:
+    """Whether a model server is still answering after the unload attempt."""
+    is_serving = getattr(llm_provider, "is_serving", None)
+    if not callable(is_serving):
+        return False
+    try:
+        return bool(is_serving())
+    except Exception:  # noqa: BLE001 - the sign-off must never fail the exit
+        return False
+
+
+def _announce_goodbye(
+    app: AgentApp,
+    llm_provider: LLMProvider,
+    record: StoppedServer | None,
+) -> None:
+    """Print the exit sign-off for the session that just ended."""
+    summary = app.exit_summary()
+    announce(
+        GoodbyeFacts(
+            version=__version__,
+            session_id=summary.session_id,
+            model=record.model if record is not None else summary.model,
+            port=record.port if record is not None else None,
+            memory_bytes=summary.memory_bytes,
+            unloaded=record is not None,
+            still_running=_server_still_running(llm_provider),
+        )
+    )
 
 
 def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
@@ -281,11 +330,19 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     if sys.stdout.isatty():
         sys.stdout.write("\x1b[?1000l\x1b[?1003l\x1b[?1006l")
         sys.stdout.flush()
+
+    record: StoppedServer | None = None
     try:
         app.run()
     finally:
         # Unload the model even if the TUI crashed before its own cleanup ran.
-        _stop_provider_server(llm_provider)
+        record = _stop_provider_server(llm_provider)
+
+    # The sign-off is opt-out (``goodbye = false`` / ``AGENT_BYE=off``) and only
+    # for a real terminal: piped output must not gain a cleared screen. It runs
+    # after a clean exit only, so a crash never gets a cheerful farewell.
+    if config.goodbye and sys.stdout.isatty():
+        _announce_goodbye(app, llm_provider, record)
 
 
 @app.command()
@@ -452,6 +509,166 @@ def exec_mlx(args: list[str]) -> None:
 
 
 @app.command()
+def update(
+    check: Annotated[
+        bool,
+        typer.Option("--check", help="Only report whether a newer release exists"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Reinstall even when already up to date"),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("-y", "--yes", help="Install without prompting"),
+    ] = False,
+) -> None:
+    """Check GitHub for a newer release and install it.
+
+    The same release wheel the installer uses is reinstalled through
+    ``uv tool install --force``. The running process keeps its old code, so a
+    successful update takes effect the next time marv starts.
+    """
+    from marv.updates import fetch_latest_release, install_release, is_newer
+
+    latest = fetch_latest_release()
+    if latest is None:
+        typer.echo(
+            "could not check GitHub for updates (offline or API unreachable)",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if not force and not is_newer(latest.version, __version__):
+        typer.echo(f"marv {__version__} is up to date")
+        return
+
+    typer.echo(f"marv {latest.version} is available (you have {__version__})")
+    if check:
+        return
+    if not yes and not typer.confirm(f"Update marv to {latest.version}?", default=False):
+        typer.echo("update cancelled")
+        raise typer.Exit(0)
+
+    typer.echo(f"installing marv {latest.version}…", err=True)
+    outcome = install_release(latest)
+    if not outcome.ok:
+        typer.echo(f"update failed (exit {outcome.returncode})", err=True)
+        if outcome.stderr:
+            typer.echo(outcome.stderr, err=True)
+        raise typer.Exit(1)
+    typer.echo(f"marv {latest.version} installed — restart marv to use it")
+
+
+@app.command()
+def uninstall(
+    all_: Annotated[
+        bool,
+        typer.Option("--all", help="Remove every component"),
+    ] = False,
+    marv_: Annotated[
+        bool,
+        typer.Option("--marv", help="Remove the marv command and its cache/config"),
+    ] = False,
+    marv_mlx: Annotated[
+        bool,
+        typer.Option("--marv-mlx", help="Remove the marv-mlx runtime and its cache"),
+    ] = False,
+    mlx_vlm: Annotated[
+        bool,
+        typer.Option("--mlx-vlm", help="Remove the mlx-vlm uv tool"),
+    ] = False,
+    models: Annotated[
+        bool,
+        typer.Option("--models", help="Remove models from the Hugging Face hub"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Only show what would be removed"),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("-y", "--yes", help="Remove without prompting"),
+    ] = False,
+) -> None:
+    """Remove marv and its optional components.
+
+    With no flags this prints a numbered picker at the terminal; nothing is
+    selected by default. The Hugging Face hub is shared with other tools, so its
+    models are only removed when explicitly chosen.
+    """
+    from .uninstall import (
+        MARV,
+        MARV_MLX,
+        MLX_VLM,
+        MODELS,
+        confirm_removal,
+        default_targets,
+        prompt_select_targets,
+        remove_target,
+        target_summary,
+    )
+
+    targets = default_targets()
+    by_key = {target.key: target for target in targets}
+
+    chosen: list[str] = []
+    if all_:
+        chosen = list(by_key)
+    else:
+        if marv_:
+            chosen.append(MARV)
+        if marv_mlx:
+            chosen.append(MARV_MLX)
+        if mlx_vlm:
+            chosen.append(MLX_VLM)
+        if models:
+            chosen.append(MODELS)
+
+    if not chosen:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            typer.echo(
+                "nothing selected; pass --all, or --marv/--marv-mlx/--mlx-vlm/--models",
+                err=True,
+            )
+            raise typer.Exit(2)
+        chosen = prompt_select_targets(targets) or []
+        if not chosen:
+            typer.echo("cancelled")
+            return
+
+    typer.echo("The following will be removed:")
+    for key in chosen:
+        typer.echo(f"  {target_summary(by_key[key])}")
+
+    if dry_run:
+        typer.echo("dry run — nothing removed")
+        return
+
+    if MODELS in chosen:
+        typer.echo(
+            "warning: the Hugging Face hub is shared — this deletes models used by other tools too",
+            err=True,
+        )
+    if MARV in chosen:
+        typer.echo("note: the running marv process keeps working until you exit", err=True)
+
+    if not yes and not confirm_removal("Remove the selected components?"):
+        typer.echo("cancelled")
+        return
+
+    failed = False
+    for key in chosen:
+        result = remove_target(by_key[key])
+        status = "removed" if result.removed else "failed"
+        failed = failed or not result.removed
+        typer.echo(f"  {status}: {result.label} — {result.detail}")
+
+    if failed:
+        raise typer.Exit(1)
+
+
+@app.command()
 def config_show() -> None:
     """Show current configuration."""
     config = Config.load()
@@ -470,6 +687,7 @@ def config_show() -> None:
     typer.echo(f"  Read Only: {config.read_only}")
     typer.echo(f"  Active Tools: {tools}")
     typer.echo(f"  Theme: {config.theme}")
+    typer.echo(f"  Update Check: {config.update_check}")
     typer.echo(f"  Server Manager: {config.server_manager}")
     typer.echo(f"  Session Dir: {config.session_dir}")
     typer.echo(f"  Skills Dirs: {config.skills_dirs or '[none]'}")

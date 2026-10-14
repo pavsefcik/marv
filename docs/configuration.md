@@ -32,8 +32,11 @@ the per-backend default for whichever provider is active.
 
 - Default `base_url` is `http://localhost:11500`.
 - Config keys that are easy to miss: `server_manager` (`embedded` default |
-  `marv-mlx`), `theme` (`auto` follows the terminal), and the read-timeout
-  override `AGENT_LLM_READ_TIMEOUT`. A commented template ships at
+  `marv-mlx`), `theme` (`marv-mlx` default, the marv family palette; `auto`
+  follows the terminal; `minimal` is the Nord-ish preset), `goodbye` (the exit
+  sign-off), `update_check` (daily update offer; see
+  [Update check](#update-check)), and the read-timeout override
+  `AGENT_LLM_READ_TIMEOUT`. A commented template ships at
   `config/default.toml`.
 - No API key is required — the endpoint is local and unauthenticated.
 - marv launches `mlx_vlm.server` itself and stops it on exit; no external model
@@ -76,10 +79,11 @@ auto-resolves a running one.
 
 ## Last-used selection
 
-The provider, model, and thinking level you used most recently are remembered in
-`state.toml`, written beside the session directory (`~/.cache/marv/state.toml` by
-default). On the next start marv reapplies them and begins loading that model's
-server immediately, so a fresh session does not have to stop at the model picker.
+The provider, model, thinking level, and theme you used most recently are
+remembered in `state.toml`, written beside the session directory
+(`~/.cache/marv/state.toml` by default). On the next start marv reapplies them and
+begins loading that model's server immediately, so a fresh session does not have
+to stop at the model picker. The theme is set with the TUI's `/theme` menu.
 
 This file is the weakest configuration source: an explicit config file value, an
 `AGENT_*` environment variable, or a CLI flag (`-m`/`-p`/`-t`) always overrides it.
@@ -121,6 +125,36 @@ In the TUI a `destructive` or `all` decision opens a Yes/No confirmation. In
 headless mode there is no one to ask, so a tool that needs approval is denied
 with a message rather than run. This is a guardrail, not a sandbox — see
 [SECURITY.md](../SECURITY.md).
+
+## Exit sign-off
+
+`goodbye` controls the nerd block printed after the interactive TUI closes:
+session, the model marv unloaded, and the memory that release measured. It is
+`true` by default.
+
+- Config: `goodbye = false`
+- Environment: `AGENT_BYE=off` (`0`/`false`/`no`/`off`)
+
+It applies to the TUI only: headless runs and piped output stay clean, and a
+crash never prints a cheerful farewell. See
+[`tui.md`](tui.md#signing-off).
+
+## Update check
+
+`update_check` (default `true`) makes the TUI ask GitHub for the latest release
+once a day and offer to install it. The probe runs in the background with a
+short timeout, so it never stalls startup, and a failure (offline, rate limit)
+is silent. When a newer release exists, marv prints it in the chat and opens a
+yes/no prompt; accepting reinstalls the release wheel through the same
+`uv tool install --force` path `install.sh` uses. The running process keeps its
+old code, so restart marv to finish the update.
+
+- Config: `update_check = false`
+- Environment: `AGENT_UPDATE_CHECK=off` (`0`/`false`/`no`/`off`)
+- Manual: `marv update` (or `marv update --check` to only report)
+
+The result is cached at `~/.cache/marv/update_check.json`, so a normal startup
+costs no network once a day's check has run.
 
 ## Context files
 

@@ -91,6 +91,32 @@ The CLI also exposes delivery-level session utilities:
 
 These are delivery commands over the same JSONL session model used by the runtime and TUI.
 
+## Lifecycle commands
+
+Two commands manage the install itself rather than a session:
+
+- `marv update` compares the running version with the latest GitHub release and
+  reinstalls the release wheel through `uv tool install --force`. `--check`
+  only reports, `--force` reinstalls even when up to date, and `-y` skips the
+  prompt. The TUI offers the same update at startup (see
+  [`configuration.md`](configuration.md#update-check)).
+- `marv uninstall` picks the removable pieces — marv and its cache/config; the
+  marv-mlx runtime, its cache, and the launcher/`~/.zshrc` line it wired up;
+  the `mlx-vlm` uv tool; and models in the shared Hugging Face hub — with sizes
+  shown before anything is deleted. It discovers marv-mlx wherever it lives
+  (`~/.marv-mlx`, `~/.local/share/marv-mlx`, the pi launcher/extension, or a
+  Homebrew install). With `gum` on PATH (installed alongside the marv-mlx
+  runtime) the picker and the confirmation use it in the marv-mlx style;
+  without it, a plain numbered prompt is printed instead. Nothing is selected by
+  default and the hub is never touched unless explicitly chosen. Flags
+  (`--marv`, `--marv-mlx`, `--mlx-vlm`, `--models`, `--all`), `--dry-run`, and
+  `-y` make it scriptable without the picker.
+
+marv also records the running process in `~/.cache/marv/instance.json`. When a
+second TUI picks a model different from a live instance (or from the model
+already being served), it warns that starting it will restart the shared model
+server instead of doing so silently.
+
 ## Latency benchmark
 
 `marv bench` measures time-to-first-token for the active model, because for a

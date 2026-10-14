@@ -33,7 +33,7 @@ class PromptPanel(DockPanel[str]):
             placeholder="type here and press enter",
             id="extension-prompt-input",
         )
-        yield Static("enter to submit · esc to cancel", classes="panel-hint")
+        yield Static("enter submit · esc cancel", classes="panel-hint")
 
     def focus_target(self) -> None:
         self.query_one("#extension-prompt-input", Input).focus()
@@ -75,7 +75,7 @@ class SelectPanel(MenuPanel):
         super().__init__(
             prompt,
             [(option, option) for option in options],
-            hint="enter to choose · esc to cancel",
+            hint="↑/↓ nav · enter select · esc back",
         )
 
 

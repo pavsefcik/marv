@@ -22,6 +22,17 @@ if TYPE_CHECKING:
 
     from marv.tui.app import AgentApp
 
+#: The marv-mlx menu idiom: a dim divider between an entry list and the escape
+#: hatches (a custom id, back to top) that must not be cursor targets.
+SEPARATOR = "─" * 36
+
+DEFAULT_HINT = "↑/↓ nav · enter select · esc back"
+
+
+def separator_option() -> Option:
+    """A dim, non-selectable divider row for a menu."""
+    return Option(Text(f"  {SEPARATOR}"), disabled=True)
+
 
 class DockPanel[T](Widget):
     """Base class for menus that replace the prompt input.
@@ -73,7 +84,7 @@ class MenuPanel(DockPanel[str]):
         options: Sequence[tuple[str, str | Text]],
         *,
         subtitle: str = "",
-        hint: str = "enter to choose · esc to cancel",
+        hint: str = DEFAULT_HINT,
         empty: str = "(nothing to choose)",
         initial_id: str | None = None,
         **kwargs: Any,

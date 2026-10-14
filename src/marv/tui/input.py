@@ -36,6 +36,7 @@ BUILTIN_COMMANDS = [
     "/tools",
     "/help",
     "/model",
+    "/theme",
     "/quit",
 ]
 
@@ -203,7 +204,7 @@ class PromptInput(Widget, can_focus=False):
     def compose(self) -> ComposeResult:
         yield PromptTextArea(
             self,
-            placeholder="Type here… (shift+enter for a new line)",
+            placeholder="\u258c Type here… (shift+enter for a new line)",
             id="prompt-inner",
             soft_wrap=True,
             tab_behavior="focus",

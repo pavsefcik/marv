@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from textual import on
@@ -13,21 +14,31 @@ from textual.reactive import reactive
 from textual.theme import Theme
 from textual.widgets import Static
 
-from marv.config.state import remember_latency_fit
+from marv import __version__
+from marv.config.state import remember_latency_fit, remember_theme
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
 from marv.tui.download_panel import DownloadPanel
 from marv.tui.extension_bridge import TUIExtensionBridge
+from marv.tui.extension_ui import ConfirmPanel
 from marv.tui.input import PromptInput
-from marv.tui.memory import snapshot
+from marv.tui.memory import read_process_tree_memory, snapshot
 from marv.tui.model_panel import ModelChoice, ModelPanel
 from marv.tui.renderer import TUIRenderer
 from marv.tui.status import StatusBar
-from marv.tui.theme import resolve_theme_name
+from marv.tui.theme import (
+    AUTO_THEME,
+    MARV_MLX_THEME_NAME,
+    is_known_theme,
+    resolve_theme_name,
+    resolve_theme_name_safely,
+)
+from marv.tui.theme_panel import ThemePanel
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from textual.timer import Timer
 
@@ -38,6 +49,7 @@ if TYPE_CHECKING:
     from marv.runtime.agent import Agent
     from marv.runtime.session import Session
     from marv.tui.panel import DockPanel
+    from marv.updates import InstallOutcome, Release
 
 # Minimal Nord-inspired theme
 MINIMAL_THEME = Theme(
@@ -54,6 +66,32 @@ MINIMAL_THEME = Theme(
     error="#bf616a",
     dark=True,
 )
+
+# The marv-mlx look as a theme: the magenta wordmark, dim greys and the
+# green/yellow markers of the marv family UI.
+MARV_MLX_THEME = Theme(
+    name=MARV_MLX_THEME_NAME,
+    primary="#ff87d7",
+    secondary="#d7afd7",
+    accent="#af87ff",
+    foreground="#e4e4e4",
+    background="#1c1c1c",
+    surface="#262626",
+    panel="#303030",
+    success="#00d787",
+    warning="#ffff5f",
+    error="#ff5f5f",
+    dark=True,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ExitSummary:
+    """What the CLI needs for the exit sign-off after the TUI has closed."""
+
+    session_id: str | None
+    model: str | None
+    memory_bytes: int
 
 
 class AgentApp(App[None]):
@@ -90,6 +128,11 @@ class AgentApp(App[None]):
         # resolved name is applied in on_mount (built-in themes are registered
         # by Textual already; MINIMAL_THEME is registered at mount).
         self._theme_name, self._theme_warning = resolve_theme_name(config.theme)
+        #: The theme value to mark as current in the chooser (``auto``, not the
+        #: concrete ``ansi-*`` it resolves to), so the choice survives a restart.
+        #: An unknown configured name fell back to ``auto``, so the chooser
+        #: marks that instead of nothing.
+        self._theme_configured = config.theme if self._theme_warning is None else AUTO_THEME
         self._spinner_timer: Timer | None = None
         self._extension_widget_timer: Timer | None = None
         self._memory_timer: Timer | None = None
@@ -99,8 +142,14 @@ class AgentApp(App[None]):
         self._cancel_event: asyncio.Event | None = None
         self._model_start_task: asyncio.Task[None] | None = None
         self._model_start_for: str | None = None
+        #: Background GitHub release probe (never blocks startup).
+        self._update_task: asyncio.Task[None] | None = None
+        #: Registry file for this running instance (shared-server guard).
+        self._instance_path: Path | None = None
         #: Model whose persisted wait calibration is currently installed.
         self._fit_seeded_for: str | None = None
+        #: Facts for the CLI's exit sign-off, captured before the unload.
+        self._exit_summary: ExitSummary | None = None
 
     @property
     def runtime(self) -> TUIRuntime:
@@ -160,12 +209,22 @@ class AgentApp(App[None]):
         if self._session is None:
             self._session = self.agent.session
 
+        # Register this process and warn (asynchronously) when the selected
+        # model would evict a different model on the shared server.
+        self._register_instance()
+        asyncio.create_task(self._warn_if_shared_server())
+
         # Register and apply theme (built-in themes are already registered)
         self.register_theme(MINIMAL_THEME)
+        self.register_theme(MARV_MLX_THEME)
         self.theme = self._theme_name
 
         # Show banner
         self._renderer.render_banner()
+
+        # Fire-and-forget GitHub release probe. It never blocks startup and
+        # never steals an already-open picker.
+        self._update_task = asyncio.create_task(self._check_for_update())
 
         if self._theme_warning:
             self.query_one("#chat-view", ChatView).add_system_message(self._theme_warning)
@@ -227,6 +286,93 @@ class AgentApp(App[None]):
         )
         self._memory_timer = self.set_interval(2.0, self._refresh_memory)
         await self._refresh_memory()
+
+    def _register_instance(self) -> None:
+        """Record this process so a later instance can see it."""
+        from marv.instance import default_instance_path, register
+
+        path = default_instance_path()
+        self._instance_path = path
+        register(
+            path,
+            model=self.agent.model_name or None,
+            provider=self._bootstrap_config.provider,
+        )
+
+    async def _warn_if_shared_server(self) -> None:
+        """Warn when the selected model would evict a live instance's model."""
+        try:
+            warning = await asyncio.to_thread(self._shared_server_warning)
+        except Exception:  # noqa: BLE001 - the guard is advisory
+            return
+        if warning:
+            self.query_one("#chat-view", ChatView).add_system_message(warning)
+
+    def _shared_server_warning(self) -> str | None:
+        """Blocking part of the shared-server guard (network + registry)."""
+        from marv.instance import active_other, conflict_warning
+        from marv.llm.mlx_models import running_model_id
+
+        other = active_other(self._instance_path) if self._instance_path else None
+        served: str | None = None
+        base_url = getattr(self.agent.provider, "base_url", None)
+        if isinstance(base_url, str) and base_url:
+            served = running_model_id(base_url)
+        return conflict_warning(
+            selected_model=self.agent.model_name,
+            other=other,
+            served_model=served,
+        )
+
+    async def _check_for_update(self) -> None:
+        """Probe GitHub in the background and offer to install a newer release.
+
+        Runs at most once a day (the probe caches its answer). A failure is
+        silent: an update check must never break or stall startup.
+        """
+        if not self._bootstrap_config.update_check:
+            return
+
+        try:
+            release = await asyncio.to_thread(self._probe_update)
+        except Exception:  # noqa: BLE001 - the check is best-effort
+            return
+        if release is None:
+            return
+
+        chat = self.query_one("#chat-view", ChatView)
+        chat.add_system_message(f"marv {release.version} is available (you have {__version__})")
+        if self._active_panel is not None:
+            # A picker owns the input line; do not steal it. The user can run
+            # `marv update` when they are done.
+            chat.add_system_message("run 'marv update' to install it")
+            return
+
+        confirmed = await self.await_panel(
+            ConfirmPanel(f"Update marv to {release.version} now? (y/n)")
+        )
+        if not confirmed:
+            return
+
+        chat.add_system_message(f"installing marv {release.version}…")
+        outcome = await asyncio.to_thread(self._install_update, release)
+        if outcome.ok:
+            chat.add_system_message(f"marv {release.version} installed — restart marv to use it")
+        else:
+            detail = outcome.stderr or f"exit {outcome.returncode}"
+            chat.add_system_message(f"update failed: {detail}")
+
+    def _probe_update(self) -> Release | None:
+        """Return a newer release, or None (patchable seam for tests)."""
+        from marv.updates import check_for_update
+
+        return check_for_update(__version__)
+
+    def _install_update(self, release: Release) -> InstallOutcome:
+        """Install ``release`` (patchable seam for tests)."""
+        from marv.updates import install_release
+
+        return install_release(release)
 
     async def _refresh_memory(self) -> None:
         """Refresh the RAM reading in the status bar from host helpers."""
@@ -427,6 +573,36 @@ class AgentApp(App[None]):
         if choice is not None:
             self._controller.on_model_choice(choice.model, choice.thinking)
 
+    def open_theme_panel(self) -> None:
+        """Open the theme menu; a choice is applied when it closes."""
+        self.open_panel(
+            ThemePanel(self._theme_configured),
+            callback=self._on_theme_panel_closed,
+        )
+
+    def _on_theme_panel_closed(self, choice: str | None) -> None:
+        """Apply and persist the theme chosen in the menu. Cancel keeps it."""
+        if choice is not None:
+            self.set_theme(choice, persist=True)
+
+    def apply_theme(self, name: str) -> None:
+        """Apply a theme by name (``/theme <name>``); unknown names are ignored."""
+        candidate = name.strip()
+        if not is_known_theme(candidate):
+            self.query_one("#chat-view", ChatView).add_system_message(f"unknown theme: {candidate}")
+            return
+        self.set_theme(candidate, persist=True)
+
+    def set_theme(self, name: str, *, persist: bool = False) -> None:
+        """Apply a theme, optionally remembering it as the last used one."""
+        self.theme = resolve_theme_name_safely(name)
+        self._theme_name = self.theme
+        self._theme_configured = name
+        if persist:
+            remember_theme(self.agent.config.session_dir, name)
+        shown = f"auto ({self.theme})" if name == AUTO_THEME else name
+        self.notify(f"theme: {shown}")
+
     def _run_agent(self, prompt: str) -> None:
         """Run the agent loop."""
         self._cancel_event = asyncio.Event()
@@ -547,9 +723,36 @@ class AgentApp(App[None]):
 
     async def on_unmount(self) -> None:
         """Clean up on exit."""
+        from marv.instance import clear_record
+
+        clear_record(self._instance_path)
+        if self._update_task is not None and not self._update_task.done():
+            self._update_task.cancel()
         if self._extension_widget_timer:
             self._extension_widget_timer.stop()
         if self._memory_timer:
             self._memory_timer.stop()
         if self._runtime:
+            # Measure the model server before it is unloaded: the sign-off
+            # reports the memory that release actually frees, so it has to be
+            # read while the weights are still resident. Off-thread, because
+            # the footprint read shells out (``ps``/``top``) on the exit path.
+            self._exit_summary = ExitSummary(
+                session_id=self.agent.session.metadata.id,
+                model=self.agent.model_name,
+                memory_bytes=await asyncio.to_thread(self._server_memory_bytes),
+            )
             await self._runtime.agent.close()
+
+    def _server_memory_bytes(self) -> int:
+        """Footprint of the model server right now (0 when none is running)."""
+        pid = getattr(self.agent.provider, "server_pid", None)
+        if not isinstance(pid, int) or pid <= 0:
+            return 0
+        return read_process_tree_memory(pid)
+
+    def exit_summary(self) -> ExitSummary:
+        """Facts for the CLI's exit sign-off (safe to call before mount runs)."""
+        if self._exit_summary is not None:
+            return self._exit_summary
+        return ExitSummary(session_id=None, model=None, memory_bytes=0)

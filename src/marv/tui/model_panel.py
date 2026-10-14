@@ -13,7 +13,7 @@ from textual.widgets.option_list import Option
 from marv.config.state import load_last_used
 from marv.llm.models import get_model_info, resolve_capability_provider, supports_reasoning
 from marv.runtime.settings import ThinkingLevel, get_available_thinking_levels
-from marv.tui.panel import DockPanel
+from marv.tui.panel import DockPanel, separator_option
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -91,13 +91,14 @@ class ModelPanel(DockPanel[ModelChoice]):
         current = self._agent.model_name
         subtitle = f"current: {current or '(none)'} · thinking: {self._agent.thinking_level.value}"
         self.query_one("#model-subtitle", Static).update(Text(subtitle))
-        self.query_one("#model-hint", Static).update(Text("enter to switch · esc to close"))
+        self.query_one("#model-hint", Static).update(Text("↑/↓ nav · enter switch · esc back"))
 
         options: list[Option] = []
         for model in self._model_list():
             label = f"{model}  // current" if model == current else model
             options.append(Option(Text(label), id=model))
         if current:
+            options.append(separator_option())
             options.append(
                 Option(
                     Text(f"thinking: {self._agent.thinking_level.value}  ›"),
@@ -115,7 +116,7 @@ class ModelPanel(DockPanel[ModelChoice]):
         model = self._agent.model_name or "(none)"
         self.query_one("#model-title", Static).update(Text("thinking level"))
         self.query_one("#model-subtitle", Static).update(Text(f"model: {model}"))
-        self.query_one("#model-hint", Static).update(Text("enter to set · esc back"))
+        self.query_one("#model-hint", Static).update(Text("↑/↓ nav · enter set · esc back"))
 
         provider_hint = resolve_capability_provider(self._agent.provider_name)
         available = get_available_thinking_levels(self._agent.model_name, provider=provider_hint)

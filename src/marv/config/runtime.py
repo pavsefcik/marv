@@ -51,7 +51,13 @@ class Config:
     approval_mode: ApprovalMode = ApprovalMode.OFF
     #: Read-only mode: the active tool set is narrowed to read/grep/find/ls.
     read_only: bool = False
-    theme: str = "auto"
+    #: Print the exit sign-off (the nerd block) after the interactive TUI.
+    goodbye: bool = True
+    #: Check GitHub once a day for a newer release and offer to update.
+    update_check: bool = True
+    #: TUI theme: "marv-mlx" (the marv family palette, the default), "auto" to
+    #: follow the terminal, "minimal", or any built-in Textual theme name.
+    theme: str = "marv-mlx"
     #: Local-server lifecycle: "embedded" (marv launches mlx_vlm.server) or
     #: "marv-mlx" (delegate to the marv-mlx runtime CLI when present).
     server_manager: str = "embedded"
@@ -163,6 +169,8 @@ class Config:
             "AGENT_THINKING": "thinking_level",
             "AGENT_APPROVAL": "approval_mode",
             "AGENT_READ_ONLY": "read_only",
+            "AGENT_BYE": "goodbye",
+            "AGENT_UPDATE_CHECK": "update_check",
             "AGENT_THEME": "theme",
             "AGENT_SERVER_MANAGER": "server_manager",
         }
@@ -173,7 +181,7 @@ class Config:
                     config_data[config_key] = int(value)
                 elif config_key in ("temperature",):
                     config_data[config_key] = float(value)
-                elif config_key == "read_only":
+                elif config_key in ("read_only", "goodbye", "update_check"):
                     config_data[config_key] = value.strip().lower() in (
                         "1",
                         "true",
@@ -242,7 +250,11 @@ class Config:
             thinking_level=thinking_level,
             approval_mode=approval_mode,
             read_only=_as_bool(data.get("read_only")),
-            theme=str(data.get("theme") or "auto"),
+            # Sign-off defaults on; only an explicit value turns it off.
+            goodbye=_as_bool(data["goodbye"]) if "goodbye" in data else True,
+            # Update checks default on; only an explicit value turns them off.
+            update_check=_as_bool(data["update_check"]) if "update_check" in data else True,
+            theme=str(data.get("theme") or "marv-mlx"),
             server_manager=str(data.get("server_manager") or "embedded"),
             session_dir=session_dir,
             skills_dirs=skills_dirs,

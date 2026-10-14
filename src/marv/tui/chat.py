@@ -23,7 +23,7 @@ MAX_DISPLAY_CHARS = 5000
 
 # Tool-row presentation glyphs. Kept here (not in CSS) because they are content.
 TOOL_SUCCESS_GLYPH = "\u2713"  # check
-TOOL_ERROR_GLYPH = "\u2715"  # cross
+TOOL_ERROR_GLYPH = "\u2717"  # ballot X (marv-mlx's failure mark)
 TOOL_RUNNING_GLYPH = "\u25cb"  # ring, replaced by the spinner frames below
 
 

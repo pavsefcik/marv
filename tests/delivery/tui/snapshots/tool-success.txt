@@ -1,5 +1,5 @@
 
-  marv <version>  ·  gpt-4o
+  ▌▌ marv <version>  ·  gpt-4o
   Type /help for commands · shift+enter newline · ctrl+o copy reply
 
     ✓ Reading  src/parser.py
@@ -19,6 +19,6 @@
 
 
   ────────────────────────────────────────────────────────────────────────────
-   Type here… (shift+enter for a new line)
+   ▌ Type here… (shift+enter for a new line)
   ────────────────────────────────────────────────────────────────────────────
   gpt-4o  session:<id>                                     /workspace/marv

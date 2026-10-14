@@ -20,7 +20,7 @@ from marv.llm.model_download import (
     suggested_models,
     wait_for_catalog_refresh,
 )
-from marv.tui.panel import DockPanel
+from marv.tui.panel import DockPanel, separator_option
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -88,7 +88,7 @@ class DownloadPanel(DockPanel[str]):
         yield Static("", id="download-hint", classes="panel-hint")
 
     def on_mount(self) -> None:
-        self._show_hint("enter to download · type a custom id below · esc to close")
+        self._show_hint("↑/↓ nav · enter download · esc back")
         self.focus_target()
 
     def focus_target(self) -> None:
@@ -128,6 +128,7 @@ class DownloadPanel(DockPanel[str]):
             seen.add(suggestion.model_id)
             options.append(Option(self._suggestion_text(suggestion), id=suggestion.model_id))
 
+        options.append(separator_option())
         options.append(Option(Text("Custom Hugging Face id…"), id=CUSTOM_OPTION_ID))
         return options
 
@@ -169,7 +170,7 @@ class DownloadPanel(DockPanel[str]):
         self._stage = "pick"
         self.query_one("#download-options", OptionList).display = True
         self.query_one("#download-custom", Input).display = False
-        self._show_hint("enter to download · type a custom id below · esc to close")
+        self._show_hint("↑/↓ nav · enter download · esc back")
         self.focus_target()
 
     def _show_custom(self) -> None:
@@ -178,7 +179,7 @@ class DownloadPanel(DockPanel[str]):
         custom = self.query_one("#download-custom", Input)
         custom.display = True
         custom.value = ""
-        self._show_hint("enter to download this id · esc back")
+        self._show_hint("enter download · esc back")
         custom.focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
