@@ -59,6 +59,12 @@ point of this list is that the office framing has a concrete, dependency-free
 start on macOS today, and that the PDF half of it has one clean decision in
 front of it.
 
+**Shipped since this list was written:** the image playbook is a builtin skill
+(`office-files`, loaded automatically), the `pdf` tool drives
+poppler/Ghostscript/qpdf and `marv doctor` detects them, and multimodal image
+input works via `@path` (TUI/headless) and `--attach` (headless). The
+PDF-engine decision below is resolved to option 1 (external tools).
+
 | Item | Size | Gate |
 | --- | --- | --- |
 | **Batch image resize / convert.** `sips` is built into macOS and does max-dimension resizing, exact sizing, format conversion (JPEG/PNG/HEIC/TIFF) and JPEG quality. Playbook: [`src/marv/skills/builtin/office-files/SKILL.md`](src/marv/skills/builtin/office-files/SKILL.md) (shipped and loaded automatically); recipes and verified behaviour: [`docs/office.md`](docs/office.md). | S | **none** — runs through the existing `bash` tool |
@@ -220,13 +226,18 @@ These are what make it *coworking* rather than "a coding agent pointed at
 documents". None of them are latency wins; they are why the latency work
 matters.
 
-1. **Multimodal input.** Today `Message.content` is a `str` and `to_api_dict`
-   emits text only. Make content a list of parts (`text` | `image`) or add an
-   `attachments` field, and wire it through the streaming payload. `mlx_vlm` is
-   vision-capable — screenshots, whiteboards and charts are the highest-value
-   coworking input and are currently impossible.
+1. **Multimodal input.** *(Shipped: `Message.attachments` + `image_url` content
+   parts, `@path` in the TUI/headless and `--attach` for headless; `apple-fm`
+   drops images with a warning.)* Today `Message.content` is a `str` and
+   `to_api_dict` emits text only. Make content a list of parts (`text` | `image`)
+   or add an `attachments` field, and wire it through the streaming payload.
+   `mlx_vlm` is vision-capable — screenshots, whiteboards and charts are the
+   highest-value coworking input and were previously impossible.
 2. **Document ingest.** PDF/Markdown/CSV → extract → context, with token
    accounting so a 200-page PDF does not silently blow the prefill budget.
+   (*Partially shipped:* PDF text/metadata via the `pdf` tool and a
+   first-page image attachment; full-document ingest with token accounting is
+   still open.)
 3. **Artifacts as first-class output.** A workspace `outputs/` concept with a
    rendered panel: the agent's deliverable is a file, not a wall of chat.
 4. **Personas/modes.** Make the base prompt a *setting* (`mode = coworking |
