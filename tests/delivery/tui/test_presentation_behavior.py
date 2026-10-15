@@ -316,9 +316,9 @@ def test_startup_hint_advertises_only_bindings_that_exist():
     hint = re.sub(r"\[[^\]]*\]", "", line)
     advertised = set(re.findall(r"ctrl\+\w+|escape", hint))
 
-    expected = "Type /help for commands · escape interrupt · ctrl+l clear · ctrl+o copy reply"
+    expected = "Type /help for commands · escape interrupt · ctrl+o copy reply"
     assert hint == expected
-    assert advertised == {"escape", "ctrl+l", "ctrl+o"}
+    assert advertised == {"escape", "ctrl+o"}
     assert advertised <= {binding.key for binding in AgentApp.BINDINGS}
 
 

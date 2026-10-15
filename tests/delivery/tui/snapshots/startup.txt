@@ -1,7 +1,7 @@
 
   ▌▌ marv <version>  ·  gpt-4o
-  Type /help for commands · escape interrupt · ctrl+l clear · ctrl+o copy
-  reply
+  Type /help for commands · escape interrupt · ctrl+o copy reply
+
 
 
 

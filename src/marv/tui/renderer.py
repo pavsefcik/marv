@@ -41,8 +41,7 @@ def banner_text(model: str, thinking: str) -> str:
         line += f"  [$text-muted]\u00b7[/]  [$text-muted]thinking: {escape(thinking)}[/]"
     hint = (
         "[$text-muted]Type [/][$primary]/help[/]"
-        "[$text-muted] for commands \u00b7 escape interrupt \u00b7 ctrl+l clear"
-        " \u00b7 ctrl+o copy reply[/]"
+        "[$text-muted] for commands \u00b7 escape interrupt \u00b7 ctrl+o copy reply[/]"
     )
     return f"{line}\n{hint}"
 

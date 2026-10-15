@@ -1,10 +1,10 @@
 
   ▌▌ marv <version>  ·  gpt-4o || bold #88c0d0 on #2e3440 | #ffffff on #2e3440 | #d8dee9 on #2e3440
-  Type /help for commands · escape interrupt · ctrl+l clear · ctrl+o copy || #ffffff on #2e3440 | #88c0d0 on #2e3440
-  reply || #ffffff on #2e3440
+  Type /help for commands · escape interrupt · ctrl+o copy reply || #ffffff on #2e3440 | #88c0d0 on #2e3440
 
     ▾ Thought || #ffffff on #2e3440 | italic #ffffff on #2e3440
     Weighing the parser fix before editing || italic #ffffff on #2e3440
+
 
 
 
