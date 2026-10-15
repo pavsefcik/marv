@@ -11,6 +11,57 @@ Tools are Pydantic‑typed units of capability with OpenAI‑style JSON schemas.
 - `grep` — regex search (uses `rg` when available)
 - `find` — glob search
 - `ls` — list directories
+- `pdf` — PDF info, text, render, compress, merge, split, rotate (poppler, Ghostscript, qpdf)
+
+## The `pdf` tool
+
+`pdf` does real PDF work by driving three external engines instead of adding a
+Python dependency: poppler (`pdfinfo`, `pdftotext`, `pdftoppm`), Ghostscript
+(`gs`), and qpdf (`qpdf`). Each engine is located with `shutil.which`;
+`marv doctor` reports which of them are installed, and a missing one fails the
+call with the binary and the command that installs it
+(`` `pdftoppm` not found. Install poppler: brew install poppler ``).
+
+Parameters:
+
+- `action` — `info`, `text`, `render`, `compress`, `merge`, `split`, `rotate`
+- `input` — input PDF path; for `merge`, comma- or newline-separated paths
+- `output` — output path. Required for `merge`; otherwise a sibling default
+  (`report-compressed.pdf`, `report-rotated.pdf`, `report-split.pdf`, or
+  `report-%d.pdf` for a page-by-page split). For `render` it is a file name
+  *prefix*: pdftoppm appends `-1.png`
+- `pages` — a range such as `1-3` or `2`, used by `render` and `split`
+- `dpi` — render resolution (default 150)
+- `image_format` — `png` (default) or `jpeg`
+- `quality` — Ghostscript preset: `screen`, `ebook` (default), `printer`, `prepress`
+- `rotate` — degrees for `rotate`: 90 (default), 180, or 270
+
+What each action runs:
+
+| action | command |
+| --- | --- |
+| `info` | `pdfinfo <input>` (metadata on stdout) |
+| `text` | `pdftotext -layout <input> -` (stdout, or `output`) |
+| `render` | `pdftoppm -r <dpi> -png\|-jpeg [-f first -l last] <input> <prefix>` |
+| `compress` | `gs -sDEVICE=pdfwrite -dPDFSETTINGS=/<quality> -o <out> <input>` |
+| `merge` | `qpdf --empty --pages <a> <b> ... -- <out>` |
+| `split` | `qpdf <input> --pages <input> <pages> -- <out>`, else `qpdf <input> --split-pages <out>` |
+| `rotate` | `qpdf <input> --rotate=+<angle>:1-z -- <out>` |
+
+Rules the tool enforces:
+
+- argv is a list run through `asyncio.create_subprocess_exec` — never a shell.
+- one invocation may run 120 seconds; a timeout kills the child and says so.
+- a non-zero exit raises `ToolError` carrying the engine's stderr.
+- the input is never overwritten, the output's parent directory is created, and
+  the produced files are reported as path + size.
+- `info` and `text` without `output` answer on stdout.
+
+`pdf` is not a read-only tool: `--read-only` narrows the active set to
+`read`, `grep`, `find`, `ls`, so it is not exposed there. Under
+`approval_mode=destructive`, every writing action (`render`, `compress`,
+`merge`, `split`, `rotate`, and `text` with an `output`) needs approval;
+`info` never does.
 
 ## How tools are executed
 

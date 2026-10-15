@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 
 from marv.config import Config
 from marv.runtime.agent import Agent
 from marv.runtime.approval import ApprovalMode, is_destructive
+from marv.tools.pdf import DEFAULT_TIMEOUT
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 from tests.test_doubles.llm_stream_builders import make_text_events, make_tool_call_events
 
@@ -64,6 +67,15 @@ def tool_results(chunks):
         ("bash", {"command": "sed -i 's/a/b/' file.txt"}, True),
         ("bash", {"command": "find . -name '*.tmp' -delete"}, True),
         ("bash", {"command": "echo hi | tee out.txt"}, True),
+        ("pdf", {"action": "info", "input": "report.pdf"}, False),
+        ("pdf", {"action": "text", "input": "report.pdf"}, False),
+        ("pdf", {"action": "text", "input": "report.pdf", "output": "report.txt"}, True),
+        ("pdf", {"action": "render", "input": "report.pdf"}, True),
+        ("pdf", {"action": "render", "input": "report.pdf", "output": None}, True),
+        ("pdf", {"action": "compress", "input": "report.pdf"}, True),
+        ("pdf", {"action": "merge", "input": "a.pdf,b.pdf", "output": "m.pdf"}, True),
+        ("pdf", {"action": "split", "input": "report.pdf"}, True),
+        ("pdf", {"action": "rotate", "input": "report.pdf"}, True),
     ],
 )
 def test_is_destructive_classification(tool_name, arguments, expected):
@@ -154,6 +166,49 @@ async def test_destructive_mode_skips_approval_for_read_only_tool(temp_dir):
 
     assert "alpha" in tool_results(chunks)[0].result
     assert approver.requests == []
+
+
+async def _fake_pdfinfo(argv: list[str], *, timeout: float = DEFAULT_TIMEOUT):
+    """Stand-in for the pdf tool's engine runner."""
+    return 0, "Pages:          3\n", ""
+
+
+@pytest.mark.asyncio
+async def test_destructive_mode_requires_approval_for_a_pdf_write(temp_dir):
+    scripts = [
+        make_tool_call_events("c1", "pdf", {"action": "compress", "input": "report.pdf"}),
+        make_text_events("done"),
+    ]
+    approver = RecordingApprover(allow=False)
+    agent = build_agent(
+        temp_dir, scripts, approval_mode=ApprovalMode.DESTRUCTIVE, approver=approver
+    )
+
+    chunks = await run_tool(agent)
+
+    assert len(approver.requests) == 1
+    assert "not approved" in tool_results(chunks)[0].result
+
+
+@pytest.mark.asyncio
+async def test_destructive_mode_runs_pdf_info_without_approval(temp_dir, monkeypatch):
+    target = temp_dir / "report.pdf"
+    target.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/engines/{name}")
+    monkeypatch.setattr("marv.tools.pdf.run_argv", _fake_pdfinfo)
+    scripts = [
+        make_tool_call_events("c1", "pdf", {"action": "info", "input": str(target)}),
+        make_text_events("done"),
+    ]
+    approver = RecordingApprover(allow=False)
+    agent = build_agent(
+        temp_dir, scripts, approval_mode=ApprovalMode.DESTRUCTIVE, approver=approver
+    )
+
+    chunks = await run_tool(agent)
+
+    assert approver.requests == []
+    assert "Pages:" in tool_results(chunks)[0].result
 
 
 @pytest.mark.asyncio

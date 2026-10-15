@@ -76,6 +76,7 @@ from marv.tools.edit import EditTool
 from marv.tools.find import FindTool
 from marv.tools.grep import GrepTool
 from marv.tools.ls import LsTool
+from marv.tools.pdf import PdfTool
 from marv.tools.read import ReadTool
 from marv.tools.registry import ToolExecutionResult, ToolRegistry
 from marv.tools.write import WriteTool
@@ -217,6 +218,7 @@ class Agent:
             GrepTool(),
             FindTool(),
             LsTool(),
+            PdfTool(),
         ]
         for tool in tools:
             self.tools.register(tool)

@@ -61,7 +61,7 @@ async def test_default_mode_still_exposes_every_tool(temp_dir):
     agent, _ = build_agent(temp_dir, read_only=False)
 
     assert sorted(agent.list_active_tools()) == sorted(
-        ["read", "write", "edit", "bash", "grep", "find", "ls"]
+        ["read", "write", "edit", "bash", "grep", "find", "ls", "pdf"]
     )
     names = {schema["function"]["name"] for schema in agent.tools.get_schemas()}
     assert "write" in names

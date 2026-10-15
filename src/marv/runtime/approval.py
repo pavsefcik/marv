@@ -35,6 +35,9 @@ class ToolApprover(Protocol):
 #: Tools that mutate the workspace and are always treated as destructive.
 DESTRUCTIVE_TOOLS = frozenset({"write", "edit"})
 
+#: `pdf` actions that write; `text` writes only when it has an output file.
+_DESTRUCTIVE_PDF_ACTIONS = frozenset({"render", "compress", "merge", "split", "rotate"})
+
 #: Command names that mutate state or are hard to undo.
 _DESTRUCTIVE_COMMANDS = frozenset(
     {
@@ -82,6 +85,8 @@ def is_destructive(tool_name: str, arguments: Mapping[str, object]) -> bool:
         return True
     if tool_name == "bash":
         return _bash_is_destructive(str(arguments.get("command", "")))
+    if tool_name == "pdf":
+        return _pdf_is_destructive(arguments)
     return False
 
 
@@ -107,6 +112,16 @@ def describe_tool_call(request: ToolCallRequest) -> str:
         path = str(request.input.get("path", "")).strip()
         return f"{request.tool_name.capitalize()} file?\n\n{path}"
     return f"Allow tool '{request.tool_name}'?"
+
+
+def _pdf_is_destructive(arguments: Mapping[str, object]) -> bool:
+    """A `pdf` call writes for the page-rewriting actions, and for `text` with an output."""
+    action = str(arguments.get("action", ""))
+    if action in _DESTRUCTIVE_PDF_ACTIONS:
+        return True
+    if action == "text":
+        return bool(arguments.get("output"))
+    return False
 
 
 def _bash_is_destructive(command: str) -> bool:

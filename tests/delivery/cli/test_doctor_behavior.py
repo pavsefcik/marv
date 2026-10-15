@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+
 from typer.testing import CliRunner
 
 from marv import cli
@@ -16,6 +18,7 @@ from marv.cli.doctor import (
     run_checks,
 )
 from marv.config import Config
+from marv.tools.pdf import ENGINES
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 
 
@@ -116,6 +119,61 @@ def test_format_report_says_when_everything_passes():
     report = DoctorReport(results=[CheckResult("provider", OK, "marv-mlx")])
 
     assert "all checks passed" in format_report(report)
+
+
+def pdf_tooling(temp_dir) -> CheckResult:
+    """The pdf-tooling verdict from a full doctor run."""
+    report = run_checks(build_config(temp_dir), LLMProviderFake())
+    return next(result for result in report.results if result.name == "pdf tooling")
+
+
+def test_pdf_tooling_lists_every_engine_with_its_path(temp_dir, monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda name: f"/engines/{name}")
+
+    result = pdf_tooling(temp_dir)
+
+    assert result.status == OK
+    for binary in ENGINES:
+        assert f"{binary} (/engines/{binary})" in result.detail
+
+
+def test_pdf_tooling_warns_with_install_hints_when_none_are_present(temp_dir, monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    result = pdf_tooling(temp_dir)
+
+    assert result.status == WARN
+    assert "none found" in result.detail
+    assert "pdftoppm (brew install poppler)" in result.detail
+    assert "gs (brew install ghostscript)" in result.detail
+    assert "qpdf (brew install qpdf)" in result.detail
+
+
+def test_pdf_tooling_keeps_what_it_found_and_hints_the_rest(temp_dir, monkeypatch):
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/usr/local/bin/qpdf" if name == "qpdf" else None
+    )
+
+    result = pdf_tooling(temp_dir)
+
+    assert result.status == WARN
+    assert "found qpdf (/usr/local/bin/qpdf)" in result.detail
+    assert "missing pdfinfo (brew install poppler)" in result.detail
+    assert "gs (brew install ghostscript)" in result.detail
+
+
+def test_pdf_tooling_never_raises_when_detection_fails(temp_dir, monkeypatch):
+    def explode(name: str) -> str | None:
+        if name in ENGINES:
+            raise OSError("which is broken")
+        return None
+
+    monkeypatch.setattr(shutil, "which", explode)
+
+    result = pdf_tooling(temp_dir)
+
+    assert result.status == WARN
+    assert "OSError: which is broken" in result.detail
 
 
 def test_doctor_cli_is_reachable(temp_dir, monkeypatch):

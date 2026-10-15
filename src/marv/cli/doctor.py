@@ -9,6 +9,7 @@ point is to make the failure self-diagnosing, not to fix it.
 from __future__ import annotations
 
 import asyncio
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ from marv.llm.marv_mlx_cli import resolve_marv_mlx_binary
 from marv.llm.mlx_models import discover_model_ids, running_model_id
 from marv.llm.model_download import hub_model_present, is_hub_repo_id, resolve_download_interpreter
 from marv.llm.server_process import listener_pid, server_reachable
+from marv.tools.pdf import ENGINES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -228,6 +230,35 @@ def _check_output_budget(config: Config) -> CheckResult:
     )
 
 
+def _check_pdf_tooling() -> CheckResult:
+    """The optional PDF engines the `pdf` tool drives, and where each one lives."""
+    try:
+        found: list[str] = []
+        missing: list[str] = []
+        for binary, package in ENGINES.items():
+            path = shutil.which(binary)
+            if path is None:
+                missing.append(f"{binary} (brew install {package})")
+            else:
+                found.append(f"{binary} ({path})")
+    except Exception as exc:  # noqa: BLE001 - doctor never raises
+        return CheckResult("pdf tooling", WARN, f"{type(exc).__name__}: {exc}")
+
+    if not missing:
+        return CheckResult("pdf tooling", OK, "all engines found: " + ", ".join(found))
+    if not found:
+        return CheckResult(
+            "pdf tooling",
+            WARN,
+            "none found; the pdf tool needs " + ", ".join(missing),
+        )
+    return CheckResult(
+        "pdf tooling",
+        WARN,
+        "found " + ", ".join(found) + "; missing " + ", ".join(missing),
+    )
+
+
 def run_checks(
     config: Config,
     provider: LLMProvider,
@@ -242,6 +273,7 @@ def run_checks(
         _check_runtime_cli(config),
         _check_output_budget(config),
         _check_download_tooling(),
+        _check_pdf_tooling(),
         _check_extensions(config),
     ]
     if extension_loader is not None and config.extensions:
