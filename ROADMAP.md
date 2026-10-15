@@ -4,7 +4,7 @@ Candidate work, roughly ordered by value. Sizes are rough: **S** < 1h,
 **M** ~ half a day, **L** > a day. Nothing here is committed scope — it is a
 menu, not a promise.
 
-Current state: `v0.111.0`. `VERSION` is authoritative — this line is a snapshot.
+Current state: `v1.121.0`. `VERSION` is authoritative — this line is a snapshot.
 See [`CHANGELOG.md`](CHANGELOG.md) for what shipped. The **coworking direction**
 below is the long-range track (its measurement step and the harness-side
 "predictable wait" work are shipped); the P2/P3 sections after it are the
