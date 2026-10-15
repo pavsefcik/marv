@@ -89,6 +89,19 @@ Variations:
 - Inspect a file without opening it:
   `sips -g pixelWidth -g pixelHeight -g format -g space "file.heic"`.
 
+## Prefer the built-in `pdf` tool first
+
+marv ships a `pdf` tool that drives poppler/Ghostscript/qpdf with install
+hints, never overwrites the input, and verifies what it wrote:
+
+- `info` (metadata), `text` (extraction), `render` (pages → PNG/JPEG),
+  `compress`, `merge`, `split`, `rotate`.
+- Missing engines are named with their install command; `marv doctor` reports
+  which of `pdfinfo`/`pdftotext`/`pdftoppm`/`gs`/`qpdf` are present.
+
+Use the `pdf` tool for PDF work. The shell recipes below are the fallback for
+chaining commands by hand, or when you want to inspect exactly what will run.
+
 ## PDF → images
 
 Prefer `pdftoppm` (poppler) — it does every page at a chosen DPI:
