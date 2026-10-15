@@ -869,6 +869,8 @@ async def test_tui_runner_session_commands_report_errors_for_bad_targets(temp_di
 
 @pytest.mark.asyncio
 async def test_tui_runner_help_new_and_clear_commands_update_runtime_state(temp_dir):
+    from marv.tui.input import BUILTIN_COMMANDS
+
     config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
     app = AgentApp(config, provider=LLMProviderFake([]))
 
@@ -878,7 +880,16 @@ async def test_tui_runner_help_new_and_clear_commands_update_runtime_state(temp_
         initial_session_id = app.agent.session.metadata.id
 
         await submit(app, pilot, "/help ")
-        assert any("ctrl+c quit" in msg for msg in system_messages(app))
+        help_block = next(msg for msg in system_messages(app) if "Commands:" in msg)
+        # Help explains rather than lists: one line per command, with a reason
+        # to reach for it, and no command the prompt accepts left out.
+        assert help_block.startswith("-- Commands:\n")
+        assert help_block.count("\n") >= len(BUILTIN_COMMANDS)
+        assert all(command in help_block for command in BUILTIN_COMMANDS)
+        assert "clear the chat view" in help_block
+        assert "summarise old context on demand" in help_block
+        assert "exit marv" in help_block
+        assert "ctrl+c quit" in help_block
 
         await submit(app, pilot, "/new ")
         new_session_id = app.agent.session.metadata.id

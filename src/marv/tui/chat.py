@@ -15,6 +15,8 @@ from marv.llm.latency import wait_advice
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from textual.selection import Selection
+
     from marv.llm.latency import WaitEstimate
     from marv.runtime.message import ToolCall
 
@@ -30,6 +32,17 @@ TOOL_RUNNING_GLYPH = "\u25cb"  # ring, replaced by the spinner frames below
 def truncate(text: str, limit: int, message: str = "...") -> str:
     """Truncate text to limit, appending message if truncated."""
     return text if len(text) <= limit else text[:limit] + f"\n{message}"
+
+
+def format_system_message(text: str) -> str:
+    """Mark up a system message, which may be several lines (``/help``).
+
+    The ``--`` marker belongs to the first line only, so continuation lines are
+    indented under it and the block still reads as one system row instead of as
+    unprefixed prose.
+    """
+    head, *rest = text.splitlines() or [""]
+    return "\n".join([f"-- {head}", *(f"   {line}" if line.strip() else "" for line in rest)])
 
 
 def format_tokens(tokens: int) -> str:
@@ -93,11 +106,22 @@ class MessageWidget(Static):
         self._content = content
         self._update_content()
 
-    def on_click(self) -> None:
-        """Click-to-copy: terminal mouse selection is captured by the TUI."""
-        if self.role == "assistant" and self._content.strip():
-            self.app.copy_to_clipboard(self._content)
-            self.app.notify("Copied message to clipboard")
+    # Deliberately no ``on_click``: a click on an answer must not hijack the
+    # clipboard, or dragging over a paragraph to copy one section would copy
+    # the whole reply instead. Selection is Textual's, and ``ctrl+o`` remains
+    # the whole-reply fallback.
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        """Extract the selected text from the lines this widget renders.
+
+        Textual's default only understands ``Text``/``Content`` visuals, and an
+        answer is a Rich ``Markdown`` renderable, so without this the answer
+        could not be selected at all. The rendered lines are the text the user
+        dragged over, wrapping and padding included; the trailing padding of a
+        line is dropped so copying a whole line does not copy the blanks.
+        """
+        lines = [self.render_line(y).text.rstrip() for y in range(self.size.height)]
+        return selection.extract("\n".join(lines)), "\n"
 
     def text_content(self) -> str:
         """Return the current plain text content."""
@@ -538,7 +562,11 @@ class StatusNotice(Static):
             glyph = self.FRAMES[self._frame]
             self.update(f"[$primary]{glyph}[/] [$text-disabled]{escape(self._text)}[/]")
         else:
-            self.update(f"[$text-disabled]-- {escape(self._text)}[/]")
+            # A settled notice is an outcome, so it carries the tool-success
+            # glyph rather than the ``--`` of a historical system message.
+            self.update(
+                f"[$success]{TOOL_SUCCESS_GLYPH}[/] [dim $text-disabled]{escape(self._text)}[/]"
+            )
 
     def text_content(self) -> str:
         """The plain text of the notice, spinner glyph excluded."""
@@ -583,8 +611,8 @@ class ChatView(ScrollableContainer):
         return None
 
     def add_system_message(self, text: str) -> None:
-        """Add a permanent system message."""
-        self.mount(Static(f"-- {text}", classes="message-system"))
+        """Add a permanent system message (single line or a block)."""
+        self.mount(Static(format_system_message(text), classes="message-system"))
         self.scroll_to_bottom()
 
     def set_notice(self, text: str, *, spinner: bool = False) -> None:

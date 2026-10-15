@@ -83,6 +83,10 @@ agents, with the marv family's shapes borrowed from marv-mlx:
 - transparent chrome, with thin rules rather than filled panels or per-message
   borders
 - the marv wordmark is `▌▌ marv`, and the prompt line carries the same `▌` mark
+- a user prompt carries a `$primary` stripe down its left edge, so a prompt is
+  never mistaken for an answer. The stripe is a border, not a background: the
+  ANSI themes' `$surface`/`$panel` are transparent, and only a colour drawn for
+  the message itself can mark it there
 - menus use `───` separators before their escape hatches (a custom id, back to
   top), dim indented descriptions, and a `↑/↓ nav · enter select · esc back`
   footer
@@ -94,7 +98,8 @@ agents, with the marv family's shapes borrowed from marv-mlx:
   and it tracks the live model and thinking selection
 - transient status (model switch, server warm-up, readiness) is one *replacing*
   row rather than a stack of near-duplicate system messages; the warm-up row
-  leads with a braille spinner
+  leads with a braille spinner, and a settled row leads with `✓` (the `--`
+  marker is reserved for permanent, historical system messages)
 
 Styling uses theme variables (`$primary`, `$text-muted`, …) so a theme swap
 needs no CSS change. Note that Textual resolves theme variables in CSS and in
@@ -161,7 +166,7 @@ or `AGENT_BYE=off`.
   built-in Textual theme)
 - `/chat` — plain chat mode: every tool is off and no schema is sent
 - `/tools` — back to tool-calling mode (the default)
-- `/help` — quick help
+- `/help` — the command list, one line per command with what it does
 - `/quit` — exit
 
 Chat mode is agent state, not session state: `/new` keeps the current choice,
@@ -224,7 +229,12 @@ It should not own:
 
 ## Keybindings
 
-- `Ctrl+C` — quit
+- `Ctrl+C` — copy the mouse selection, or quit when nothing is selected
 - `Ctrl+L` — clear
-- `Ctrl+O` — copy the most recent assistant reply to the clipboard (OSC 52)
+- `Ctrl+O` — copy the most recent assistant reply to the clipboard (OSC 52),
+  the whole-reply fallback for a reply too long to select by hand
 - `Esc` — cancel or refocus input
+
+Dragging with the mouse selects text anywhere in the chat, including inside an
+answer. A click no longer copies the whole message, because that made copying
+one paragraph of a long reply impossible.

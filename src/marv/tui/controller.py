@@ -18,6 +18,35 @@ from marv.tui.status import StatusBar
 if TYPE_CHECKING:
     from marv.tui.app import AgentApp
 
+#: Help shown by ``/help``: every command the controller accepts, each with the
+#: one thing it does. Built as a block because a pipe-separated list cannot be
+#: read -- the commands are the cheap part, knowing which to reach for is not.
+HELP_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("/clear", "clear the chat view"),
+    ("/new", "start a fresh session"),
+    ("/load", "load a saved session (alias /resume)"),
+    ("/fork", "branch this session from a message"),
+    ("/tree", "move the session leaf to an earlier entry"),
+    ("/context", "inspect the context window"),
+    ("/compact", "summarise old context on demand"),
+    ("/model", "choose a model / thinking level"),
+    ("/theme", "choose a theme"),
+    ("/chat", "plain chat; tools off"),
+    ("/tools", "enable tools"),
+    ("/help", "show this help"),
+    ("/quit", "exit marv"),
+)
+
+HELP_TEXT = "\n".join(
+    [
+        "Commands:",
+        *(f"  {command:<12}{description}" for command, description in HELP_COMMANDS),
+        # The keys are bound outside the prompt, so they belong in the help
+        # block rather than in the command list above it.
+        "Keys: ctrl+c quit \u00b7 ctrl+l clear \u00b7 ctrl+o copy reply",
+    ]
+)
+
 
 class TUIController:
     """Own delivery commands and runtime control actions for the TUI."""
@@ -190,11 +219,7 @@ class TUIController:
             self._app.exit()
             return True
         if prompt.lower() == "/help":
-            chat.add_system_message(
-                "ctrl+c quit | ctrl+l clear | /clear | /new | /load | /resume | /fork "
-                "| /tree | /context | /compact | /help | /model | /theme | /chat | /tools "
-                "| /quit"
-            )
+            chat.add_system_message(HELP_TEXT)
             return True
         if prompt.lower() == "/compact":
             await self.action_compact()

@@ -56,12 +56,16 @@ Screen {
 
 /* ---------------------------------------------------------------- messages */
 
+/* A prompt is not an answer. The stripe has to be a border rather than a
+   background: under the ANSI themes $surface/$panel resolve to transparent, so
+   only an opaque colour drawn for the message itself marks it. */
 .message-user {
     color: $foreground;
     background: transparent;
     margin: 1 0 0 0;
-    padding: 0;
+    padding: 0 0 0 1;
     width: 100%;
+    border-left: tall $primary;
 }
 
 .message-assistant {
@@ -167,7 +171,9 @@ Screen {
     border-bottom: solid $primary;
 }
 
-#prompt-inner > .text-area--placeholder {
+/* A descendant selector, not `>`: component classes are not DOM children, so a
+   child combinator never matches and TextArea's own default ($text 40%) wins. */
+#prompt-inner .text-area--placeholder {
     color: $text-disabled;
 }
 

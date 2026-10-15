@@ -1,11 +1,11 @@
 
   ▌▌ marv <version>  ·  gpt-4o
-  Type /help for commands · shift+enter newline · ctrl+o copy reply
+  Type /help for commands · escape interrupt · ctrl+l clear · ctrl+o copy
+  reply
 
     ✓ Reading  src/parser.py
     def parse(source):
         return source
-
 
 
 
