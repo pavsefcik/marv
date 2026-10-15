@@ -92,14 +92,21 @@ def parse_attachment_paths(text: str, cwd: Path) -> tuple[str, list[Path]]:
 
 
 def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
-    """Drop the given character spans and normalise the leftover whitespace."""
+    """Drop the given character spans, tidying only horizontal whitespace.
+
+    Newlines are preserved: a multi-line prompt must not be flattened just
+    because an image was attached to it.
+    """
     out: list[str] = []
     cursor = 0
     for start, end in spans:
         out.append(text[cursor:start])
+        out.append(" ")
         cursor = end
     out.append(text[cursor:])
-    return " ".join("".join(out).split())
+    cleaned = re.sub(r"[^\S\n]+", " ", "".join(out))
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    return cleaned.strip()
 
 
 def load_attachment(path: Path) -> ImageAttachment:

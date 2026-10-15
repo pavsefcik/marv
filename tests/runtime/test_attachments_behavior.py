@@ -77,6 +77,14 @@ class TestParseAttachmentPaths:
         assert paths == []
         assert text == "  just   text  "
 
+    def test_multiline_prompt_keeps_its_newlines(self, temp_dir):
+        image = write_png(temp_dir / "shot.png")
+
+        text, paths = parse_attachment_paths(f"look at @{image}\nand explain", temp_dir)
+
+        assert paths == [image]
+        assert text == "look at\nand explain"
+
 
 class TestLoadAttachment:
     """Tests for reading image and PDF attachments."""
