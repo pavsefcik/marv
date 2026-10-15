@@ -17,6 +17,12 @@ from marv.config import Config
 from marv.llm.factory import create_provider
 from marv.runtime.agent import READ_ONLY_TOOLS
 from marv.runtime.approval import ApprovalMode
+from marv.runtime.attachments import (
+    IMAGE_SUFFIXES,
+    AttachmentError,
+    load_attachments,
+    parse_attachment_paths,
+)
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
 
@@ -27,6 +33,7 @@ from .sessions import fork_command, sessions_command, tree_command
 if TYPE_CHECKING:
     from marv.llm.local_server import StoppedServer
     from marv.llm.provider import LLMProvider
+    from marv.runtime.message import ImageAttachment
     from marv.tui.app import AgentApp
 
 HELP_TEXT = """marv — local-first AI assistant TUI for Apple Silicon
@@ -182,6 +189,13 @@ def run(
         list[Path] | None,
         typer.Option("-e", "--extension", help="Extension file(s) to load"),
     ] = None,
+    attach: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--attach",
+            help="Image or PDF to send with the prompt (page 1 only); may be repeated",
+        ),
+    ] = None,
     resume: Annotated[bool, typer.Option("-r", "--resume", help="Resume the last session")] = False,
     session: Annotated[
         Path | None, typer.Option("-s", "--session", help="Session file to load")
@@ -278,10 +292,46 @@ def run(
 
     if prompt or headless:
         assert prompt is not None  # guaranteed by the headless guard above
+        prompt, attachments = _resolve_attachments(prompt, attach)
         _ensure_model_downloaded(llm_provider=llm_provider)
-        asyncio.run(_run_headless(config, prompt, loaded_session, llm_provider))
+        asyncio.run(
+            _run_headless(config, prompt, loaded_session, llm_provider, attachments=attachments)
+        )
     else:
         _run_tui(config, loaded_session, llm_provider)
+
+
+def _resolve_attachments(
+    prompt: str,
+    flags: list[Path] | None,
+) -> tuple[str, list[ImageAttachment] | None]:
+    """Gather headless attachments from ``--attach`` flags and `@path` tokens.
+
+    Returns the prompt with `@path` tokens removed alongside the loaded images.
+    Flag paths are used as given; `@path` tokens are resolved against the cwd by
+    :func:`parse_attachment_paths`, which also leaves anything that is not an
+    image or PDF in the prompt. Attachments are ``None`` when there is nothing
+    to attach, so an ordinary run keeps its plain-text path.
+    """
+    cleaned, token_paths = parse_attachment_paths(prompt, Path.cwd())
+    explicit = list(flags or [])
+    unsupported = [
+        p for p in explicit if p.suffix.lower().lstrip(".") not in IMAGE_SUFFIXES | {"pdf"}
+    ]
+    if unsupported:
+        names = ", ".join(str(p) for p in unsupported)
+        typer.echo(f"Error: not an image or PDF: {names}", err=True)
+        raise typer.Exit(1)
+
+    paths = [*explicit, *token_paths]
+    if not paths:
+        return cleaned, None
+
+    try:
+        return cleaned, load_attachments(paths)
+    except AttachmentError as err:
+        typer.echo(f"Error: {err}", err=True)
+        raise typer.Exit(1) from err
 
 
 def _ensure_model_downloaded(llm_provider: LLMProvider) -> None:

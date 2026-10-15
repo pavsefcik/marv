@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from asyncio import Event
     from collections.abc import Callable
 
+    from marv.runtime.message import ImageAttachment
     from marv.runtime.session import Session
     from marv.tui.app import AgentApp
     from marv.tui.compose import TUILoaders
@@ -105,7 +106,7 @@ class TUIRenderer:
             if msg.role.value == "system":
                 continue
             if msg.role.value == "user":
-                chat.add_user_message(msg.content)
+                chat.add_user_message(msg.content, msg.attachments)
                 continue
             if msg.role.value == "assistant":
                 if msg.thinking and msg.thinking.text:
@@ -167,14 +168,21 @@ class TUIRenderer:
         chat.add_skill_invocation(skill.name, content, str(skill.readme_path), args or None)
         return True
 
-    async def render_agent_run(self, prompt: str, cancel_event: Event | None) -> None:
+    async def render_agent_run(
+        self,
+        prompt: str,
+        cancel_event: Event | None,
+        attachments: list[ImageAttachment] | None = None,
+    ) -> None:
         """Stream agent output into chat widgets."""
         chat = self._app.query_one("#chat-view", ChatView)
         in_thinking = False
         self._speed.reset()
 
         try:
-            async for chunk in self._app.agent.run(prompt, cancel_event=cancel_event):
+            async for chunk in self._app.agent.run(
+                prompt, cancel_event=cancel_event, attachments=attachments
+            ):
                 if cancel_event and cancel_event.is_set():
                     break
 

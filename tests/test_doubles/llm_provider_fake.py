@@ -32,6 +32,7 @@ class LLMProviderFake(LLMProvider):
         model: str = "fake-model",
         available_models: list[str] | None = None,
         thinking_supported: bool = True,
+        vision_supported: bool = True,
     ) -> None:
         self._scripts = list(scripts or [])
         self.stream_calls: list[dict[str, Any]] = []
@@ -40,6 +41,7 @@ class LLMProviderFake(LLMProvider):
         self.model = model
         self._available_models = list(available_models or [model])
         self._thinking_supported = thinking_supported
+        self._vision_supported = vision_supported
 
     def set_model(self, model: str) -> None:
         from marv.llm.models import is_model_valid_for_provider
@@ -85,6 +87,9 @@ class LLMProviderFake(LLMProvider):
 
     def supports_thinking(self) -> bool:
         return self._thinking_supported
+
+    def supports_vision(self) -> bool:
+        return self._vision_supported
 
     async def list_models(self) -> list[str]:
         return list(self._available_models)

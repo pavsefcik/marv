@@ -676,10 +676,15 @@ class OpenAICompatibleProvider:
 
     def count_messages_tokens(self, messages: list[Message]) -> int:
         """Count tokens in a list of messages."""
+        from marv.runtime.message import IMAGE_TOKEN_COST
+
         total = 0
         for msg in messages:
             total += 4  # Overhead per message
             total += self.count_tokens(msg.content)
+            # An attachment is not text: the base64 payload would be counted as
+            # if it were, so charge the documented per-image budget instead.
+            total += IMAGE_TOKEN_COST * len(msg.attachments)
             if msg.tool_calls:
                 for tc in msg.tool_calls:
                     total += self.count_tokens(tc.name)
@@ -714,6 +719,14 @@ class OpenAICompatibleProvider:
 
         # Fallback: check if model name suggests reasoning support
         return supports_reasoning(self.model, provider="openai-compat")
+
+    def supports_vision(self) -> bool:
+        """Whether this endpoint accepts image content parts.
+
+        The local MLX runtime (``mlx_vlm``) is vision-capable, and generic
+        OpenAI-compatible vision endpoints accept the same ``image_url`` parts.
+        """
+        return True
 
     async def close(self) -> None:
         """Close the HTTP client."""

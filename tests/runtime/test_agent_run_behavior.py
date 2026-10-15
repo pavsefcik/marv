@@ -20,6 +20,7 @@ from marv.llm.events import (
     ThinkingStartEvent,
 )
 from marv.runtime.agent import Agent
+from marv.runtime.message import ImageAttachment
 from marv.tools import BaseTool
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 from tests.test_doubles.llm_stream_builders import (
@@ -373,3 +374,58 @@ async def test_agent_prefers_a_provider_reported_schema_cost(temp_dir):
 
     assert agent.latency.last_sample is not None
     assert agent.latency.last_sample.schema_tokens == 1234
+
+
+@pytest.mark.asyncio
+async def test_agent_warns_and_drops_attachments_when_vision_is_unsupported(temp_dir):
+    """A text-only backend still runs the turn, minus the images."""
+    config = Config(
+        provider="openai",
+        model="fake-model",
+        api_key="test",
+        session_dir=temp_dir,
+        context_max_tokens=2048,
+        max_output_tokens=2048,
+    )
+    fake = LLMProviderFake([make_text_events("ok")], name="fake", vision_supported=False)
+    agent = Agent(config.to_agent_settings(), fake)
+    attachment = ImageAttachment(media_type="image/png", data="QUJD", name="shot.png")
+
+    chunks = []
+    async for chunk in agent.run("look", attachments=[attachment]):
+        chunks.append(chunk)
+
+    warnings = [
+        c.payload for c in chunks if c.type == "message" and c.payload.role.value == "system"
+    ]
+    assert warnings
+    assert "does not support image input" in warnings[0].content
+
+    user_message = next(m for m in agent.session.messages if m.role.value == "user")
+    assert user_message.attachments == []
+    assert user_message.content == "look"
+    assert fake.stream_calls
+
+
+@pytest.mark.asyncio
+async def test_agent_keeps_attachments_when_vision_is_supported(temp_dir):
+    """A vision-capable provider receives the image with the user message."""
+    config = Config(
+        provider="openai",
+        model="fake-model",
+        api_key="test",
+        session_dir=temp_dir,
+        context_max_tokens=2048,
+        max_output_tokens=2048,
+    )
+    fake = LLMProviderFake([make_text_events("ok")], name="fake")
+    agent = Agent(config.to_agent_settings(), fake)
+    attachment = ImageAttachment(media_type="image/png", data="QUJD", name="shot.png")
+
+    async for _ in agent.run("look", attachments=[attachment]):
+        pass
+
+    user_message = next(m for m in agent.session.messages if m.role.value == "user")
+    assert user_message.attachments == [attachment]
+    sent = fake.stream_calls[0]["messages"]
+    assert any(m.attachments for m in sent)

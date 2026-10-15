@@ -23,10 +23,25 @@ straight back into input mode; `Esc` cancels.
 ## Features
 
 - Streaming assistant output + tool calls
+- `@path` image/PDF attachment (see [Attaching files](#attaching-files))
 - Skill and slash‑command autocomplete
 - Status bar showing model + token usage + generation speed + thinking level + RAM usage + extension status
 - Model selector, model-download picker with live progress, and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
+
+### Attaching files
+
+Type `@path` (or `@"path with spaces"`) in the prompt to attach an image (`png`,
+`jpg`, `gif`, `webp`, `bmp`, `heic`, `tif`, …) or a PDF (page 1 only) to the turn.
+The token is removed from the prompt and the attached image is streamed to a
+vision-capable model as a content part; the chat shows a dim `[image: name]`
+line under the prompt, and replaying a session restores it. A token that is not
+an existing image or PDF is left as ordinary text. When the loaded model cannot
+accept images (e.g. `apple-fm`), the turn runs text-only with a system warning.
+
+A PDF needs a renderer: `pdftoppm` (poppler, `brew install poppler`) or macOS
+`sips`. When neither is present the attachment fails with a message naming the
+install command, and only page 1 is ever attached.
 
 ### Legible waits
 

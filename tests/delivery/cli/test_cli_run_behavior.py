@@ -114,7 +114,7 @@ def test_cli_run_propagates_approval_mode_to_config(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.approval_mode)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -174,7 +174,7 @@ def test_cli_headless_run_does_not_touch_the_catalog(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return object()
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         calls.append("headless")
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -202,7 +202,7 @@ def test_cli_run_propagates_theme_to_config(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.theme)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -225,7 +225,7 @@ def test_cli_run_keeps_the_configured_theme_without_the_flag(temp_dir, monkeypat
     def fake_create_provider(config):
         return object()
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.theme)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -359,7 +359,7 @@ def test_cli_run_dispatches_to_tui_when_not_headless(temp_dir, monkeypatch):
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         calls["headless"] += 1
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -390,7 +390,7 @@ def test_bare_cli_dispatches_to_tui_when_no_subcommand(temp_dir, monkeypatch):
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         calls["headless"] += 1
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -420,7 +420,7 @@ def test_cli_run_dispatches_to_headless_when_prompt_or_headless_flag(temp_dir, m
     def fake_run_tui(config, session, llm_provider):
         calls["tui"] += 1
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         assert session is None
         assert llm_provider is sentinel_provider
         seen_prompt.append(prompt)
@@ -483,7 +483,7 @@ def test_cli_run_propagates_server_manager_to_config(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return object()
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.server_manager)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -568,7 +568,7 @@ def run_headless_with_provider(
     def fake_create_provider(config):
         return provider
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(prompt)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -619,7 +619,7 @@ def test_cli_does_not_touch_providers_without_a_hub(temp_dir, monkeypatch):
         name = "openai"
         model = "gpt-5.4"
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         return None
 
     monkeypatch.setattr(cli, "_create_llm_provider", lambda config: CloudProvider())
@@ -643,7 +643,7 @@ def test_cli_run_propagates_read_only_flag_to_config(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.read_only)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -666,7 +666,7 @@ def test_cli_run_read_only_defaults_off(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return object()
 
-    async def fake_run_headless(config, prompt, session, llm_provider):
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
         seen.append(config.read_only)
 
     monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
@@ -689,3 +689,49 @@ def test_config_show_reports_the_read_only_tool_set(temp_dir, monkeypatch):
     assert result.exit_code == 0
     assert "Read Only: True" in result.output
     assert "read" in result.output
+
+
+def test_cli_headless_passes_attach_and_at_path_images_to_the_agent(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    (project / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n prompt image")
+    (project / "clip.png").write_bytes(b"\x89PNG\r\n\x1a\n flag image")
+
+    seen: dict[str, object] = {}
+
+    def fake_create_provider(config):
+        return object()
+
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
+        seen["prompt"] = prompt
+        seen["attachments"] = [a.name for a in attachments or []]
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setattr(cli, "_ensure_model_downloaded", lambda llm_provider: None)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["run", "--headless", "@shot.png describe this", "--attach", "clip.png"],
+    )
+
+    assert result.exit_code == 0
+    assert seen["prompt"] == "describe this"
+    assert seen["attachments"] == ["clip.png", "shot.png"]
+
+
+def test_cli_headless_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    (project / "notes.txt").write_text("hi")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: object())
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["run", "--headless", "hi", "--attach", "notes.txt"])
+
+    assert result.exit_code == 1
+    assert "not an image or PDF" in result.stderr

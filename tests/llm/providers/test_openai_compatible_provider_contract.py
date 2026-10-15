@@ -17,7 +17,7 @@ from marv.llm.openai_compat import (
     resolve_read_timeout,
 )
 from marv.llm.retry import RetryConfig, _is_retriable
-from marv.runtime.message import Message
+from marv.runtime.message import IMAGE_TOKEN_COST, ImageAttachment, Message
 
 
 def _sse_payload(events: list[dict[str, object]]) -> bytes:
@@ -606,3 +606,26 @@ async def test_openai_compatible_cancellation_interrupts_a_silent_prefill() -> N
 
     assert silent.closed.is_set()
     assert result[0].stop_reason == "aborted"
+
+
+def test_payload_carries_image_parts_and_counts_their_cost() -> None:
+    """An attached image reaches the wire as a part and is budgeted, not tokenized."""
+    provider = OpenAICompatibleProvider(
+        base_url="http://127.0.0.1:11500",
+        api_key="",
+        model="some/vision-model",
+    )
+    attachment = ImageAttachment(media_type="image/png", data="QUJD", name="shot.png")
+    message = Message.user("what is this", attachments=[attachment])
+
+    payload = provider._build_payload([message], None, None)
+
+    parts = payload["messages"][0]["content"]
+    assert parts[0] == {"type": "text", "text": "what is this"}
+    assert parts[1]["image_url"]["url"] == "data:image/png;base64,QUJD"
+
+    text_only = provider.count_messages_tokens([Message.user("what is this")])
+    with_image = provider.count_messages_tokens([message])
+    assert with_image - text_only == IMAGE_TOKEN_COST
+
+    assert provider.supports_vision() is True

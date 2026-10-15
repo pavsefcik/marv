@@ -1915,3 +1915,48 @@ async def test_tui_status_bar_shows_ttft_after_a_turn(temp_dir):
         # The prompt cost behind that TTFT is shown too, so a regression is
         # attributable without opening a debugger.
         assert "t" in text
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_attaches_an_image_from_an_at_path(temp_dir):
+    """`@path` sends the image and the chat shows it, not the token."""
+    image = temp_dir / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n fake image")
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake([make_text_events("a picture")], name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, f"hello @{image}")
+        await wait_for_idle(app, pilot)
+
+        user_messages = [m for m in app.agent.session.messages if m.role.value == "user"]
+        assert user_messages
+        assert user_messages[-1].content == "hello"
+        assert [a.name for a in user_messages[-1].attachments] == ["shot.png"]
+
+        chat = app.query_one("#chat-view")
+        widgets = [w for w in chat.query(MessageWidget) if w.role == "user"]
+        assert widgets
+        assert "[image: shot.png]" in render_text(widgets[-1])
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_leaves_a_missing_at_path_in_the_prompt(temp_dir):
+    """A token that is not an existing image stays ordinary prompt text."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake([make_text_events("ok")], name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "hello @missing.png")
+        await wait_for_idle(app, pilot)
+
+        user_messages = [m for m in app.agent.session.messages if m.role.value == "user"]
+        assert user_messages
+        assert user_messages[-1].content == "hello @missing.png"
+        assert user_messages[-1].attachments == []

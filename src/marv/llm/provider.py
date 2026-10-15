@@ -75,6 +75,14 @@ class LLMProvider(Protocol):
         """
         ...
 
+    def supports_vision(self) -> bool:
+        """Check if the current model accepts image input.
+
+        Returns:
+            True if images can be attached, False otherwise
+        """
+        ...
+
     async def list_models(self) -> list[str]:
         """List available models from the provider.
 

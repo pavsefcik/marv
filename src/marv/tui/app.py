@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from textual import on
@@ -16,6 +17,7 @@ from textual.widgets import Static
 
 from marv import __version__
 from marv.config.state import remember_latency_fit, remember_theme
+from marv.runtime.attachments import AttachmentError, load_attachments, parse_attachment_paths
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
@@ -38,7 +40,6 @@ from marv.tui.theme_panel import ThemePanel
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from textual.timer import Timer
 
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from marv.llm.model_download import DownloadHandle
     from marv.llm.provider import LLMProvider
     from marv.runtime.agent import Agent
+    from marv.runtime.message import ImageAttachment
     from marv.runtime.session import Session
     from marv.tui.panel import DockPanel
     from marv.updates import InstallOutcome, Release
@@ -397,9 +399,21 @@ class AgentApp(App[None]):
         if await self._controller.handle_prompt_command(prompt):
             return
 
+        # Pull `@path` attachments out of the prompt before it is rendered, so
+        # the chat shows the image rather than the token. Loading (and any PDF
+        # render) shells out, so it runs off the event loop.
+        prompt, attachment_paths = parse_attachment_paths(prompt, Path.cwd())
+        attachments: list[ImageAttachment] = []
+        if attachment_paths:
+            try:
+                attachments = await asyncio.to_thread(load_attachments, attachment_paths)
+            except AttachmentError as exc:
+                chat.add_system_message(f"attachment error: {exc}")
+                return
+
         # Add user message (special handling for $skill-name)
         if not self._renderer.render_skill_invocation(prompt):
-            chat.add_user_message(prompt)
+            chat.add_user_message(prompt, attachments)
 
         if not self.agent.model_name:
             chat.add_system_message("no model selected — pick one with the picker (or /model <id>)")
@@ -417,7 +431,7 @@ class AgentApp(App[None]):
         chat.start_assistant_message(thinking=thinking_enabled)
 
         # Run agent in background
-        self._run_agent(prompt)
+        self._run_agent(prompt, attachments)
 
     def _restore_input_focus(self, _result: object = None) -> None:
         """Focus the prompt input once no menu is up."""
@@ -603,10 +617,10 @@ class AgentApp(App[None]):
         shown = f"auto ({self.theme})" if name == AUTO_THEME else name
         self.notify(f"theme: {shown}")
 
-    def _run_agent(self, prompt: str) -> None:
+    def _run_agent(self, prompt: str, attachments: list[ImageAttachment] | None = None) -> None:
         """Run the agent loop."""
         self._cancel_event = asyncio.Event()
-        asyncio.create_task(self._agent_worker(prompt))
+        asyncio.create_task(self._agent_worker(prompt, attachments))
 
     def start_model(self) -> asyncio.Task[None] | None:
         """Kick off (or return) the single-flight task that starts the selected
@@ -642,7 +656,11 @@ class AgentApp(App[None]):
             chat.end_assistant_message()
             chat.add_system_message(f"error starting model: {exc}")
 
-    async def _agent_worker(self, prompt: str) -> None:
+    async def _agent_worker(
+        self,
+        prompt: str,
+        attachments: list[ImageAttachment] | None = None,
+    ) -> None:
         """Execute agent and handle events."""
         try:
             # A model switch lands here, so the calibration follows the model.
@@ -652,7 +670,7 @@ class AgentApp(App[None]):
             task = self.start_model()
             if task is not None:
                 await task
-            await self._renderer.render_agent_run(prompt, self._cancel_event)
+            await self._renderer.render_agent_run(prompt, self._cancel_event, attachments)
         finally:
             self.remember_latency_fit()
             self.is_processing = False

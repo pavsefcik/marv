@@ -50,6 +50,14 @@ renders runtime chunks directly to stdout:
 - tool activity
 - system messages
 
+Images can be sent to a vision-capable model with a repeatable `--attach PATH`
+flag and/or `@path` tokens in the prompt (images, or page 1 of a PDF; the same
+`@path` syntax the TUI uses). The `@path` token is stripped from the prompt and
+anything that is not an existing image or PDF is left as text. Attachments fail
+with a clear error — naming the install command for a PDF — when a file is
+missing, too large, or no PDF renderer is present (see
+[`tui.md`](tui.md#attaching-files)).
+
 This is a thin delivery shell over the same runtime. It is useful for one-shot
 prompts, scripting, CI or automation flows, and low-ceremony debugging.
 

@@ -10,6 +10,7 @@ from marv.runtime.chunk import MessageChunk, TextDeltaChunk, ThinkingDeltaChunk,
 if TYPE_CHECKING:
     from marv.config import Config
     from marv.llm.provider import LLMProvider
+    from marv.runtime.message import ImageAttachment
     from marv.runtime.session import Session
 
 
@@ -18,6 +19,7 @@ async def run_headless(
     prompt: str,
     session: Session | None,
     llm_provider: LLMProvider,
+    attachments: list[ImageAttachment] | None = None,
 ) -> None:
     """Run a single prompt without TUI."""
     from marv.extensions.host import ExtensionHost
@@ -42,7 +44,7 @@ async def run_headless(
 
     in_thinking = False
     try:
-        async for chunk in agent.run(prompt):
+        async for chunk in agent.run(prompt, attachments=attachments):
             match chunk:
                 case ThinkingDeltaChunk():
                     if not in_thinking:

@@ -4,7 +4,7 @@ Providers implement a shared interface (`LLMProvider`) that exposes:
 
 - `stream(messages, tools, options)` — event‑based streaming
 - `count_tokens`, `count_messages_tokens` — for context budgeting
-- `supports_thinking()` — capability detection
+- `supports_thinking()`, `supports_vision()` — capability detection
 - `list_models()` — model discovery
 
 ## Provider bootstrap
@@ -99,6 +99,30 @@ how to launch their server and how to tell it is ready.
   - factory-time validation in `create_provider(...)`
   - runtime validation in provider `set_model(...)`
 - Invalid combinations fail with a `ValueError`.
+
+## Image input (multimodal)
+
+`Message.content` stays a `str`; images ride alongside it in
+`Message.attachments` (`ImageAttachment`: `media_type`, base64 `data`, `name`,
+`byte_size`). `Message.to_api_dict()` serializes a user message that carries
+attachments as OpenAI content parts — an optional text part followed by one
+`image_url` part per image (`data:<media_type>;base64,<data>`) — and keeps every
+other role a plain string, so attachments on a non-user message are ignored.
+
+- **Capability.** `supports_vision()` is part of the provider protocol.
+  `OpenAICompatibleProvider` returns `True` (the local `mlx_vlm` runtime is
+  vision-capable, and generic OpenAI-compatible vision endpoints accept the same
+  parts); `apple-fm` overrides it to `False` because `fm serve` is chat-only.
+- **Budget.** `count_messages_tokens` charges `IMAGE_TOKEN_COST` (a rough
+  per-image figure in `runtime/message.py`) per attachment instead of tokenizing
+  the base64 data, which is not text and would dominate the count.
+- **Graceful degrade.** `Agent.run(..., attachments=...)` drops the images and
+  emits a system chunk when the active provider reports no vision support, so a
+  text-only backend still answers the turn.
+
+Loading attachments (reading an image, rendering page 1 of a PDF) lives in
+`src/marv/runtime/attachments.py`; see [`tui.md`](tui.md#attaching-files) and
+[`cli.md`](cli.md#headless-mode) for the delivery surfaces.
 
 ## Streaming events
 

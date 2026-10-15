@@ -1,6 +1,10 @@
 """Behavior tests for message and tool call objects."""
 
-from marv.runtime.message import Message, Role, ToolCall
+from marv.runtime.message import ImageAttachment, Message, Role, ToolCall
+
+
+def make_image(name: str = "shot.png") -> ImageAttachment:
+    return ImageAttachment(media_type="image/png", data="QUJD", name=name, byte_size=3)
 
 
 class TestToolCall:
@@ -89,6 +93,41 @@ class TestMessage:
 
         assert api_dict["role"] == "user"
         assert api_dict["content"] == "Hello"
+
+    def test_user_with_attachment_emits_content_parts(self):
+        """A user message with an image becomes text + image_url parts."""
+        msg = Message.user("describe this", attachments=[make_image()])
+        api_dict = msg.to_api_dict()
+
+        assert api_dict["content"] == [
+            {"type": "text", "text": "describe this"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,QUJD"},
+            },
+        ]
+
+    def test_user_with_only_an_attachment_omits_the_text_part(self):
+        """Empty text means the content is the image part alone."""
+        msg = Message.user("", attachments=[make_image()])
+        api_dict = msg.to_api_dict()
+
+        assert api_dict["content"] == [
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,QUJD"},
+            }
+        ]
+
+    def test_user_without_attachment_stays_a_string(self):
+        """The no-attachment path is unchanged."""
+        msg = Message.user("Hello")
+        assert msg.to_api_dict()["content"] == "Hello"
+
+    def test_assistant_ignores_attachments(self):
+        """Attachments are a user-message concern; other roles stay text."""
+        msg = Message(role=Role.ASSISTANT, content="ok", attachments=[make_image()])
+        assert msg.to_api_dict()["content"] == "ok"
 
     def test_to_api_dict_with_tool_calls(self):
         """Test converting message with tool calls to API format."""

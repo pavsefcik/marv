@@ -8,6 +8,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+#: Rough token budget charged for one image attachment when estimating a
+#: prompt. The vision encoder turns an image into a fixed grid of patches, so
+#: the real cost is only loosely tied to the byte size; this constant exists so
+#: a screenshot cannot make the context budget look free.
+IMAGE_TOKEN_COST = 1024
+
 
 class Role(StrEnum):
     """Message roles following OpenAI convention."""
@@ -16,6 +22,15 @@ class Role(StrEnum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     TOOL = "tool"
+
+
+class ImageAttachment(BaseModel):
+    """An image (or rendered PDF page) carried with a user message."""
+
+    media_type: str  # "image/png", "image/jpeg", ...
+    data: str  # base64, no `data:` prefix
+    name: str = ""  # original filename, for display
+    byte_size: int = 0
 
 
 class ToolCall(BaseModel):
@@ -89,6 +104,9 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None  # For tool results
     thinking: ThinkingContent | None = None  # For reasoning/thinking content
+    #: Images sent alongside a user message. Only user messages carry them;
+    #: other roles ignore the field when serializing.
+    attachments: list[ImageAttachment] = Field(default_factory=list)
     provider_metadata: dict[str, Any] | None = None  # Provider-specific artifacts
     provider: str | None = None  # Provider name for assistant messages
     model: str | None = None  # Model ID for assistant messages
@@ -96,8 +114,27 @@ class Message(BaseModel):
     parent_id: str | None = None  # For branching
 
     def to_api_dict(self) -> dict[str, Any]:
-        """Convert to OpenAI API format."""
-        d: dict[str, Any] = {"role": self.role.value, "content": self.content}
+        """Convert to OpenAI API format.
+
+        A user message with attachments becomes a list of content parts (text
+        then one `image_url` per image); every other message stays a plain
+        string, so attachments on a non-user role are ignored.
+        """
+        content: str | list[dict[str, Any]] = self.content
+        if self.role is Role.USER and self.attachments:
+            parts: list[dict[str, Any]] = []
+            if self.content:
+                parts.append({"type": "text", "text": self.content})
+            parts.extend(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{a.media_type};base64,{a.data}"},
+                }
+                for a in self.attachments
+            )
+            content = parts
+
+        d: dict[str, Any] = {"role": self.role.value, "content": content}
 
         if self.tool_calls:
             d["tool_calls"] = [tc.to_api_dict() for tc in self.tool_calls]
@@ -108,9 +145,9 @@ class Message(BaseModel):
         return d
 
     @classmethod
-    def user(cls, content: str) -> Self:
-        """Create a user message."""
-        return cls(role=Role.USER, content=content)
+    def user(cls, content: str, attachments: list[ImageAttachment] | None = None) -> Self:
+        """Create a user message, optionally carrying image attachments."""
+        return cls(role=Role.USER, content=content, attachments=attachments or [])
 
     @classmethod
     def assistant(

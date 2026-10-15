@@ -81,3 +81,7 @@ class AppleFMProvider(LocalServerProvider):
     def supports_thinking(self) -> bool:
         """Apple's Foundation Model does not expose a reasoning trace."""
         return False
+
+    def supports_vision(self) -> bool:
+        """`fm serve` is chat-only: no function calling and no image input."""
+        return False

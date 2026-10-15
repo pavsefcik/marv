@@ -54,6 +54,7 @@ from marv.runtime.hooks import (
     ToolResultData,
 )
 from marv.runtime.message import (
+    ImageAttachment,
     Message,
     Role,
     ThinkingContent,
@@ -659,19 +660,26 @@ class Agent:
         )
 
     async def run(
-        self, user_input: str, cancel_event: asyncio.Event | None = None
+        self,
+        user_input: str,
+        cancel_event: asyncio.Event | None = None,
+        attachments: list[ImageAttachment] | None = None,
     ) -> AsyncIterator[AgentChunk]:
         """Process user input and yield typed output chunks.
 
         Args:
             user_input: The user's message
             cancel_event: Optional event to signal cancellation
+            attachments: Optional images (and rendered PDF pages) to send with
+                the user message. Ignored, with a warning, when the provider
+                cannot accept image input.
 
         Yields:
             AgentChunk values for streamed text/thinking, tool calls/results,
             and system messages
         """
         pending_inputs: deque[str] = deque([user_input])
+        pending_attachments = list(attachments or [])
 
         # Each run reports its own latency profile.
         self._latency.reset()
@@ -680,6 +688,8 @@ class Agent:
             while pending_inputs:
                 run_control.reset()
                 current_input = pending_inputs.popleft()
+                current_attachments = pending_attachments
+                pending_attachments = []
 
                 input_resolution = await self._hooks.resolve_input(current_input)
                 if input_resolution and input_resolution.block:
@@ -690,7 +700,25 @@ class Agent:
                     current_input = input_resolution.text
 
                 current_input, _command, _used_template = self._expand_template(current_input)
-                self.session.append(Message(role=Role.USER, content=current_input))
+
+                # A text-only backend (apple-fm) cannot accept image parts; run
+                # the turn anyway with the text alone rather than refusing it.
+                if current_attachments and not self.provider.supports_vision():
+                    warning = Message.system(
+                        "this model does not support image input — "
+                        f"attached {len(current_attachments)} image(s) were dropped"
+                    )
+                    await self._emit(MessageEndEvent(message=warning))
+                    yield MessageChunk(payload=warning)
+                    current_attachments = []
+
+                self.session.append(
+                    Message(
+                        role=Role.USER,
+                        content=current_input,
+                        attachments=current_attachments,
+                    )
+                )
 
                 if self._context.needs_compaction(self.session.messages):
                     original_tokens = self._context.current_tokens(self.session.messages)

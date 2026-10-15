@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from textual.selection import Selection
 
     from marv.llm.latency import WaitEstimate
-    from marv.runtime.message import ToolCall
+    from marv.runtime.message import ImageAttachment, ToolCall
 
 # Truncate long outputs for display
 MAX_DISPLAY_CHARS = 5000
@@ -89,10 +89,17 @@ def parse_skill_block(text: str) -> tuple[str, str, str, str] | None:
 class MessageWidget(Static):
     """Chat message with markdown rendering."""
 
-    def __init__(self, role: str, content: str = "", **kwargs: Any) -> None:
+    def __init__(
+        self,
+        role: str,
+        content: str = "",
+        attachments: list[ImageAttachment] | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.role = role
         self._content = content
+        self.attachments = list(attachments or [])
         self.add_class(f"message-{role}")
 
     def on_mount(self) -> None:
@@ -130,13 +137,21 @@ class MessageWidget(Static):
     def _update_content(self) -> None:
         if self.role == "user":
             # User input is escaped: it must never be parsed as Textual markup.
-            self.update(f"[bold $primary]> [/][bold]{escape(self._content)}[/]")
+            lines = [f"[bold $primary]> [/][bold]{escape(self._content)}[/]"]
+            lines.extend(self._attachment_lines())
+            self.update("\n".join(lines))
         else:
             try:
                 self.update(Markdown(self._content))
             except Exception:
                 # Fallback to plain text if Markdown fails
                 self.update(Text(self._content))
+
+    def _attachment_lines(self) -> list[str]:
+        """Dim markers naming each attached image, one per line."""
+        return [
+            f"[$text-muted]  [image: {escape(a.name or a.media_type)}][/]" for a in self.attachments
+        ]
 
 
 class ToolWidget(Static):
@@ -636,18 +651,22 @@ class ChatView(ScrollableContainer):
             self._notice.remove()
             self._notice = None
 
-    def add_user_message(self, content: str) -> None:
-        """Add a user message."""
+    def add_user_message(
+        self,
+        content: str,
+        attachments: list[ImageAttachment] | None = None,
+    ) -> None:
+        """Add a user message, optionally with attached images."""
         parsed = parse_skill_block(content)
         if parsed:
             name, location, body, remaining = parsed
             self.mount(SkillInvocationWidget(name, body, location))
-            if remaining:
-                self.mount(MessageWidget("user", remaining))
+            if remaining or attachments:
+                self.mount(MessageWidget("user", remaining, attachments))
             self.scroll_to_bottom()
             return
 
-        self.mount(MessageWidget("user", content))
+        self.mount(MessageWidget("user", content, attachments))
         self.scroll_to_bottom()
 
     def add_skill_invocation(
