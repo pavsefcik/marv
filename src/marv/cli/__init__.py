@@ -29,17 +29,52 @@ if TYPE_CHECKING:
     from marv.llm.provider import LLMProvider
     from marv.tui.app import AgentApp
 
+HELP_TEXT = """marv — local-first AI assistant TUI for Apple Silicon
+
+Usage:
+  marv                              interactive TUI (no subcommand)
+  marv run [PROMPT] [OPTIONS]       start the agent (TUI, or --headless for one-shot)
+  marv bench [OPTIONS]              measure time-to-first-token for the active model
+  marv doctor [--json]              diagnose config, hub, server and extensions
+  marv sessions [-n N]              list recent sessions
+  marv fork [OPTIONS]               fork a session from a message and start the TUI
+  marv tree [OPTIONS]               move the session leaf to an entry and start the TUI
+  marv config-show                  show the resolved configuration
+  marv mlx <args>...                pass through to the marv-mlx runtime CLI
+  marv update [--check] [--force]   check GitHub and reinstall the latest release
+  marv uninstall [OPTIONS]          remove marv and optional components
+  marv version | --version          print the marv version
+  marv help | -h | --help           show this help
+
+Run `marv <command> --help` for the full option list of a command."""
+
+# ``add_help_option=False`` drops Click's built-in ``--help`` on the root group
+# only, so the eager flag below can own ``-h``/``--help``. Subcommands keep
+# Typer's generated option help (``marv run --help`` and friends).
 app = typer.Typer(
     name="marv",
     help="A local-first coding agent TUI",
     no_args_is_help=False,
+    add_help_option=False,
 )
+
+
+def _print_help() -> None:
+    """Print the curated top-level help text."""
+    typer.echo(HELP_TEXT)
 
 
 def _version_callback(value: bool) -> None:
     """Print the version and exit when ``--version`` is passed."""
     if value:
         typer.echo(f"marv {__version__}")
+        raise typer.Exit()
+
+
+def _help_callback(value: bool) -> None:
+    """Print the curated help and exit when ``--help``/``-h`` is passed."""
+    if value:
+        _print_help()
         raise typer.Exit()
 
 
@@ -55,10 +90,32 @@ def _root(
             help="Show the version and exit.",
         ),
     ] = False,
+    help_: Annotated[
+        bool,
+        typer.Option(
+            "--help",
+            "-h",
+            callback=_help_callback,
+            is_eager=True,
+            help="Show this help and exit.",
+        ),
+    ] = False,
 ) -> None:
     """With no subcommand, launch the interactive TUI."""
     if ctx.invoked_subcommand is None:
         run()
+
+
+@app.command()
+def version() -> None:
+    """Print the marv version."""
+    typer.echo(f"marv {__version__}")
+
+
+@app.command()
+def help() -> None:
+    """Show the curated top-level help."""
+    _print_help()
 
 
 def main() -> None:

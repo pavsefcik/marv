@@ -80,6 +80,20 @@ The boundary between the two shells is:
 - CLI owns command parsing, headless stdout delivery, and session utility commands
 - TUI owns interactive chat delivery, model/session controls, and extension-hosted UI
 
+## Help and version
+
+`marv help` prints a curated, marv-mlx-style overview: the tagline, one usage
+line per command, and the pointer to the full option lists. `marv -h` and
+`marv --help` print exactly the same text — the root group's built-in help
+option is replaced by an eager flag that prints the curated text — so there is
+one help surface to keep accurate.
+
+`marv version` prints `marv <version>`, the same line the eager `marv --version`
+flag prints.
+
+The curated list is the index, not the manual: `marv <command> --help` still
+renders that command's full Typer option help (for example `marv run --help`).
+
 ## Session commands
 
 The CLI also exposes delivery-level session utilities:
