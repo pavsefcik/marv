@@ -177,6 +177,13 @@ Screen {
     color: $text-disabled;
 }
 
+/* The ANSI themes resolve `$text-disabled` to `ansi_default 50%`, and ANSI has
+   no alpha, so it collapses to the terminal's default foreground (white). A
+   prompt must be grey there too, so use the ever-present bright black. */
+#prompt-inner:ansi .text-area--placeholder {
+    color: ansi_bright_black;
+}
+
 #suggestions {
     overlay: screen;
     height: auto;

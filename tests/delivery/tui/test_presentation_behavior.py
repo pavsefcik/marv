@@ -348,6 +348,21 @@ async def test_prompt_placeholder_uses_the_themes_disabled_text_colour(temp_dir)
 
 
 @pytest.mark.asyncio
+async def test_prompt_placeholder_is_grey_under_the_ansi_themes(temp_dir):
+    """ANSI has no alpha, so `$text-disabled` collapses to the terminal's
+    default foreground (white). The `:ansi` rule pins the placeholder to bright
+    black, so a prompt is still visibly grey on a stock terminal."""
+    app = make_app(temp_dir, theme="ansi-dark")
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        prompt = app.query_one("#prompt-inner", TextArea)
+
+        placeholder = prompt.get_component_styles("text-area--placeholder").color
+        assert placeholder.ansi == 8  # ansi_bright_black
+
+
+@pytest.mark.asyncio
 async def test_transient_status_notice_leads_with_the_success_glyph(temp_dir):
     """A settled notice is an outcome (`✓ model ready`), not a `--` line."""
     app = make_app(temp_dir)

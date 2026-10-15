@@ -25,4 +25,6 @@
 - **The prompt placeholder is muted.** The placeholder rule never applied — a `>`
   combinator cannot match a Textual component class — so the selector is a
   descendant selector and the theme's disabled text colour now wins over
-  TextArea's own default.
+  TextArea's own default. Under the ANSI themes, where `$text-disabled` has no
+  alpha and collapses to the terminal's default (white) foreground, an `:ansi`
+  rule pins the placeholder to bright black so it is visibly grey there too.
