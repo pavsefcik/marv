@@ -41,5 +41,6 @@ If there are name collisions, higher‑priority sources win.
 
 - [`examples/skills/repo-scan/SKILL.md`](../examples/skills/repo-scan/SKILL.md) — fast codebase orientation.
 - [`examples/skills/safe-refactor/SKILL.md`](../examples/skills/safe-refactor/SKILL.md) — refactor checklist.
+- [`examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md) — office document/image playbook ([`docs/office.md`](office.md)).
 
 Note: the default loader looks in `.marv/skills` and `~/.marv/skills`, so copy any of these into one of those locations or add `skills_dirs` in config to load them.

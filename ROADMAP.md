@@ -31,6 +31,13 @@ artifacts* — a draft, a table, a set of files, a decision. The work is
 read-mostly, interruption-heavy, and mostly questions. Code is one artifact
 type among several (documents, images, data).
 
+**marv is an office local AI assistant.** Documents and images are the
+bread-and-butter work — a folder of JPEGs to resize, a PDF to rasterise or
+compress, a contract to read — and repo editing is the specialised case, not the
+centre. The framing below is unchanged by that; what it adds is a near-term menu
+that needs no new dependency, listed under [Office capabilities
+(near-term)](#office-capabilities-near-term).
+
 The consequence for architecture is not a rewrite. It is three changes of
 emphasis:
 
@@ -44,6 +51,41 @@ emphasis:
 
 Everything below is ordered so that **measurement precedes optimisation** and
 **cheap wins precede new capability**.
+
+### Office capabilities (near-term)
+
+Status: **direction, not committed scope** — like everything here, a menu. The
+point of this list is that the office framing has a concrete, dependency-free
+start on macOS today, and that the PDF half of it has one clean decision in
+front of it.
+
+| Item | Size | Gate |
+| --- | --- | --- |
+| **Batch image resize / convert.** `sips` is built into macOS and does max-dimension resizing, exact sizing, format conversion (JPEG/PNG/HEIC/TIFF) and JPEG quality. Playbook: [`examples/skills/office-files/SKILL.md`](examples/skills/office-files/SKILL.md); recipes and verified behaviour: [`docs/office.md`](docs/office.md). | S | **none** — runs through the existing `bash` tool |
+| **PDF rasterise (pages → PNG/JPEG).** `pdftoppm` (poppler) renders every page at a chosen DPI. The built-in fallback is honest but partial: `sips` and `qlmanage -t` each render **page 1 only**, and there is no built-in page count. | S–M | **which PDF engine is supported** (below) |
+| **PDF compress.** Ghostscript (`gs -sDEVICE=pdfwrite -dPDFSETTINGS=/ebook`) or the lossless `qpdf --linearize`. macOS ships no PDF compressor, so nothing may silently substitute. | S–M | same engine decision |
+| **PDF vector ops (merge / split / rotate / text-extract).** `qpdf --empty --pages …`, `qpdf --rotate`, `pdftotext`. | M | same engine decision |
+| **Multimodal input** — send an image or a PDF page to the vision-capable local model. This is the existing **C4.1 — Multimodal input** item above; not duplicated here. | L | see C4.1 |
+| **Artifacts as output** — the deliverable is a file in an `outputs/` workspace with a rendered panel, not a wall of chat. This is the existing **C4.3 — Artifacts as first-class output** item above. | L | see C4.3 |
+
+**The decision the PDF items share: how does a PDF engine arrive?** Two honest
+options, and the first is recommended:
+
+1. **An external tool the user installs** (`brew install poppler ghostscript qpdf`),
+   detected at runtime with `command -v`, a clear "not installed → here is the
+   command" message, and no degradation to a weaker tool. This keeps the
+   no-new-runtime-dependency rule and the local-first install story intact, and
+   it is the route the `office-files` skill already takes.
+2. **A Python dependency inside marv** (`pypdf` for vector ops, `pdf2image` —
+   which needs poppler anyway — for rasterising). This makes the capability
+   unconditional but adds packaging weight and still ships a native dependency.
+
+Either way the image half is already unblocked: `sips` is present on every
+macOS install, and no image library is needed for resize/convert.
+
+**Deliberately not proposed here:** bundling a PDF engine, adding Pillow, or a
+new runtime tool/config key. This list is playbook-first — `docs/office.md` plus
+the `office-files` skill are the surface until a PDF engine is chosen.
 
 ### Latency budget: where the time actually goes
 

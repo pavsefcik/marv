@@ -6,6 +6,7 @@ Start here if you’re new to the project.
 - [`cli.md`](cli.md) — delivery surfaces: Typer command surface, TUI boundary, headless mode, and session utilities
 - [`tools.md`](tools.md) — tool schemas, registry, and built‑ins
 - [`skills.md`](skills.md) — skill format, validation rules, search paths
+- [`office.md`](office.md) — office work: built-in macOS image/document recipes, PDF limits, and the dependency decision
 - [`prompts.md`](prompts.md) — template format and argument expansion
 - [`extensions.md`](extensions.md) — extension host API, lifecycle hooks, and UI surface
 - [`llm.md`](llm.md) — provider adapters and streaming events
@@ -34,6 +35,7 @@ make can-release
 - Skills:
   - [`examples/skills/repo-scan/SKILL.md`](../examples/skills/repo-scan/SKILL.md)
   - [`examples/skills/safe-refactor/SKILL.md`](../examples/skills/safe-refactor/SKILL.md)
+  - [`examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md)
 - Prompt templates:
   - [`examples/prompts/quick-plan.md`](../examples/prompts/quick-plan.md)
   - [`examples/prompts/review.md`](../examples/prompts/review.md)
