@@ -19,11 +19,13 @@ Instructions and references...
 
 ## Discovery order (low → high priority)
 
-1. `~/.marv/skills/`
-2. Any `skills_dirs` configured in `config.toml`
-3. `.marv/skills/` (project‑local)
+1. `src/marv/skills/builtin/` (ships with marv)
+2. `~/.marv/skills/`
+3. Any `skills_dirs` configured in `config.toml`
+4. `.marv/skills/` (project‑local)
 
-If there are name collisions, higher‑priority sources win.
+If there are name collisions, higher‑priority sources win, so a user, config or
+project skill always overrides a builtin one with the same name.
 
 ## Validation rules
 
@@ -41,6 +43,8 @@ If there are name collisions, higher‑priority sources win.
 
 - [`examples/skills/repo-scan/SKILL.md`](../examples/skills/repo-scan/SKILL.md) — fast codebase orientation.
 - [`examples/skills/safe-refactor/SKILL.md`](../examples/skills/safe-refactor/SKILL.md) — refactor checklist.
-- [`examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md) — office document/image playbook ([`docs/office.md`](office.md)).
 
-Note: the default loader looks in `.marv/skills` and `~/.marv/skills`, so copy any of these into one of those locations or add `skills_dirs` in config to load them.
+marv also ships one skill: [`src/marv/skills/builtin/office-files/SKILL.md`](../src/marv/skills/builtin/office-files/SKILL.md) — the office document/image playbook ([`docs/office.md`](office.md)), available as `$office-files` with no setup.
+
+The example skills are not loaded by default: copy one into `~/.marv/skills` or
+`.marv/skills`, or add its directory to `skills_dirs` in config.

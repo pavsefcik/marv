@@ -35,7 +35,7 @@ make can-release
 - Skills:
   - [`examples/skills/repo-scan/SKILL.md`](../examples/skills/repo-scan/SKILL.md)
   - [`examples/skills/safe-refactor/SKILL.md`](../examples/skills/safe-refactor/SKILL.md)
-  - [`examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md)
+  - [`src/marv/skills/builtin/office-files/SKILL.md`](../src/marv/skills/builtin/office-files/SKILL.md) (ships with marv, loaded automatically)
 - Prompt templates:
   - [`examples/prompts/quick-plan.md`](../examples/prompts/quick-plan.md)
   - [`examples/prompts/review.md`](../examples/prompts/review.md)

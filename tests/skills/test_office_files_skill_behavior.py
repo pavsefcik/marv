@@ -1,4 +1,4 @@
-"""Behaviour tests for the shipped example skills."""
+"""Behaviour tests for the office-files skill that ships with marv."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from marv.skills.loader import SkillLoader
 from marv.skills.skill import Skill, SkillSource
 from marv.skills.validator import validate_skill
 
-EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples" / "skills"
-OFFICE_FILES_DIR = EXAMPLES_DIR / "office-files"
+BUILTIN_DIR = Path(__file__).resolve().parents[2] / "src" / "marv" / "skills" / "builtin"
+OFFICE_FILES_DIR = BUILTIN_DIR / "office-files"
 
 
 def test_office_files_skill_loads_with_name_matching_directory():
-    loader = SkillLoader([(EXAMPLES_DIR, SkillSource.PATH)])
+    loader = SkillLoader([(BUILTIN_DIR, SkillSource.BUILTIN)])
 
     skill = loader.get("office-files")
 
@@ -28,7 +28,7 @@ def test_office_files_skill_loads_with_name_matching_directory():
 
 
 def test_office_files_skill_passes_validator():
-    skill = Skill.from_markdown(OFFICE_FILES_DIR / "SKILL.md", source=SkillSource.PATH)
+    skill = Skill.from_markdown(OFFICE_FILES_DIR / "SKILL.md", source=SkillSource.BUILTIN)
 
     result = validate_skill(skill.name, skill.description, skill.readme_path)
 
@@ -36,7 +36,7 @@ def test_office_files_skill_passes_validator():
 
 
 def test_office_files_skill_checks_for_pdf_engines_before_using_them():
-    skill = Skill.from_markdown(OFFICE_FILES_DIR / "SKILL.md", source=SkillSource.PATH)
+    skill = Skill.from_markdown(OFFICE_FILES_DIR / "SKILL.md", source=SkillSource.BUILTIN)
 
     assert "command -v" in skill.readme_content
     for binary in ("sips", "pdftoppm", "gs", "qpdf"):

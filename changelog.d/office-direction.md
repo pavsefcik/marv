@@ -12,8 +12,8 @@
   the existing `bash` tool, and an honest account of what is missing — `sips`
   and `qlmanage` render **page 1 only**, there is no built-in PDF compressor or
   page count — with the dependency decision the PDF items need.
-- **`office-files` skill** (`examples/skills/office-files/SKILL.md`). A
-  ready-to-copy playbook for office file work: discover available binaries
+- **`office-files` skill** (`src/marv/skills/builtin/office-files/SKILL.md`). A
+  playbook for office file work: discover available binaries
   first, batch image resize/convert with `sips`, PDF → images preferring
   `pdftoppm` and stating the single-page `sips` fallback honestly, PDF
   compression via `gs`/`qpdf` or an explicit "install one" message, and safety

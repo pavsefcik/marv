@@ -19,9 +19,10 @@ local-LLM coworking"); the short version is:
 
 This does not need a rewrite, a new tool, or a new dependency to start. `sips`,
 `qlmanage`, `textutil` and `mdls` are on every macOS install, and the existing
-[`bash`](tools.md) tool can drive them. The playbook lives in
-[`../examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md)
-(invoke with `$office-files`).
+[`bash`](tools.md) tool can drive them. The playbook ships with marv at
+[`../src/marv/skills/builtin/office-files/SKILL.md`](../src/marv/skills/builtin/office-files/SKILL.md)
+and is loaded automatically: invoke it with `$office-files` in any session, no
+copy needed.
 
 ## Check what is installed
 
@@ -131,6 +132,6 @@ refuse to substitute something lossier, and print the install command.
 
 - [`../ROADMAP.md`](../ROADMAP.md) — "Direction — local-LLM coworking" and its
   "Office capabilities (near-term)" list with sizes and gates.
-- [`../examples/skills/office-files/SKILL.md`](../examples/skills/office-files/SKILL.md)
-  — the runnable playbook (`$office-files`).
+- [`../src/marv/skills/builtin/office-files/SKILL.md`](../src/marv/skills/builtin/office-files/SKILL.md)
+  — the runnable playbook (`$office-files`), discovered automatically.
 - [`tools.md`](tools.md) — the `bash` tool these recipes run through.

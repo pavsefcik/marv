@@ -50,19 +50,24 @@ class SkillLoadDiagnostics:
 
 # Priority order for source resolution (higher index = higher priority)
 SOURCE_PRIORITY = {
-    SkillSource.USER: 0,
-    SkillSource.PATH: 1,
-    SkillSource.PROJECT: 2,  # Project skills override all others
+    SkillSource.BUILTIN: 0,  # Shipped with marv; every other source overrides it
+    SkillSource.USER: 1,
+    SkillSource.PATH: 2,
+    SkillSource.PROJECT: 3,  # Project skills override all others
 }
+
+#: Skills that ship inside the package, next to this module.
+BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "builtin"
 
 
 class SkillLoader:
     """Loads skills from directories with validation and collision detection.
 
     Default search directories (in priority order, lowest to highest):
-    1. ~/.marv/skills/ (user skills)
-    2. Custom paths from config
-    3. .marv/skills/ (project skills - highest priority)
+    1. The package's builtin/ directory (skills that ship with marv)
+    2. ~/.marv/skills/ (user skills)
+    3. Custom paths from config
+    4. .marv/skills/ (project skills - highest priority)
     """
 
     __slots__ = ("_dirs", "_skills", "_diagnostics")
@@ -84,6 +89,7 @@ class SkillLoader:
         """Create a loader with default directories.
 
         Default directories:
+        - The packaged builtin/ directory (always present)
         - ~/.marv/skills/ (user skills)
         - .marv/skills/ (project skills)
         - Any extra_dirs provided (custom paths)
@@ -98,7 +104,11 @@ class SkillLoader:
         dirs: list[tuple[Path, SkillSource]] = []
         cwd = cwd or Path.cwd()
 
-        # User skills (lowest priority)
+        # Packaged skills (lowest priority): a user, config, or project skill
+        # with the same name overrides them.
+        dirs.append((BUILTIN_SKILLS_DIR, SkillSource.BUILTIN))
+
+        # User skills
         user_dir = Path.home() / ".marv" / "skills"
         if user_dir.exists():
             dirs.append((user_dir, SkillSource.USER))

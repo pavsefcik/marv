@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class SkillSource(StrEnum):
     """Source location of a skill."""
 
+    BUILTIN = "builtin"  # Skills shipped inside the package
     USER = "user"  # ~/.marv/skills/
     PROJECT = "project"  # .marv/skills/
     PATH = "path"  # Custom path from config

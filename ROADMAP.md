@@ -61,7 +61,7 @@ front of it.
 
 | Item | Size | Gate |
 | --- | --- | --- |
-| **Batch image resize / convert.** `sips` is built into macOS and does max-dimension resizing, exact sizing, format conversion (JPEG/PNG/HEIC/TIFF) and JPEG quality. Playbook: [`examples/skills/office-files/SKILL.md`](examples/skills/office-files/SKILL.md); recipes and verified behaviour: [`docs/office.md`](docs/office.md). | S | **none** — runs through the existing `bash` tool |
+| **Batch image resize / convert.** `sips` is built into macOS and does max-dimension resizing, exact sizing, format conversion (JPEG/PNG/HEIC/TIFF) and JPEG quality. Playbook: [`src/marv/skills/builtin/office-files/SKILL.md`](src/marv/skills/builtin/office-files/SKILL.md) (shipped and loaded automatically); recipes and verified behaviour: [`docs/office.md`](docs/office.md). | S | **none** — runs through the existing `bash` tool |
 | **PDF rasterise (pages → PNG/JPEG).** `pdftoppm` (poppler) renders every page at a chosen DPI. The built-in fallback is honest but partial: `sips` and `qlmanage -t` each render **page 1 only**, and there is no built-in page count. | S–M | **which PDF engine is supported** (below) |
 | **PDF compress.** Ghostscript (`gs -sDEVICE=pdfwrite -dPDFSETTINGS=/ebook`) or the lossless `qpdf --linearize`. macOS ships no PDF compressor, so nothing may silently substitute. | S–M | same engine decision |
 | **PDF vector ops (merge / split / rotate / text-extract).** `qpdf --empty --pages …`, `qpdf --rotate`, `pdftotext`. | M | same engine decision |
