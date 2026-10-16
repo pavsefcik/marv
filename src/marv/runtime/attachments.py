@@ -4,6 +4,10 @@ No Python image or PDF library is involved: an image is read and base64-encoded
 directly, and a PDF page is rendered by an external engine that the machine may
 already have (`pdftoppm` from poppler, or macOS `sips`) — with a clear "install
 this" error when neither is present.
+
+An image above `DOWNSCALE_THRESHOLD_BYTES` is scaled to `MAX_IMAGE_DIMENSION`
+on the long edge with `sips` before it is encoded, best-effort: without `sips`
+the original bytes are sent.
 """
 
 from __future__ import annotations
@@ -44,6 +48,14 @@ PDF_RENDER_DPI = 150
 #: Largest decoded attachment accepted, in bytes. Over this the base64 payload
 #: grows by another third and would crowd out the text context.
 MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
+#: Long edge a large image is scaled to, in pixels. The common vision-encoder
+#: working size: anything bigger is discarded by the model anyway.
+MAX_IMAGE_DIMENSION = 1568
+
+#: Only images above this size are re-encoded, so an already-small screenshot is
+#: passed through untouched rather than paying a lossy round trip.
+DOWNSCALE_THRESHOLD_BYTES = 1_500_000
 
 #: `@path` or `@"path with spaces"`, matched anywhere in a prompt.
 _ATTACHMENT_TOKEN = re.compile(r'@(?:"(?P<quoted>[^"]+)"|(?P<bare>\S+))')
@@ -123,9 +135,14 @@ def load_attachment(path: Path) -> ImageAttachment:
     if suffix == "pdf":
         data = _render_pdf_first_page(path)
         media_type = "image/png"
+        downscale_suffix = "png"
     else:
         data = path.read_bytes()
         media_type = _media_type_for(suffix)
+        downscale_suffix = suffix
+
+    if len(data) > DOWNSCALE_THRESHOLD_BYTES:
+        data = _downscale_image(data, downscale_suffix)
 
     if len(data) > MAX_ATTACHMENT_BYTES:
         megabytes = MAX_ATTACHMENT_BYTES / (1024 * 1024)
@@ -154,6 +171,30 @@ def _media_type_for(suffix: str) -> str:
         return _FALLBACK_MEDIA_TYPES[suffix]
     guessed, _ = mimetypes.guess_type(f"file.{suffix}")
     return guessed or "application/octet-stream"
+
+
+def _downscale_image(data: bytes, suffix: str) -> bytes:
+    """Scale an oversize image down to `MAX_IMAGE_DIMENSION` on the long edge.
+
+    Best-effort by design: a machine without `sips`, and any engine or file
+    failure, returns ``data`` unchanged. Losing the attachment to a resize
+    attempt would be worse than sending the bytes as they are.
+    """
+    sips = shutil.which("sips")
+    if sips is None:
+        return data
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / f"image.{suffix}"
+            out = Path(tmp) / f"image-scaled.{suffix}"
+            source.write_bytes(data)
+            _run_engine([sips, "-Z", str(MAX_IMAGE_DIMENSION), "--out", str(out), str(source)])
+            if not out.is_file():
+                return data
+            return out.read_bytes()
+    except Exception:  # noqa: BLE001 - downscaling is best-effort
+        return data
 
 
 def _render_pdf_first_page(path: Path) -> bytes:

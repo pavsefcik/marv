@@ -16,11 +16,17 @@ from marv.runtime.attachments import (
 )
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n fake image bytes"
+DOWNSCALED_BYTES = b"\x89PNG\r\n\x1a\n downscaled image bytes"
 
 
 def write_png(path: Path, data: bytes = PNG_BYTES) -> Path:
     path.write_bytes(data)
     return path
+
+
+def oversize_png() -> bytes:
+    """Image bytes over the downscale threshold but under the hard cap."""
+    return PNG_BYTES + b"\0" * attachments_module.DOWNSCALE_THRESHOLD_BYTES
 
 
 class TestParseAttachmentPaths:
@@ -125,6 +131,73 @@ class TestLoadAttachment:
         loaded = load_attachments([first, second])
 
         assert [a.name for a in loaded] == ["a.png", "b.png"]
+
+
+class TestDownscaleLargeImages:
+    """Tests for shrinking an oversize image at attach time."""
+
+    def test_large_image_is_downscaled_and_encoded(self, temp_dir, monkeypatch):
+        original = oversize_png()
+        image = write_png(temp_dir / "photo.png", original)
+        monkeypatch.setattr(attachments_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+        engine_input: list[bytes] = []
+        engine_argv: list[list[str]] = []
+
+        def fake_run(argv: list[str]) -> None:
+            engine_argv.append(argv)
+            engine_input.append(Path(argv[-1]).read_bytes())
+            Path(argv[argv.index("--out") + 1]).write_bytes(DOWNSCALED_BYTES)
+
+        monkeypatch.setattr(attachments_module, "_run_engine", fake_run)
+
+        attachment = load_attachment(image)
+
+        assert attachment.media_type == "image/png"
+        assert attachment.byte_size == len(DOWNSCALED_BYTES)
+        assert base64.b64decode(attachment.data) == DOWNSCALED_BYTES
+        assert engine_input == [original]
+        assert engine_argv[0][:3] == ["/usr/bin/sips", "-Z", "1568"]
+        assert "--out" in engine_argv[0]
+
+    def test_small_image_is_not_downscaled(self, temp_dir, monkeypatch):
+        image = write_png(temp_dir / "shot.png")
+        monkeypatch.setattr(attachments_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+        engine_calls: list[list[str]] = []
+        monkeypatch.setattr(attachments_module, "_run_engine", engine_calls.append)
+
+        attachment = load_attachment(image)
+
+        assert engine_calls == []
+        assert attachment.byte_size == len(PNG_BYTES)
+        assert base64.b64decode(attachment.data) == PNG_BYTES
+
+    def test_missing_sips_keeps_the_original_bytes(self, temp_dir, monkeypatch):
+        original = oversize_png()
+        image = write_png(temp_dir / "photo.png", original)
+        monkeypatch.setattr(attachments_module.shutil, "which", lambda name: None)
+        engine_calls: list[list[str]] = []
+        monkeypatch.setattr(attachments_module, "_run_engine", engine_calls.append)
+
+        attachment = load_attachment(image)
+
+        assert engine_calls == []
+        assert attachment.byte_size == len(original)
+        assert base64.b64decode(attachment.data) == original
+
+    def test_engine_failure_keeps_the_original_bytes(self, temp_dir, monkeypatch):
+        original = oversize_png()
+        image = write_png(temp_dir / "photo.png", original)
+        monkeypatch.setattr(attachments_module.shutil, "which", lambda name: "/usr/bin/sips")
+
+        def failing_run(argv: list[str]) -> None:
+            raise AttachmentError("sips failed: nope")
+
+        monkeypatch.setattr(attachments_module, "_run_engine", failing_run)
+
+        attachment = load_attachment(image)
+
+        assert attachment.byte_size == len(original)
+        assert base64.b64decode(attachment.data) == original
 
 
 class TestPdfAttachment:

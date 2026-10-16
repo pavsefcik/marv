@@ -61,6 +61,14 @@ Verified behaviour on a macOS 27 install:
   changes the suffix (`img.png` → `img.jpg`). Inputs are never modified when
   `--out`/`-o` is given.
 
+Large image **attachments** (`@path`, or `--attach` in headless mode) are
+downscaled to **1568 px** on the long edge with `sips` before they are encoded,
+when the file is over 1.5 MB. The vision encoder works at that size, so the
+bytes dropped are bytes the model would have thrown away — while the base64
+payload would otherwise be re-sent every turn. Downscaling is best-effort: an
+attachment is kept as-is when `sips` is missing or fails, and the 8 MiB hard cap
+still rejects anything that stays too large.
+
 ## PDFs — the honest state
 
 macOS gives you a **first page and a thumbnail**, not a PDF toolkit:
