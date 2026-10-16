@@ -32,12 +32,18 @@ straight back into input mode; `Esc` cancels.
 ### Attaching files
 
 Type `@path` (or `@"path with spaces"`) in the prompt to attach an image (`png`,
-`jpg`, `gif`, `webp`, `bmp`, `heic`, `tif`, …) or a PDF (page 1 only) to the turn.
-The token is removed from the prompt and the attached image is streamed to a
+`jpg`, `gif`, `webp`, `bmp`, `heic`, `tif`, …) or a PDF to the turn. A PDF
+attaches page 1 by default; append `:3` for one page or `:2-4` for a range. The
+token is removed from the prompt and each attached image is streamed to a
 vision-capable model as a content part; the chat shows a dim `[image: name]`
 line under the prompt, and replaying a session restores it. A token that is not
 an existing image or PDF is left as ordinary text. When the loaded model cannot
 accept images (e.g. `apple-fm`), the turn runs text-only with a system warning.
+
+Attachment bytes are cached content-addressed under the session's
+`attachments/` directory and referenced by hash from the message, so pixels are
+not copied into the session JSONL. The blob is read back when a session is
+replayed; a blob that has gone missing simply drops that image from the turn.
 
 Typing `@` opens the same dropdown as `/` and `$`, listing entries from the
 working directory: directories first (a directory reads `@sub/`), then names,
@@ -49,8 +55,9 @@ entry, not just attachable ones — only an existing image or PDF becomes an
 attachment, so a completed `.md` or `.py` path stays plain prompt text.
 
 A PDF needs a renderer: `pdftoppm` (poppler, `brew install poppler`) or macOS
-`sips`. When neither is present the attachment fails with a message naming the
-install command, and only page 1 is ever attached.
+`sips`. `sips` renders page 1 only, so asking for any other page without
+`pdftoppm` fails with a message naming the install command rather than silently
+sending page 1. At most 10 pages may be attached at once.
 
 ### Legible waits
 
@@ -259,6 +266,9 @@ It should not own:
   the whole-reply fallback for a reply too long to select by hand
 - `Esc` — cancel or refocus input
 
-Dragging with the mouse selects text anywhere in the chat, including inside an
-answer. A click no longer copies the whole message, because that made copying
-one paragraph of a long reply impossible.
+Dragging with the mouse selects text anywhere in the chat, including part of an
+answer. Answers render through Textual's own `Markdown` widget, whose blocks
+carry the content offsets Textual needs to resolve the cell under the pointer;
+a Rich `Markdown` renderable carries none, which made every drag over an answer
+select the whole reply. A click no longer copies the whole message, because that
+made copying one paragraph of a long reply impossible.

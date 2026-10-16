@@ -20,8 +20,11 @@ from marv.runtime.approval import ApprovalMode
 from marv.runtime.attachments import (
     IMAGE_SUFFIXES,
     AttachmentError,
+    AttachmentSpec,
+    attachments_dir,
     load_attachments,
     parse_attachment_paths,
+    parse_attachment_spec,
 )
 from marv.runtime.session import Session
 from marv.runtime.settings import ThinkingLevel
@@ -190,10 +193,13 @@ def run(
         typer.Option("-e", "--extension", help="Extension file(s) to load"),
     ] = None,
     attach: Annotated[
-        list[Path] | None,
+        list[str] | None,
         typer.Option(
             "--attach",
-            help="Image or PDF to send with the prompt (page 1 only); may be repeated",
+            help=(
+                "Image or PDF to send with the prompt; append `:N` or `:N-M` to a PDF "
+                "path to pick pages; may be repeated"
+            ),
         ),
     ] = None,
     resume: Annotated[bool, typer.Option("-r", "--resume", help="Resume the last session")] = False,
@@ -290,45 +296,54 @@ def run(
         else:
             typer.echo("No previous session found", err=True)
 
+    store = attachments_dir(config.session_dir)
     if prompt or headless:
         assert prompt is not None  # guaranteed by the headless guard above
-        prompt, attachments = _resolve_attachments(prompt, attach)
+        prompt, attachments = _resolve_attachments(prompt, attach, store)
         _ensure_model_downloaded(llm_provider=llm_provider)
         asyncio.run(
             _run_headless(config, prompt, loaded_session, llm_provider, attachments=attachments)
         )
     else:
-        _run_tui(config, loaded_session, llm_provider)
+        # No prompt to pair `@path` tokens with, so only the `--attach` flags
+        # apply; they ride the first message submitted in the TUI.
+        _, attachments = _resolve_attachments("", attach, store)
+        _run_tui(config, loaded_session, llm_provider, attachments=attachments)
 
 
 def _resolve_attachments(
     prompt: str,
-    flags: list[Path] | None,
+    flags: list[str] | None,
+    store: Path,
 ) -> tuple[str, list[ImageAttachment] | None]:
     """Gather headless attachments from ``--attach`` flags and `@path` tokens.
 
     Returns the prompt with `@path` tokens removed alongside the loaded images.
     Flag paths are used as given; `@path` tokens are resolved against the cwd by
     :func:`parse_attachment_paths`, which also leaves anything that is not an
-    image or PDF in the prompt. Attachments are ``None`` when there is nothing
-    to attach, so an ordinary run keeps its plain-text path.
+    image or PDF in the prompt. Both accept a `path:pages` PDF page selection.
+    ``store`` is the blob directory the attachment bytes are cached in.
+    Attachments are ``None`` when there is nothing to attach, so an ordinary
+    run keeps its plain-text path.
     """
-    cleaned, token_paths = parse_attachment_paths(prompt, Path.cwd())
-    explicit = list(flags or [])
+    cleaned, token_specs = parse_attachment_paths(prompt, Path.cwd())
+    explicit = [parse_attachment_spec(flag, Path.cwd()) for flag in flags or []]
     unsupported = [
-        p for p in explicit if p.suffix.lower().lstrip(".") not in IMAGE_SUFFIXES | {"pdf"}
+        spec.path
+        for spec in explicit
+        if spec.path.suffix.lower().lstrip(".") not in IMAGE_SUFFIXES | {"pdf"}
     ]
     if unsupported:
         names = ", ".join(str(p) for p in unsupported)
         typer.echo(f"Error: not an image or PDF: {names}", err=True)
         raise typer.Exit(1)
 
-    paths = [*explicit, *token_paths]
-    if not paths:
+    specs: list[AttachmentSpec] = [*explicit, *token_specs]
+    if not specs:
         return cleaned, None
 
     try:
-        return cleaned, load_attachments(paths)
+        return cleaned, load_attachments(specs, store=store)
     except AttachmentError as err:
         typer.echo(f"Error: {err}", err=True)
         raise typer.Exit(1) from err
@@ -418,7 +433,13 @@ def _announce_goodbye(
     )
 
 
-def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
+def _run_tui(
+    config: Config,
+    session: Session | None,
+    llm_provider: LLMProvider,
+    *,
+    attachments: list[ImageAttachment] | None = None,
+) -> None:
     """Run the interactive TUI."""
     from marv.llm.model_download import start_catalog_refresh
     from marv.llm.server_lifecycle import install_handlers
@@ -431,7 +452,12 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     start_catalog_refresh()
 
     install_handlers()
-    app = AgentApp(config, provider=llm_provider, session=session)
+    app = AgentApp(
+        config,
+        provider=llm_provider,
+        session=session,
+        initial_attachments=attachments,
+    )
     # Clear any mouse-reporting mode a previously crashed app may have left on
     # (otherwise the terminal leaks stray escape sequences on mouse movement).
     if sys.stdout.isatty():

@@ -17,7 +17,12 @@ from textual.widgets import Static
 
 from marv import __version__
 from marv.config.state import remember_latency_fit, remember_theme
-from marv.runtime.attachments import AttachmentError, load_attachments, parse_attachment_paths
+from marv.runtime.attachments import (
+    AttachmentError,
+    attachments_dir,
+    load_attachments,
+    parse_attachment_paths,
+)
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
@@ -116,11 +121,15 @@ class AgentApp(App[None]):
         config: Config,
         provider: LLMProvider,
         session: Session | None = None,
+        initial_attachments: list[ImageAttachment] | None = None,
     ) -> None:
         super().__init__()
         self._bootstrap_config = config
         self._session = session
         self._provider = provider
+        #: ``--attach`` images for the TUI: they ride the first submitted
+        #: message, then are cleared (there is no prompt to pair them with).
+        self._initial_attachments: list[ImageAttachment] = list(initial_attachments or [])
         self._runtime: TUIRuntime | None = None
         self._loaders: TUILoaders = build_tui_loaders(config)
         self._controller = TUIController(self)
@@ -402,14 +411,19 @@ class AgentApp(App[None]):
         # Pull `@path` attachments out of the prompt before it is rendered, so
         # the chat shows the image rather than the token. Loading (and any PDF
         # render) shells out, so it runs off the event loop.
-        prompt, attachment_paths = parse_attachment_paths(prompt, Path.cwd())
+        prompt, attachment_specs = parse_attachment_paths(prompt, Path.cwd())
         attachments: list[ImageAttachment] = []
-        if attachment_paths:
+        if attachment_specs:
+            store = attachments_dir(self.agent.config.session_dir)
             try:
-                attachments = await asyncio.to_thread(load_attachments, attachment_paths)
+                attachments = await asyncio.to_thread(load_attachments, attachment_specs, store)
             except AttachmentError as exc:
                 chat.add_system_message(f"attachment error: {exc}")
                 return
+        if self._initial_attachments:
+            # ``--attach`` flags lead, matching the headless ordering.
+            attachments = [*self._initial_attachments, *attachments]
+            self._initial_attachments = []
 
         # Add user message (special handling for $skill-name)
         if not self._renderer.render_skill_invocation(prompt):

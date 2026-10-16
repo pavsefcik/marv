@@ -37,6 +37,11 @@ The TUI is the richest delivery surface because it supports:
 - extension-owned UI prompts and widgets
 - incremental rendering of thinking, text, and tool activity
 
+A prompt starting with `!` runs the rest as a shell command through the agent's
+`bash` tool and prints the output in the chat instead of sending it to the
+model. It is an explicit user action, so it does not consult the approval
+policy; output is local chat history, never a turn.
+
 ### Headless mode
 
 - Implementation: `src/marv/cli/headless.py`
@@ -51,12 +56,17 @@ renders runtime chunks directly to stdout:
 - system messages
 
 Images can be sent to a vision-capable model with a repeatable `--attach PATH`
-flag and/or `@path` tokens in the prompt (images, or page 1 of a PDF; the same
-`@path` syntax the TUI uses). The `@path` token is stripped from the prompt and
-anything that is not an existing image or PDF is left as text. Attachments fail
-with a clear error — naming the install command for a PDF — when a file is
-missing, too large, or no PDF renderer is present (see
+flag and/or `@path` tokens in the prompt (images, or PDF pages; the same
+`@path` syntax the TUI uses). A PDF attaches page 1 by default; `report.pdf:3`
+selects one page and `report.pdf:2-4` a range, in either the flag or an `@path`
+token. The `@path` token is stripped from the prompt and anything that is not an
+existing image or PDF is left as text. Attachments fail with a clear error —
+naming the install command for a PDF, and refusing pages beyond 1 without
+`pdftoppm` — when a file is missing, too large, or no renderer is present (see
 [`tui.md`](tui.md#attaching-files)).
+
+In the interactive TUI there is no prompt to pair the flags with, so `--attach`
+images ride the first submitted message and are cleared after it.
 
 This is a thin delivery shell over the same runtime. It is useful for one-shot
 prompts, scripting, CI or automation flows, and low-ceremony debugging.

@@ -257,3 +257,75 @@ def test_doctor_cli_is_reachable(temp_dir, monkeypatch):
 
     assert result.exit_code == 0
     assert captured["as_json"] is True
+
+
+def cache_release(temp_dir, monkeypatch, version: str) -> None:
+    """Plant a cached probe result and point doctor's cache reader at it."""
+    from marv.updates import Release, UpdateCache, save_cache
+
+    cache_path = temp_dir / "update_check.json"
+    save_cache(
+        cache_path,
+        UpdateCache(
+            last_checked=1.0,
+            latest=Release(version, f"v{version}", "https://x/marv-py3-none-any.whl"),
+        ),
+    )
+    monkeypatch.setattr("marv.cli.doctor.default_cache_path", lambda: cache_path)
+
+
+def update_check(temp_dir, *, current_version: str = "1.0.0") -> CheckResult:
+    report = run_checks(build_config(temp_dir), LLMProviderFake(), current_version=current_version)
+    return next(result for result in report.results if result.name == "update check")
+
+
+def test_update_check_warns_when_a_newer_release_is_cached(temp_dir, monkeypatch):
+    cache_release(temp_dir, monkeypatch, "9.9.9")
+
+    result = update_check(temp_dir)
+
+    assert result.status == WARN
+    assert "9.9.9" in result.detail
+    assert "marv update" in result.detail
+
+
+def test_update_check_is_ok_when_the_cached_release_is_not_newer(temp_dir, monkeypatch):
+    cache_release(temp_dir, monkeypatch, "0.9.0")
+
+    result = update_check(temp_dir)
+
+    assert result.status == OK
+    assert "up to date" in result.detail
+
+
+def test_update_check_is_ok_when_nothing_was_cached_yet(temp_dir, monkeypatch):
+    monkeypatch.setattr("marv.cli.doctor.default_cache_path", lambda: temp_dir / "absent.json")
+
+    result = update_check(temp_dir)
+
+    assert result.status == OK
+    assert "no cached release" in result.detail
+
+
+def test_update_check_reports_being_disabled(temp_dir):
+    report = run_checks(
+        build_config(temp_dir, update_check=False),
+        LLMProviderFake(),
+        current_version="1.0.0",
+    )
+
+    result = next(result for result in report.results if result.name == "update check")
+    assert result.status == OK
+    assert "disabled" in result.detail
+
+
+def test_update_check_never_touches_the_network(temp_dir, monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("doctor fetched GitHub")
+
+    monkeypatch.setattr("marv.updates.fetch_latest_release", forbidden)
+    monkeypatch.setattr("marv.cli.doctor.default_cache_path", lambda: temp_dir / "absent.json")
+
+    result = update_check(temp_dir)
+
+    assert result.status == OK

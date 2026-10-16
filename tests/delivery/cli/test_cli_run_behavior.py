@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import textwrap
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from marv import cli
 from marv.runtime.session import Session
 
-if TYPE_CHECKING:
-    from pathlib import Path
+
+def point_sessions_at(project: Path, session_dir: Path) -> None:
+    """Keep a CliRunner run's session and attachment blobs out of the real home."""
+    config_dir = project / ".marv"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "config.toml").write_text(f'session_dir = "{session_dir}"\n')
 
 
 def write_extension(path: Path) -> None:
@@ -143,7 +147,7 @@ def test_cli_tui_start_kicks_off_a_catalog_refresh(temp_dir, monkeypatch):
         return object()
 
     class FakeApp:
-        def __init__(self, config, provider, session):
+        def __init__(self, config, provider, session, initial_attachments=None):
             pass
 
         def run(self):
@@ -354,7 +358,7 @@ def test_cli_run_dispatches_to_tui_when_not_headless(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         assert session is None
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
@@ -385,7 +389,7 @@ def test_bare_cli_dispatches_to_tui_when_no_subcommand(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         assert session is None
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
@@ -417,7 +421,7 @@ def test_cli_run_dispatches_to_headless_when_prompt_or_headless_flag(temp_dir, m
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         calls["tui"] += 1
 
     async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
@@ -695,6 +699,7 @@ def test_cli_headless_passes_attach_and_at_path_images_to_the_agent(temp_dir, mo
     project = temp_dir / "project"
     project.mkdir()
     monkeypatch.chdir(project)
+    point_sessions_at(project, temp_dir / "sessions")
     (project / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n prompt image")
     (project / "clip.png").write_bytes(b"\x89PNG\r\n\x1a\n flag image")
 
@@ -722,6 +727,47 @@ def test_cli_headless_passes_attach_and_at_path_images_to_the_agent(temp_dir, mo
     assert seen["attachments"] == ["clip.png", "shot.png"]
 
 
+def test_cli_headless_attach_flag_selects_a_pdf_page(temp_dir, monkeypatch):
+    """`--attach report.pdf:2` flows through `_resolve_attachments` to a page blob."""
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    point_sessions_at(project, temp_dir / "sessions")
+    (project / "report.pdf").write_bytes(b"%PDF-1.7")
+
+    from marv.runtime import attachments as attachments_module
+
+    monkeypatch.setattr(attachments_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(argv: list[str]) -> None:
+        first = int(argv[argv.index("-f") + 1])
+        last = int(argv[argv.index("-l") + 1])
+        prefix = Path(argv[-1])
+        for page in range(first, last + 1):
+            prefix.with_name(f"{prefix.name}-{page}.png").write_bytes(b"\x89PNG\r\n\x1a\n page")
+
+    monkeypatch.setattr(attachments_module, "_run_engine", fake_run)
+
+    seen_names: list[str] = []
+    seen_refs: list[str | None] = []
+
+    async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
+        seen_names.extend(a.name for a in attachments or [])
+        seen_refs.extend(a.ref for a in attachments or [])
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: object())
+    monkeypatch.setattr(cli, "_run_headless", fake_run_headless)
+    monkeypatch.setattr(cli, "_ensure_model_downloaded", lambda llm_provider: None)
+
+    result = CliRunner().invoke(
+        cli.app, ["run", "--headless", "summarize", "--attach", "report.pdf:2"]
+    )
+
+    assert result.exit_code == 0
+    assert seen_names == ["report.pdf p.2"]
+    assert all(seen_refs)
+
+
 def test_cli_headless_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypatch):
     project = temp_dir / "project"
     project.mkdir()
@@ -732,6 +778,45 @@ def test_cli_headless_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypat
 
     runner = CliRunner()
     result = runner.invoke(cli.app, ["run", "--headless", "hi", "--attach", "notes.txt"])
+
+    assert result.exit_code == 1
+    assert "not an image or PDF" in result.stderr
+
+
+def test_cli_tui_loads_attach_flags_without_a_prompt(temp_dir, monkeypatch):
+    """The TUI has no prompt to pair tokens with, so only `--attach` applies."""
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    point_sessions_at(project, temp_dir / "sessions")
+    (project / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n flag image")
+
+    seen: dict[str, object] = {}
+
+    def fake_create_provider(config):
+        return object()
+
+    def fake_run_tui(config, session, llm_provider, *, attachments=None):
+        seen["attachments"] = [a.name for a in attachments or []]
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_tui", fake_run_tui)
+
+    result = CliRunner().invoke(cli.app, ["run", "--attach", "shot.png"])
+
+    assert result.exit_code == 0
+    assert seen["attachments"] == ["shot.png"]
+
+
+def test_cli_tui_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    (project / "notes.txt").write_text("hi")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: object())
+
+    result = CliRunner().invoke(cli.app, ["run", "--attach", "notes.txt"])
 
     assert result.exit_code == 1
     assert "not an image or PDF" in result.stderr

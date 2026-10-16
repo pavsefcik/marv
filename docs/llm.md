@@ -107,10 +107,16 @@ how to launch their server and how to tell it is ready.
 
 `Message.content` stays a `str`; images ride alongside it in
 `Message.attachments` (`ImageAttachment`: `media_type`, base64 `data`, `name`,
-`byte_size`). `Message.to_api_dict()` serializes a user message that carries
-attachments as OpenAI content parts — an optional text part followed by one
-`image_url` part per image (`data:<media_type>;base64,<data>`) — and keeps every
-other role a plain string, so attachments on a non-user message are ignored.
+`byte_size`, and a `ref` blob filename). The base64 `data` is **excluded from
+serialization**, so a session JSONL keeps only the `ref`; the bytes live
+content-addressed under the session's `attachments/` directory (`attachments_dir`)
+and `hydrate_attachments` reads them back into memory before a turn so a resumed
+session can send its images again. A missing blob leaves `data` empty and
+`to_api_dict()` skips that image. `Message.to_api_dict()` serializes a user
+message that carries attachments as OpenAI content parts — an optional text part
+followed by one `image_url` part per image (`data:<media_type>;base64,<data>`) —
+and keeps every other role a plain string, so attachments on a non-user message
+are ignored.
 
 - **Capability.** `supports_vision()` is part of the provider protocol.
   `OpenAICompatibleProvider` returns `True` (generic OpenAI-compatible vision
@@ -135,7 +141,7 @@ other role a plain string, so attachments on a non-user message are ignored.
   text-only backend — `apple-fm`, or a local MLX model classified text-only —
   still answers the turn.
 
-Loading attachments (reading an image, rendering page 1 of a PDF) lives in
+Loading attachments (reading an image, rendering chosen PDF pages) lives in
 `src/marv/runtime/attachments.py`; see [`tui.md`](tui.md#attaching-files) and
 [`cli.md`](cli.md#headless-mode) for the delivery surfaces.
 

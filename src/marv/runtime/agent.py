@@ -14,6 +14,7 @@ from marv.llm.latency import LatencyFit, LatencyTracker, WaitEstimate, estimate_
 from marv.prompts.loader import PromptTemplateLoader
 from marv.prompts.parser import ParsedCommand, expand_template, parse_command
 from marv.runtime.approval import requires_approval
+from marv.runtime.attachments import hydrate_attachments
 from marv.runtime.chunk import (
     AgentChunk,
     MessageChunk,
@@ -1138,6 +1139,9 @@ class Agent:
                 await self._emit(TurnStartEvent(turn_number=turn))
 
                 messages_for_llm = await self._hooks.prepare_context(list(self.session.messages))
+                # A resumed session carries only blob refs; read the bytes back
+                # so the images ride this turn too.
+                hydrate_attachments(messages_for_llm, self.config.session_dir)
                 options = self._build_stream_options(cancel_event=cancel_event)
                 tool_schemas = self.tools.get_schemas() if self._tools_available else None
 

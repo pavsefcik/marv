@@ -230,6 +230,33 @@ def test_config_load_explicit_theme_wins_over_last_used(temp_dir, monkeypatch):
     assert Config.load().theme == "minimal"
 
 
+def test_config_load_reapplies_the_persisted_theme_after_a_model_remember(temp_dir, monkeypatch):
+    """A restart applies the theme even though a model remember rewrote state."""
+    from marv.config.state import remember_selection, remember_theme
+
+    home = temp_dir / "home"
+    project = temp_dir / "project"
+    project.mkdir()
+    global_dir = home / ".marv"
+    global_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(project)
+
+    session_dir = temp_dir / "sessions"
+    (global_dir / "config.toml").write_text(f'session_dir = "{session_dir}"\n')
+
+    remember_theme(session_dir, "nord")
+    # The startup/model-switch remember must merge, not overwrite the theme.
+    remember_selection(
+        session_dir,
+        provider="marv-mlx",
+        model="mlx-community/Qwen3.5-4B-MLX-4bit",
+        thinking_level="off",
+    )
+
+    assert Config.load().theme == "nord"
+
+
 def test_remember_theme_keeps_existing_latency_fits(temp_dir):
     from marv.config.state import remember_theme
     from marv.llm.latency import LatencyFit, LatencySample
