@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marv.config.state import LastUsedSelection
+from marv.config.state import remember_selection
 from marv.runtime.message import Role
 from marv.runtime.session import MessageEntry, Session
 from marv.runtime.settings import InteractionMode, ThinkingLevel
@@ -33,6 +33,7 @@ HELP_COMMANDS: tuple[tuple[str, str], ...] = (
     ("/theme", "choose a theme"),
     ("/chat", "plain chat; tools off"),
     ("/tools", "enable tools"),
+    ("!<command>", "run a shell command; output stays local"),
     ("/help", "show this help"),
     ("/quit", "exit marv"),
 )
@@ -168,6 +169,11 @@ class TUIController:
         """Handle TUI-native prompt commands."""
         chat = self._app.query_one("#chat-view", ChatView)
 
+        if prompt.startswith("!"):
+            command = prompt[1:].strip()
+            if command:
+                await self.run_shell_command(command)
+            return True
         if prompt.lower() == "/clear":
             self.action_clear()
             return True
@@ -249,6 +255,17 @@ class TUIController:
             return True
         return False
 
+    async def run_shell_command(self, command: str) -> None:
+        """Run a `!command` through the agent's bash tool, showing its output.
+
+        This is an explicit user action, so it bypasses the approval policy;
+        the output is chat history and never becomes a model turn.
+        """
+        chat = self._app.query_one("#chat-view", ChatView)
+        result = await self._app.agent.tools.execute("bash", {"command": command})
+        output = result.content.rstrip()
+        chat.add_system_message(f"$ {command}\n{output or '(no output)'}")
+
     def _open_session_load_panel(self) -> None:
         """Open the session load menu in the input dock."""
         self._app.open_panel(
@@ -324,13 +341,18 @@ class TUIController:
             chat.add_system_message("tool mode - tools enabled (/chat for a plain chat)")
 
     def remember_selection(self) -> None:
-        """Persist the active model/thinking so the next start preselects it."""
+        """Persist the active model/thinking so the next start preselects it.
+
+        The merge keeps every other field already on disk -- the chosen theme
+        and each model's latency fit -- so switching model does not wipe them.
+        """
         agent = self._app.agent
-        LastUsedSelection(
+        remember_selection(
+            agent.config.session_dir,
             provider=agent.provider_name,
             model=agent.model_name or None,
             thinking_level=agent.thinking_level.value,
-        ).save(agent.config.session_dir)
+        )
 
     def switch_model(self, model_name: str) -> None:
         """Switch to a different model, downloading it first when needed."""

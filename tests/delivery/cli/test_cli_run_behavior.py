@@ -143,7 +143,7 @@ def test_cli_tui_start_kicks_off_a_catalog_refresh(temp_dir, monkeypatch):
         return object()
 
     class FakeApp:
-        def __init__(self, config, provider, session):
+        def __init__(self, config, provider, session, initial_attachments=None):
             pass
 
         def run(self):
@@ -354,7 +354,7 @@ def test_cli_run_dispatches_to_tui_when_not_headless(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         assert session is None
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
@@ -385,7 +385,7 @@ def test_bare_cli_dispatches_to_tui_when_no_subcommand(temp_dir, monkeypatch):
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         assert session is None
         assert llm_provider is sentinel_provider
         calls["tui"] += 1
@@ -417,7 +417,7 @@ def test_cli_run_dispatches_to_headless_when_prompt_or_headless_flag(temp_dir, m
     def fake_create_provider(config):
         return sentinel_provider
 
-    def fake_run_tui(config, session, llm_provider):
+    def fake_run_tui(config, session, llm_provider, **_kwargs):
         calls["tui"] += 1
 
     async def fake_run_headless(config, prompt, session, llm_provider, attachments=None):
@@ -732,6 +732,44 @@ def test_cli_headless_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypat
 
     runner = CliRunner()
     result = runner.invoke(cli.app, ["run", "--headless", "hi", "--attach", "notes.txt"])
+
+    assert result.exit_code == 1
+    assert "not an image or PDF" in result.stderr
+
+
+def test_cli_tui_loads_attach_flags_without_a_prompt(temp_dir, monkeypatch):
+    """The TUI has no prompt to pair tokens with, so only `--attach` applies."""
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    (project / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n flag image")
+
+    seen: dict[str, object] = {}
+
+    def fake_create_provider(config):
+        return object()
+
+    def fake_run_tui(config, session, llm_provider, *, attachments=None):
+        seen["attachments"] = [a.name for a in attachments or []]
+
+    monkeypatch.setattr(cli, "_create_llm_provider", fake_create_provider)
+    monkeypatch.setattr(cli, "_run_tui", fake_run_tui)
+
+    result = CliRunner().invoke(cli.app, ["run", "--attach", "shot.png"])
+
+    assert result.exit_code == 0
+    assert seen["attachments"] == ["shot.png"]
+
+
+def test_cli_tui_rejects_an_attach_that_is_not_an_image(temp_dir, monkeypatch):
+    project = temp_dir / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    (project / "notes.txt").write_text("hi")
+
+    monkeypatch.setattr(cli, "_create_llm_provider", lambda config: object())
+
+    result = CliRunner().invoke(cli.app, ["run", "--attach", "notes.txt"])
 
     assert result.exit_code == 1
     assert "not an image or PDF" in result.stderr

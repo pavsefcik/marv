@@ -8,6 +8,7 @@ import time
 import pytest
 
 from marv.config import Config
+from marv.config.state import load_last_used
 from marv.tui import theme as theme_module
 from marv.tui.app import AgentApp
 from marv.tui.theme import (
@@ -258,3 +259,17 @@ async def test_app_applies_the_marv_mlx_theme_from_config(temp_dir):
 
     async with app.run_test():
         assert app.theme == "marv-mlx"
+
+
+@pytest.mark.asyncio
+async def test_remembering_the_model_keeps_the_persisted_theme(temp_dir):
+    """The startup model remember must not wipe the theme chosen last session."""
+    app = make_app(temp_dir)
+
+    async with app.run_test():
+        app.set_theme("nord", persist=True)
+        app._controller.remember_selection()
+
+    state = load_last_used(temp_dir / "sessions")
+    assert state.theme == "nord"
+    assert state.model == "gpt-4o"

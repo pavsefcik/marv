@@ -298,7 +298,10 @@ def run(
             _run_headless(config, prompt, loaded_session, llm_provider, attachments=attachments)
         )
     else:
-        _run_tui(config, loaded_session, llm_provider)
+        # No prompt to pair `@path` tokens with, so only the `--attach` flags
+        # apply; they ride the first message submitted in the TUI.
+        _, attachments = _resolve_attachments("", attach)
+        _run_tui(config, loaded_session, llm_provider, attachments=attachments)
 
 
 def _resolve_attachments(
@@ -418,7 +421,13 @@ def _announce_goodbye(
     )
 
 
-def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider) -> None:
+def _run_tui(
+    config: Config,
+    session: Session | None,
+    llm_provider: LLMProvider,
+    *,
+    attachments: list[ImageAttachment] | None = None,
+) -> None:
     """Run the interactive TUI."""
     from marv.llm.model_download import start_catalog_refresh
     from marv.llm.server_lifecycle import install_handlers
@@ -431,7 +440,12 @@ def _run_tui(config: Config, session: Session | None, llm_provider: LLMProvider)
     start_catalog_refresh()
 
     install_handlers()
-    app = AgentApp(config, provider=llm_provider, session=session)
+    app = AgentApp(
+        config,
+        provider=llm_provider,
+        session=session,
+        initial_attachments=attachments,
+    )
     # Clear any mouse-reporting mode a previously crashed app may have left on
     # (otherwise the terminal leaks stray escape sequences on mouse movement).
     if sys.stdout.isatty():

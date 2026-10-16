@@ -32,6 +32,7 @@ from marv.llm.events import (
 from marv.llm.model_download import DownloadProgress, hub_model_present
 from marv.llm.stream import AssistantMessageEventStream
 from marv.runtime.approval import ApprovalMode
+from marv.runtime.attachments import load_attachments
 from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
 from marv.runtime.settings import InteractionMode, ThinkingLevel
@@ -2148,3 +2149,66 @@ async def test_tui_runner_leaves_a_missing_at_path_in_the_prompt(temp_dir):
         assert user_messages
         assert user_messages[-1].content == "hello @missing.png"
         assert user_messages[-1].attachments == []
+
+
+@pytest.mark.asyncio
+async def test_tui_initial_attachments_ride_only_the_first_prompt(temp_dir):
+    """A TUI launched with `--attach` sends the image with the first message."""
+    image = temp_dir / "shot.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n fake image")
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake(
+        [make_text_events("first reply"), make_text_events("second reply")],
+        name="openai",
+        model="gpt-4o",
+    )
+    app = AgentApp(
+        config,
+        provider=provider,
+        initial_attachments=load_attachments([image]),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "first")
+        await wait_for_idle(app, pilot)
+        await submit(app, pilot, "second")
+        await wait_for_idle(app, pilot)
+
+        user_messages = [m for m in app.agent.session.messages if m.role.value == "user"]
+        assert [a.name for a in user_messages[0].attachments] == ["shot.png"]
+        assert user_messages[1].attachments == []
+
+
+@pytest.mark.asyncio
+async def test_tui_bang_command_shows_shell_output_without_calling_the_model(temp_dir):
+    """`!command` is a local action: bash runs, the model is never asked."""
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake([make_text_events("should not run")], name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "!echo hi")
+        await pilot.pause()
+
+        assert "-- $ echo hi\n   hi" in system_messages(app)
+        assert provider.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_tui_bang_command_without_a_command_is_ignored(temp_dir):
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    provider = LLMProviderFake([make_text_events("should not run")], name="openai", model="gpt-4o")
+    app = AgentApp(config, provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await submit(app, pilot, "!   ")
+        await pilot.pause()
+
+        assert provider.stream_calls == []
+        assert not any("$ " in message for message in system_messages(app))

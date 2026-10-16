@@ -14,12 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from marv import __version__
 from marv.llm.marv_mlx import resolve_max_output_tokens, resolve_mlx_server_command
 from marv.llm.marv_mlx_cli import resolve_marv_mlx_binary
 from marv.llm.mlx_models import discover_model_ids, model_supports_vision, running_model_id
 from marv.llm.model_download import hub_model_present, is_hub_repo_id, resolve_download_interpreter
 from marv.llm.server_process import listener_pid, server_reachable
 from marv.tools.pdf import ENGINES
+from marv.updates import default_cache_path, is_newer, load_cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -96,6 +98,27 @@ def _check_config(config: Config) -> list[CheckResult]:
             )
         )
     return results
+
+
+def _check_update(config: Config, current_version: str) -> CheckResult:
+    """The daily update check: on or off, and what its cache last found.
+
+    Doctor never touches the network, so this reads only the cached probe
+    result (written by a TUI start or ``marv update``) through the same helper
+    the startup check uses.
+    """
+    if not config.update_check:
+        return CheckResult("update check", OK, "disabled (update_check=false)")
+    latest = load_cache(default_cache_path()).latest
+    if latest is None:
+        return CheckResult("update check", OK, "enabled; no cached release yet")
+    if is_newer(latest.version, current_version):
+        return CheckResult(
+            "update check",
+            WARN,
+            f"marv {latest.version} is available (you have {current_version}); run `marv update`",
+        )
+    return CheckResult("update check", OK, f"up to date (latest cached: marv {latest.version})")
 
 
 def _check_extensions(config: Config) -> CheckResult:
@@ -288,10 +311,12 @@ def run_checks(
     provider: LLMProvider,
     *,
     extension_loader: Callable[[], list[str]] | None = None,
+    current_version: str = __version__,
 ) -> DoctorReport:
     """Run every diagnosis and return an ordered report."""
     results = [
         *_check_config(config),
+        _check_update(config, current_version),
         _check_hub(config),
         _check_mlx_runtime(provider),
         _check_runtime_cli(config),

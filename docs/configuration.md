@@ -154,7 +154,9 @@ old code, so restart marv to finish the update.
 - Manual: `marv update` (or `marv update --check` to only report)
 
 The result is cached at `~/.cache/marv/update_check.json`, so a normal startup
-costs no network once a day's check has run.
+costs no network once a day's check has run. `marv doctor` reports whether the
+check is enabled and what the cache holds — without probing GitHub — so a
+pending update is visible outside the TUI.
 
 ## Context files
 
@@ -176,6 +178,9 @@ error, each with an independent one-line verdict:
   model
 - server-manager delegation (`embedded` vs `marv-mlx`)
 - the clamped output budget
+- the update check: on or off, and whether the cached probe result is a newer
+  release than the running version (doctor reads the cache only, never the
+  network)
 - download tooling (a Python with `huggingface_hub`)
 - whether the configured extensions exist and load
 

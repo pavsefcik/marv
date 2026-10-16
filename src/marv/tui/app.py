@@ -116,11 +116,15 @@ class AgentApp(App[None]):
         config: Config,
         provider: LLMProvider,
         session: Session | None = None,
+        initial_attachments: list[ImageAttachment] | None = None,
     ) -> None:
         super().__init__()
         self._bootstrap_config = config
         self._session = session
         self._provider = provider
+        #: ``--attach`` images for the TUI: they ride the first submitted
+        #: message, then are cleared (there is no prompt to pair them with).
+        self._initial_attachments: list[ImageAttachment] = list(initial_attachments or [])
         self._runtime: TUIRuntime | None = None
         self._loaders: TUILoaders = build_tui_loaders(config)
         self._controller = TUIController(self)
@@ -410,6 +414,10 @@ class AgentApp(App[None]):
             except AttachmentError as exc:
                 chat.add_system_message(f"attachment error: {exc}")
                 return
+        if self._initial_attachments:
+            # ``--attach`` flags lead, matching the headless ordering.
+            attachments = [*self._initial_attachments, *attachments]
+            self._initial_attachments = []
 
         # Add user message (special handling for $skill-name)
         if not self._renderer.render_skill_invocation(prompt):

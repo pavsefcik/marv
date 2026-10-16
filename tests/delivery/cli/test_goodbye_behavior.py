@@ -101,7 +101,7 @@ class _Tty(StringIO):
 class _FakeApp:
     """Stands in for AgentApp so the exit path can be driven without Textual."""
 
-    def __init__(self, config, *, provider, session) -> None:
+    def __init__(self, config, *, provider, session, initial_attachments=None) -> None:
         self._provider = provider
 
     def run(self) -> None:
