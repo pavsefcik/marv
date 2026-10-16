@@ -537,6 +537,7 @@ def at_completion_files(tmp_path: Path) -> None:
     (tmp_path / "my shot.png").write_bytes(b"png")
     (tmp_path / ".hidden.png").write_bytes(b"png")
     (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "inner.png").write_bytes(b"png")
 
 
 @pytest.mark.asyncio
@@ -627,7 +628,7 @@ async def test_tui_runner_at_completion_quotes_names_with_spaces(temp_dir, tmp_p
 
 @pytest.mark.asyncio
 async def test_tui_runner_at_completion_gives_directories_a_slash(temp_dir, tmp_path, monkeypatch):
-    """A directory is listed and completed as `@sub/`, the file form with a slash."""
+    """A directory completes to `@sub/` and descends into it on the next pause."""
     monkeypatch.chdir(tmp_path)
     at_completion_files(tmp_path)
     config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
@@ -650,7 +651,13 @@ async def test_tui_runner_at_completion_gives_directories_a_slash(temp_dir, tmp_
         await pilot.press("tab")
         await pilot.pause()
 
-        assert input_widget.text == "@sub/ "
+        # No trailing space: the slash is a place to keep typing, and the
+        # dropdown now offers what is inside the directory.
+        assert input_widget.text == "@sub/"
+        options = [
+            str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
+        ]
+        assert options == ["@sub/inner.png"]
 
 
 @pytest.mark.asyncio

@@ -142,7 +142,11 @@ def load_attachment(path: Path) -> ImageAttachment:
         downscale_suffix = suffix
 
     if len(data) > DOWNSCALE_THRESHOLD_BYTES:
-        data = _downscale_image(data, downscale_suffix)
+        downscaled = _downscale_image(data, downscale_suffix)
+        # Best-effort: a re-encode can grow an already-small/highly-compressed
+        # file, so only take the result when it actually got smaller.
+        if len(downscaled) < len(data):
+            data = downscaled
 
     if len(data) > MAX_ATTACHMENT_BYTES:
         megabytes = MAX_ATTACHMENT_BYTES / (1024 * 1024)

@@ -199,6 +199,21 @@ class TestDownscaleLargeImages:
         assert attachment.byte_size == len(original)
         assert base64.b64decode(attachment.data) == original
 
+    def test_a_larger_downscale_result_keeps_the_original(self, temp_dir, monkeypatch):
+        original = oversize_png()
+        image = write_png(temp_dir / "photo.png", original)
+        monkeypatch.setattr(attachments_module.shutil, "which", lambda name: "/usr/bin/sips")
+
+        def bigger_run(argv: list[str]) -> None:
+            Path(argv[argv.index("--out") + 1]).write_bytes(original + b"padding")
+
+        monkeypatch.setattr(attachments_module, "_run_engine", bigger_run)
+
+        attachment = load_attachment(image)
+
+        assert attachment.byte_size == len(original)
+        assert base64.b64decode(attachment.data) == original
+
 
 class TestPdfAttachment:
     """Tests for rendering only page 1 of a PDF."""

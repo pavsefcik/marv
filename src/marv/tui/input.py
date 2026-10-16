@@ -193,11 +193,15 @@ class PromptInput(Widget, can_focus=False):
         """Path choices for a trailing `@partial` token, or None when absent.
 
         Entries come from the working directory: directories first, then by
-        name, with dotfiles only once the partial itself starts with a dot.
+        name, with dotfiles only once the partial itself starts with a dot. A
+        partial may already contain directories (`@sub/fi`), in which case the
+        deepest existing directory is listed; applying a directory appends the
+        slash and no trailing space, so the next level can be completed.
+
         The option id is the whole replacement document — the text before the
         `@`, the path (quoted when it contains whitespace), and a trailing
-        space — because Tab, Enter, and clicks all rewrite the input from the
-        id.
+        space for a file — because Tab, Enter, and clicks all rewrite the
+        input from the id.
         """
         match = _ATTACHMENT_PARTIAL.search(value)
         if match is None:
@@ -208,8 +212,13 @@ class PromptInput(Widget, can_focus=False):
         if quoted:
             partial = partial[1:]
 
+        directory_part, _, name_part = partial.rpartition("/")
+        base = Path.cwd() / directory_part if directory_part else Path.cwd()
+        if not base.is_dir():
+            return None
+
         try:
-            entries = sorted(Path.cwd().iterdir(), key=lambda p: (not p.is_dir(), p.name))
+            entries = sorted(base.iterdir(), key=lambda p: (not p.is_dir(), p.name))
         except OSError:
             return None
 
@@ -217,19 +226,22 @@ class PromptInput(Widget, can_focus=False):
         options: list[Option] = []
         for entry in entries:
             name = entry.name
-            if name.startswith(".") and not partial.startswith("."):
+            if name.startswith(".") and not name_part.startswith("."):
                 continue
-            if not name.startswith(partial):
+            if not name.startswith(name_part):
                 continue
+            relative = f"{directory_part}/{name}" if directory_part else name
             if entry.is_dir():
-                prompt = f"@{name}/"
-                completion = f"{name}/"
+                prompt = f"@{relative}/"
+                written = f"{relative}/"
+                suffix = ""  # keep typing after the slash to descend
             else:
-                prompt = f"@{name}"
-                completion = name
-            if quoted or " " in name:
-                completion = f'"{completion}"'
-            options.append(Option(prompt, id=f"{prefix}@{completion} "))
+                prompt = f"@{relative}"
+                written = relative
+                suffix = " "
+            if quoted or " " in written:
+                written = f'"{written}"'
+            options.append(Option(prompt, id=f"{prefix}@{written}{suffix}"))
             if len(options) == MAX_ATTACHMENT_OPTIONS:
                 break
         return options or None
