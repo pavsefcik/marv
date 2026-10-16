@@ -542,10 +542,10 @@ def at_completion_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tui_runner_at_completion_lists_cwd_entries_without_dotfiles(
+async def test_tui_runner_at_completion_lists_attachable_files_without_dotfiles(
     temp_dir, tmp_path, monkeypatch
 ):
-    """`@` opens the dropdown with directories first and no dotfiles."""
+    """`@` opens the dropdown with directories first, attachable files, no dotfiles."""
     monkeypatch.chdir(tmp_path)
     at_completion_files(tmp_path)
     config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
@@ -566,7 +566,7 @@ async def test_tui_runner_at_completion_lists_cwd_entries_without_dotfiles(
             str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
         ]
         assert options[0] == "@sub/"
-        assert set(options) == {"@sub/", "@shot.png", "@notes.md", "@my shot.png"}
+        assert set(options) == {"@sub/", "@shot.png", "@my shot.png"}
         assert input_widget.text == "@"
 
 
@@ -682,6 +682,40 @@ async def test_tui_runner_at_completion_stays_hidden_when_nothing_matches(
         option_list = prompt.query_one("#suggestions", OptionList)
         assert not option_list.display
         assert input_widget.text == "@nope"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_hides_a_partial_with_nothing_attachable(
+    temp_dir, tmp_path, monkeypatch
+):
+    """`@` offers only attachable files, so a `.md` partial leaves the dropdown shut."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("@", "n", "o", "t", "e", "s")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert not option_list.display
+        assert input_widget.text == "@notes"
+
+        # A PDF is attachable, so the same filter offers it once one exists.
+        (tmp_path / "notes.pdf").write_bytes(b"pdf")
+        input_widget.text = "@notes"  # re-set to re-run completion
+        await pilot.pause()
+
+        assert option_list.display
+        options = [
+            str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
+        ]
+        assert options == ["@notes.pdf"]
 
 
 @pytest.mark.asyncio

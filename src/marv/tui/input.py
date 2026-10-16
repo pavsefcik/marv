@@ -13,6 +13,8 @@ from textual.widget import Widget
 from textual.widgets import OptionList, TextArea
 from textual.widgets.option_list import Option
 
+from marv.runtime.attachments import IMAGE_SUFFIXES
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.events import Key
@@ -30,6 +32,10 @@ _ATTACHMENT_PARTIAL = re.compile(r'(?:^|(?<=\s))@(?:"[^"]*"?|\S*)\Z')
 
 #: Most `@` choices offered at once; a longer partial is the way to narrow.
 MAX_ATTACHMENT_OPTIONS = 20
+
+#: File suffixes offered after `@`, matching what `parse_attachment_paths`
+#: accepts, so a completed path is always attachable.
+ATTACHABLE_SUFFIXES = IMAGE_SUFFIXES | {"pdf"}
 
 
 # Built-in commands available for autocomplete
@@ -193,7 +199,10 @@ class PromptInput(Widget, can_focus=False):
         """Path choices for a trailing `@partial` token, or None when absent.
 
         Entries come from the working directory: directories first, then by
-        name, with dotfiles only once the partial itself starts with a dot. A
+        name, with dotfiles only once the partial itself starts with a dot.
+        Only files that can be attached (`ATTACHABLE_SUFFIXES`) are listed —
+        `@` is the attachment syntax, so an unrelated source file is not a
+        choice; a partial matching no such file leaves the dropdown hidden. A
         partial may already contain directories (`@sub/fi`), in which case the
         deepest existing directory is listed; applying a directory appends the
         slash and no trailing space, so the next level can be completed.
@@ -230,8 +239,11 @@ class PromptInput(Widget, can_focus=False):
                 continue
             if not name.startswith(name_part):
                 continue
+            is_dir = entry.is_dir()
+            if not is_dir and entry.suffix.lower().lstrip(".") not in ATTACHABLE_SUFFIXES:
+                continue
             relative = f"{directory_part}/{name}" if directory_part else name
-            if entry.is_dir():
+            if is_dir:
                 prompt = f"@{relative}/"
                 written = f"{relative}/"
                 suffix = ""  # keep typing after the slash to descend
