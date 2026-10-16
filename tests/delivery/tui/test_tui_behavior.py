@@ -32,7 +32,7 @@ from marv.llm.events import (
 from marv.llm.model_download import DownloadProgress, hub_model_present
 from marv.llm.stream import AssistantMessageEventStream
 from marv.runtime.approval import ApprovalMode
-from marv.runtime.attachments import load_attachments
+from marv.runtime.attachments import AttachmentSpec, load_attachments
 from marv.runtime.message import Message, ThinkingContent, ToolCall
 from marv.runtime.session import Session
 from marv.runtime.settings import InteractionMode, ThinkingLevel
@@ -2199,7 +2199,7 @@ async def test_tui_initial_attachments_ride_only_the_first_prompt(temp_dir):
     app = AgentApp(
         config,
         provider=provider,
-        initial_attachments=load_attachments([image]),
+        initial_attachments=load_attachments([AttachmentSpec(image)]),
     )
 
     async with app.run_test() as pilot:

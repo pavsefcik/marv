@@ -64,10 +64,17 @@ Verified behaviour on a macOS 27 install:
 Large image **attachments** (`@path`, or `--attach` in headless mode) are
 downscaled to **1568 px** on the long edge with `sips` before they are encoded,
 when the file is over 1.5 MB. The vision encoder works at that size, so the
-bytes dropped are bytes the model would have thrown away — while the base64
-payload would otherwise be re-sent every turn. Downscaling is best-effort: an
-attachment is kept as-is when `sips` is missing or fails, and the 8 MiB hard cap
-still rejects anything that stays too large.
+bytes dropped are bytes the model would have thrown away. Downscaling is
+best-effort: an attachment is kept as-is when `sips` is missing or fails, and
+the 8 MiB hard cap still rejects anything that stays too large.
+
+Encoding is in-memory only: each blob is cached content-addressed (sha256 of
+the bytes) under the session's `attachments/` directory and the message keeps a
+hash `ref`, so the base64 never lands in the session JSONL. A resumed session
+reads the blob back before the turn. A PDF attaches page 1 by default; a `:3`
+or `:2-4` suffix renders the chosen pages with `pdftoppm` (poppler), one
+attachment per page, up to 10 pages. `sips` is page 1 only, so any other page
+without `pdftoppm` fails with the install hint rather than sending page 1.
 
 ## PDFs — the honest state
 

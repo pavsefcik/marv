@@ -25,12 +25,19 @@ class Role(StrEnum):
 
 
 class ImageAttachment(BaseModel):
-    """An image (or rendered PDF page) carried with a user message."""
+    """An image (or rendered PDF page) carried with a user message.
+
+    The base64 ``data`` is in-memory only: it is excluded from serialization so
+    a session JSONL never carries megabytes of image bytes. A persisted
+    attachment is rehydrated from ``ref`` — a filename under the session's
+    content-addressed ``attachments/`` blob directory.
+    """
 
     media_type: str  # "image/png", "image/jpeg", ...
-    data: str  # base64, no `data:` prefix
+    data: str = Field(default="", exclude=True)  # base64, no `data:` prefix
     name: str = ""  # original filename, for display
     byte_size: int = 0
+    ref: str | None = None  # blob filename under the attachments directory
 
 
 class ToolCall(BaseModel):
@@ -121,7 +128,10 @@ class Message(BaseModel):
         string, so attachments on a non-user role are ignored.
         """
         content: str | list[dict[str, Any]] = self.content
-        if self.role is Role.USER and self.attachments:
+        # An attachment whose bytes could not be rehydrated carries empty data;
+        # skip it rather than emitting a broken data URL.
+        images = [a for a in self.attachments if a.data]
+        if self.role is Role.USER and images:
             parts: list[dict[str, Any]] = []
             if self.content:
                 parts.append({"type": "text", "text": self.content})
@@ -130,7 +140,7 @@ class Message(BaseModel):
                     "type": "image_url",
                     "image_url": {"url": f"data:{a.media_type};base64,{a.data}"},
                 }
-                for a in self.attachments
+                for a in images
             )
             content = parts
 

@@ -17,7 +17,12 @@ from textual.widgets import Static
 
 from marv import __version__
 from marv.config.state import remember_latency_fit, remember_theme
-from marv.runtime.attachments import AttachmentError, load_attachments, parse_attachment_paths
+from marv.runtime.attachments import (
+    AttachmentError,
+    attachments_dir,
+    load_attachments,
+    parse_attachment_paths,
+)
 from marv.tui.chat import ChatView
 from marv.tui.compose import TUILoaders, TUIRuntime, build_tui_loaders, build_tui_runtime
 from marv.tui.controller import TUIController
@@ -406,11 +411,12 @@ class AgentApp(App[None]):
         # Pull `@path` attachments out of the prompt before it is rendered, so
         # the chat shows the image rather than the token. Loading (and any PDF
         # render) shells out, so it runs off the event loop.
-        prompt, attachment_paths = parse_attachment_paths(prompt, Path.cwd())
+        prompt, attachment_specs = parse_attachment_paths(prompt, Path.cwd())
         attachments: list[ImageAttachment] = []
-        if attachment_paths:
+        if attachment_specs:
+            store = attachments_dir(self.agent.config.session_dir)
             try:
-                attachments = await asyncio.to_thread(load_attachments, attachment_paths)
+                attachments = await asyncio.to_thread(load_attachments, attachment_specs, store)
             except AttachmentError as exc:
                 chat.add_system_message(f"attachment error: {exc}")
                 return
