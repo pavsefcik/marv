@@ -5,6 +5,230 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [1.122.0] - 2026-10-16
+
+### Added
+
+- **Multimodal input.** Send an image (or page 1 of a PDF) to a vision-capable
+  model. `Message.content` stays a string; images ride in a new
+  `Message.attachments` field of `ImageAttachment`s, and `to_api_dict()` emits
+  OpenAI content parts (`text` + `image_url` data URLs) for a user message that
+  carries them. The provider protocol gains `supports_vision()`
+  (`OpenAICompatibleProvider`/`marv-mlx`: true — `mlx_vlm` is vision-capable;
+  `apple-fm`: false), and a text-only backend still runs the turn, dropping the
+  images with a system warning. `count_messages_tokens` charges a per-image
+  `IMAGE_TOKEN_COST` budget rather than tokenizing the base64 payload.
+
+- **`@path` attachments in the TUI.** Typing `@path` (or `@"path with spaces"`)
+  attaches an image or PDF page, strips the token from the prompt, and shows a
+  dim `[image: name]` line that is restored when a session is replayed. Anything
+  that is not an existing image or PDF stays as ordinary text. Loading runs off
+  the UI thread; a failure aborts the turn with a system message.
+
+- **`--attach` in headless mode.** A repeatable `marv run --headless --attach
+  PATH` flag, plus `@path` tokens found in the prompt, send the same attachments
+  through `run_headless` → `Agent.run`.
+
+- **PDF page-1 rendering** (`src/marv/runtime/attachments.py`) via `pdftoppm`
+  (poppler) or macOS `sips`, with a clear "install poppler" error when neither
+  is available. An attachment over 8 MiB is rejected with a resize hint. No new
+  Python dependency.
+
+- **PDF page selection.** `@report.pdf:3` attaches one page and
+  `@report.pdf:2-4` attaches a range, in the TUI and in the repeatable
+  `marv run --attach` flag. Chosen pages render with `pdftoppm`, one attachment
+  per page (named `report.pdf p.3`), up to 10 per attachment. Requesting any
+  page beyond 1 without `pdftoppm` fails with the `brew install poppler` hint
+  instead of silently sending page 1; the macOS `sips` fallback still renders
+  page 1.
+
+- **`pdf` tool.** One tool that does real PDF work by driving external engines
+  instead of adding a Python dependency: `info` and `text` (poppler), `render`
+  (`pdftoppm`), `compress` (Ghostscript), and `merge`, `split`, `rotate`
+  (qpdf). A missing engine fails with the binary and the exact install command
+  (`` `pdftoppm` not found. Install poppler: brew install poppler ``).
+  Writing actions never overwrite the input, default to a sibling file, verify
+  the engine really wrote its output, and report the produced files as
+  path + size. Under `approval_mode=destructive` every writing action needs
+  approval; `info` does not, and `text` needs it only when it writes.
+
+- **`marv doctor`: `pdf tooling`.** Reports which of the five engines the `pdf`
+  tool drives are present, with their paths, and which are missing, with the
+  Homebrew command that installs them. `ok` when all are present, `warn`
+  otherwise — PDF work is optional, so a bare machine is not a failure.
+
+- **`docs/tools.md`.** Documents the `pdf` schema, the command each action runs,
+  and the rules the tool enforces.
+
+- **`office-files` now ships with marv.** The office playbook moved from
+  `examples/skills/office-files/` into the package at
+  `src/marv/skills/builtin/office-files/SKILL.md`, and the default skill loader
+  always searches the packaged `builtin/` directory. A fresh `Agent` therefore
+  sees `office-files` with no setup — `$office-files` works on first launch,
+  with no copy into `~/.marv/skills` and no `skills_dirs` entry.
+
+- **Office/document direction.** `ROADMAP.md` sharpens the coworking track
+  around the office-assistant framing (documents and images first, repo editing
+  as one artifact type) and gains a near-term "Office capabilities" list with
+  sizes and gates: batch image resize/convert with the built-in `sips`,
+  PDF rasterise/compress, PDF vector ops (all three gated on the PDF-engine
+  decision), plus pointers to the existing multimodal-input (C4.1) and
+  artifacts-as-output (C4.3) items.
+
+- **`docs/office.md`.** Office positioning, the recipes that work today with the
+  binaries macOS already ships (`sips`, `qlmanage`, `textutil`, `mdls`) through
+  the existing `bash` tool, and an honest account of what is missing — `sips`
+  and `qlmanage` render **page 1 only**, there is no built-in PDF compressor or
+  page count — with the dependency decision the PDF items need.
+
+- **`office-files` skill** (`src/marv/skills/builtin/office-files/SKILL.md`). A
+  playbook for office file work: discover available binaries
+  first, batch image resize/convert with `sips`, PDF → images preferring
+  `pdftoppm` and stating the single-page `sips` fallback honestly, PDF
+  compression via `gs`/`qpdf` or an explicit "install one" message, and safety
+  rules (never overwrite inputs, quote paths, verify outputs, report what ran).
+  No new runtime tool, dependency, or config key.
+
+- **`@path` completion in the prompt.** A trailing `@partial` (or `@"partial`)
+  opens the dropdown the `/` commands and `$` skills already use, listing
+  matching entries from the working directory: directories first with a trailing
+  `/`, names holding whitespace quoted as `@"my shot.png"`, and dotfiles only
+  once the partial starts with a dot. Each choice writes the whole prompt back
+  (the text before the `@`, the path, a trailing space) so a mention in the
+  middle of a sentence stays intact. The list is paths, not attachments — only an
+  existing image or PDF is attached on submit.
+
+- **Tab follows the option id.** `Tab` now rewrites the prompt from `Option.id`
+  when an option carries one, as `Enter` and a click already did, so a model
+  choice or a completed path behaves the same on either key. `/` and `$`
+  options carry no id, so their behaviour is unchanged.
+
+- **`marv help` (`marv -h` / `marv --help`).** A curated help screen in the
+  marv-mlx style: the tagline, one usage line per command, and how to reach the
+  full option lists. All three spellings print exactly the same text; the root
+  group's built-in help option is replaced by an eager `-h`/`--help` flag, so
+  `marv run --help` and friends keep their full Typer option help.
+
+- **`marv version`.** Prints `marv <version>`, matching the existing eager
+  `marv --version`.
+
+- **`!command` in the TUI.** A submitted prompt starting with `!` runs the rest
+  through the agent's `bash` tool and prints the output in the chat instead of
+  sending it to the model. It is an explicit user action, so it skips the
+  approval policy; `!` alone does nothing. `/help` lists it.
+
+- **`--attach` in the interactive TUI.** The repeatable `--attach PATH` flag was
+  honored headless only; a TUI launched with it now attaches those images (and
+  page-1 PDFs) to the first submitted message, ahead of any `@path` tokens, then
+  clears them. The no-prompt path keeps the same validation and error as
+  headless.
+
+- **`marv doctor` reports the update check.** The verdict says whether
+  `update_check` is on and compares the cached latest release with the running
+  version — reading the cache only, so doctor never touches GitHub. `warn` when
+  a newer release is cached, `ok` when up to date or disabled.
+
+- The wait prediction reads live state from the serving mlx_vlm server
+  (`/v1/metrics`, via the new `marv.llm.server_metrics`). Server-measured
+  turns seed the prefill-rate calibration before marv has any samples of its
+  own, so a first-ever run gets a real ETA instead of none; a persisted
+  calibration is never overwritten.
+
+- `WaitEstimate` now carries `cached_tokens`: when the server reports prefix
+  caching enabled, the prediction prices only the tokens added since the
+  previous turn instead of the full prompt, and the TUI wait narration shows
+  the cached share ("prefilling 1.2k tokens (9.8k cached)"). Compaction and
+  model switches reset the expected prefix.
+
+### Changed
+
+- **Attachments are stored on disk, not in the session.** `ImageAttachment.data`
+  (base64) is excluded from serialization; each blob is written content-addressed
+  by sha256 under the session's `attachments/` directory and referenced by a
+  `ref` filename. A session JSONL no longer carries megabytes of image bytes,
+  and a resumed session reads the blob back before the turn. Identical bytes
+  deduplicate to one file, and a missing blob degrades to no image rather than
+  failing the turn.
+
+- **`SkillSource.BUILTIN` is the lowest-priority skill source.** The discovery
+  order is now builtin → user (`~/.marv/skills`) → config (`skills_dirs`) →
+  project (`.marv/skills`), so a user, config, or project skill with the same
+  name overrides the packaged one and the override is recorded as a collision in
+  the loader diagnostics.
+
+- **Large image attachments are downscaled at attach time.** An image over
+  1.5 MB is scaled to 1568 px on the long edge with macOS `sips` before it is
+  base64-encoded, so a multi-megapixel photo no longer inflates the session
+  JSONL and every turn's prefill with pixels the vision encoder discards.
+  Best-effort: a machine without `sips` (or an engine failure) sends the
+  original bytes, and the 8 MiB hard cap still applies to the result.
+
+- **`@` completion lists only files that can be attached.** The dropdown now
+  offers directories (for descent) and files whose suffix is an image or `pdf`
+  — the same set the attachment parser accepts — instead of every entry in the
+  directory, so a stray source file is no longer a suggestion. A partial that
+  matches no attachable file leaves the dropdown hidden.
+
+- **Vision support is detected per local MLX model.** `marv-mlx` no longer
+  claims every model accepts images: `model_supports_vision` reads the local hub
+  snapshot (image-processor config, a vision marker in `config.json`, or a
+  VLM-shaped model name). A text-only MLX model now drops `@path` images with a
+  system warning instead of failing at the server, and a model with no local
+  snapshot stays permissive on purpose so an image is never silently dropped.
+  `marv doctor` gains a `vision` check for the active provider and model.
+
+- **Startup hint names the useful controls.** The header's second line now reads
+  `Type /help for commands · escape interrupt · ctrl+l clear · ctrl+o copy reply`
+  instead of advertising `shift+enter`, which the prompt placeholder already
+  explains.
+
+- **`/help` explains the commands.** It prints a block with one line per command
+  (`/compact    summarise old context on demand`) and the keys bound outside the
+  prompt, instead of one pipe-separated list.
+
+- **Transient status rows lead with `✓`.** A settled notice reads `✓ model ready`
+  rather than `-- model ready`; the `--` marker stays for permanent, historical
+  system messages. The spinner form is unchanged.
+
+### Fixed
+
+- **A chosen theme is no longer wiped on the next start or model switch.** The
+  TUI's `remember_selection` built a fresh state object and saved it, dropping
+  the persisted theme (and every model's latency fit). It now merges through
+  `marv.config.state.remember_selection`, so a restart applies the theme again.
+
+- The `_proctitle` sitecustomize hook now chain-loads the next `sitecustomize`
+  on `sys.path`. Python imports only the first one, and the hook directory sits
+  on `PYTHONPATH` ahead of site-packages, so it silently shadowed the marv-mlx
+  APC (prefix-cache) defaults installed in the mlx-vlm tool env — every
+  marv-launched server ran with prefix caching off and re-prefilled the whole
+  conversation every turn (`cached_tokens=0`, 8-13 s prefills on long contexts).
+  Embedded launches now log `APC enabled` and reuse cached prefixes.
+
+- **User prompts are marked by a stripe.** A prompt carries a `$primary` border
+  down its left edge, so it cannot be mistaken for an answer. It is a border, not
+  a background, because the ANSI themes' `$surface`/`$panel` are transparent.
+
+- **The prompt placeholder is muted.** The placeholder rule never applied — a `>`
+  combinator cannot match a Textual component class — so the selector is a
+  descendant selector and the theme's disabled text colour now wins over
+  TextArea's own default. Under the ANSI themes, where `$text-disabled` has no
+  alpha and collapses to the terminal's default (white) foreground, an `:ansi`
+  rule pins the placeholder to bright black so it is visibly grey there too.
+
+- **Selecting part of an answer.** An answer rendered as a Rich `Markdown`
+  renderable, which carries no content offsets, so Textual had no cell to anchor
+  a selection to and any drag over a reply selected — and `Ctrl+C` copied — the
+  whole reply. Answers now render through Textual's own `Markdown` widget, so
+  dragging over part of an answer selects exactly the text swept over: one line,
+  a wrapped paragraph, or a range across paragraphs. Prompts, attachment lines,
+  and the answer's markdown styling (headings, lists, code, bold) are unchanged,
+  and `Ctrl+O` remains the whole-reply fallback.
+
+- **System-message text is escaped.** A system row (including `!command` shell
+  output) is rendered literally now, so square brackets in command output can no
+  longer be parsed as Rich markup or raise a markup error.
+
 ## [1.121.0] - 2026-10-14
 
 marv-mlx shape, a proper goodbye, update checks, and a proper uninstall.
