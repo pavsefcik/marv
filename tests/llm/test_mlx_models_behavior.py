@@ -8,8 +8,21 @@ from marv.llm.mlx_models import (
     ministral_sibling,
     model_family,
     model_supports_thinking,
+    model_supports_vision,
     model_thinking_spec,
 )
+
+TEXT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+VLM_MODEL = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
+
+
+def write_snapshot(hub, model_id: str, files: dict[str, str]):
+    """Create one local HF snapshot for `model_id` holding `files`."""
+    snapshot = hub / f"models--{model_id.replace('/', '--')}" / "snapshots" / "rev"
+    snapshot.mkdir(parents=True)
+    for name, text in files.items():
+        (snapshot / name).write_text(text)
+    return snapshot
 
 
 def test_model_family_classification():
@@ -51,6 +64,63 @@ def test_ministral_sibling_and_base():
     id_ = "mlx-community/Ministral-3-8B-Instruct-2512-4bit"
     assert ministral_sibling(id_) == "mlx-community/Ministral-3-8B-Reasoning-2512-4bit"
     assert ministral_base(id_) == "Ministral-3-8B-4bit"
+
+
+def test_model_supports_vision_reads_an_image_processor_config(tmp_path):
+    for name in (
+        "preprocessor_config.json",
+        "processor_config.json",
+        "image_processor_config.json",
+    ):
+        hub = tmp_path / name
+        write_snapshot(hub, TEXT_MODEL, {name: "{}"})
+
+        assert model_supports_vision(TEXT_MODEL, hub) is True, name
+
+
+def test_model_supports_vision_reads_vision_markers_in_config(tmp_path):
+    for label, marker in (
+        ("vision_config", '"vision_config": {}'),
+        ("vision_tower", '"vision_tower": "siglip"'),
+        ("image_token_index", '"image_token_index": 151655'),
+        ("vision_feature_layer", '"vision_feature_layer": -2'),
+    ):
+        hub = tmp_path / label
+        write_snapshot(hub, TEXT_MODEL, {"config.json": f'{{"model_type": "qwen2", {marker}}}'})
+
+        assert model_supports_vision(TEXT_MODEL, hub) is True, label
+
+
+def test_model_supports_vision_rejects_a_plain_text_config(tmp_path):
+    hub = tmp_path / "hub"
+    write_snapshot(hub, TEXT_MODEL, {"config.json": '{"model_type": "llama", "hidden_size": 3072}'})
+    write_snapshot(hub, "mlx-community/LFM-4B-2bit", {"config.json": '{"model_type": "lfm2"}'})
+
+    assert model_supports_vision(TEXT_MODEL, hub) is False
+    assert model_supports_vision("mlx-community/LFM-4B-2bit", hub) is False
+
+
+def test_model_supports_vision_is_permissive_without_a_snapshot(tmp_path):
+    hub = tmp_path / "hub"
+    hub.mkdir()
+
+    assert model_supports_vision(TEXT_MODEL, hub) is True
+    assert model_supports_vision(VLM_MODEL, hub) is True
+
+
+def test_model_supports_vision_trusts_a_vlm_name(tmp_path):
+    hub = tmp_path / "hub"
+    for model_id in (
+        VLM_MODEL,
+        "mlx-community/llava-1.5-7B-4bit",
+        "mlx-community/pixtral-12b-4bit",
+        "mlx-community/SmolVLM-Instruct-4bit",
+    ):
+        write_snapshot(
+            hub, model_id, {"config.json": '{"model_type": "unknown-to-the-name-heuristic"}'}
+        )
+
+        assert model_supports_vision(model_id, hub) is True, model_id
 
 
 def test_discover_collapses_ministral_pair(tmp_path):

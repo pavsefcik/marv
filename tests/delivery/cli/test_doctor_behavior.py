@@ -18,6 +18,7 @@ from marv.cli.doctor import (
     run_checks,
 )
 from marv.config import Config
+from marv.llm.marv_mlx import MarvMlxProvider
 from marv.tools.pdf import ENGINES
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
 
@@ -174,6 +175,73 @@ def test_pdf_tooling_never_raises_when_detection_fails(temp_dir, monkeypatch):
 
     assert result.status == WARN
     assert "OSError: which is broken" in result.detail
+
+
+TEXT_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+VLM_MODEL = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
+
+
+def vision_check(config: Config, provider) -> CheckResult:
+    """The vision verdict from a full doctor run."""
+    report = run_checks(config, provider)
+    return next(result for result in report.results if result.name == "vision")
+
+
+def mlx_provider(hub_dir, model: str) -> MarvMlxProvider:
+    return MarvMlxProvider(base_url="", api_key="", model=model, hub_dir=hub_dir)
+
+
+def test_vision_check_warns_for_chat_only_apple_fm(temp_dir):
+    config = build_config(temp_dir, provider="apple-fm", model="")
+
+    result = vision_check(config, LLMProviderFake(name="apple-fm", model=""))
+
+    assert result.status == WARN
+    assert "chat-only" in result.detail
+
+
+def test_vision_check_accepts_an_mlx_model_with_an_image_processor(temp_dir):
+    snapshot = temp_dir / f"models--{VLM_MODEL.replace('/', '--')}" / "snapshots" / "rev"
+    snapshot.mkdir(parents=True)
+    (snapshot / "preprocessor_config.json").write_text("{}")
+
+    result = vision_check(build_config(temp_dir), mlx_provider(temp_dir, VLM_MODEL))
+
+    assert result.status == OK
+    assert result.detail == "accepts image input"
+
+
+def test_vision_check_warns_for_a_text_only_mlx_model(temp_dir):
+    snapshot = temp_dir / f"models--{TEXT_MODEL.replace('/', '--')}" / "snapshots" / "rev"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text('{"model_type": "llama"}')
+
+    result = vision_check(build_config(temp_dir), mlx_provider(temp_dir, TEXT_MODEL))
+
+    assert result.status == WARN
+    assert "text-only model" in result.detail
+    assert "`@path` images are dropped" in result.detail
+
+
+def test_vision_check_reports_the_capability_of_other_providers(temp_dir):
+    result = vision_check(build_config(temp_dir), LLMProviderFake(name="openai"))
+
+    assert result.status == OK
+    assert "image-input" in result.detail
+
+
+def test_vision_check_never_raises(temp_dir, monkeypatch):
+    provider = LLMProviderFake(name="openai")
+
+    def explode() -> bool:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(provider, "supports_vision", explode)
+
+    result = vision_check(build_config(temp_dir), provider)
+
+    assert result.status == WARN
+    assert "kaboom" in result.detail
 
 
 def test_doctor_cli_is_reachable(temp_dir, monkeypatch):

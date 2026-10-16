@@ -66,6 +66,24 @@ def test_supports_thinking_matches_family():
     assert make_provider(MinistralReasoning).supports_thinking() is True
 
 
+def test_supports_vision_follows_the_selected_model(tmp_path: Path):
+    vision = tmp_path / "models--mlx-community--Qwen2-VL-2B-Instruct-4bit" / "snapshots" / "rev"
+    vision.mkdir(parents=True)
+    (vision / "preprocessor_config.json").write_text("{}")
+    text = tmp_path / "models--mlx-community--Llama-3.2-3B-Instruct-4bit" / "snapshots" / "rev"
+    text.mkdir(parents=True)
+    (text / "config.json").write_text('{"model_type": "llama"}')
+
+    qwen_vl = make_provider("mlx-community/Qwen2-VL-2B-Instruct-4bit", hub_dir=tmp_path)
+    llama = make_provider("mlx-community/Llama-3.2-3B-Instruct-4bit", hub_dir=tmp_path)
+    unknown = make_provider("mlx-community/Absent-4bit", hub_dir=tmp_path)
+
+    assert qwen_vl.supports_vision() is True
+    assert llama.supports_vision() is False
+    # Not on disk: stay permissive so the server's own error is the signal.
+    assert unknown.supports_vision() is True
+
+
 def test_max_output_tokens_is_clamped_for_the_local_server():
     from marv.llm.marv_mlx import DEFAULT_MAX_OUTPUT_TOKENS
 

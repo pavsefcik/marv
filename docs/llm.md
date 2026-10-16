@@ -110,15 +110,27 @@ attachments as OpenAI content parts — an optional text part followed by one
 other role a plain string, so attachments on a non-user message are ignored.
 
 - **Capability.** `supports_vision()` is part of the provider protocol.
-  `OpenAICompatibleProvider` returns `True` (the local `mlx_vlm` runtime is
-  vision-capable, and generic OpenAI-compatible vision endpoints accept the same
-  parts); `apple-fm` overrides it to `False` because `fm serve` is chat-only.
+  `OpenAICompatibleProvider` returns `True` (generic OpenAI-compatible vision
+  endpoints accept the same parts); `apple-fm` overrides it to `False` because
+  `fm serve` is chat-only. `marv-mlx` classifies **per local model**
+  (`model_supports_vision` in `llm/mlx_models.py`), because the same server
+  runs text-only and vision models: a downloaded snapshot accepts images when it
+  carries an image-processor config (`preprocessor_config.json`,
+  `processor_config.json`, `image_processor_config.json`), when its
+  `config.json` mentions `vision_config`, `vision_tower`, `image_token_index`, or
+  `vision_feature_layer`, or when the model name is a VLM name (`vl`, `llava`,
+  `pixtral`, `smolvlm`, …). A model with no local snapshot (not downloaded, or
+  an id marv cannot inspect) is treated as vision-capable **on purpose**: an
+  image is never silently dropped for a model that may accept it — the server's
+  own error is clearer. `marv doctor`'s `vision` check reports the verdict for
+  the active provider/model.
 - **Budget.** `count_messages_tokens` charges `IMAGE_TOKEN_COST` (a rough
   per-image figure in `runtime/message.py`) per attachment instead of tokenizing
   the base64 data, which is not text and would dominate the count.
 - **Graceful degrade.** `Agent.run(..., attachments=...)` drops the images and
   emits a system chunk when the active provider reports no vision support, so a
-  text-only backend still answers the turn.
+  text-only backend — `apple-fm`, or a local MLX model classified text-only —
+  still answers the turn.
 
 Loading attachments (reading an image, rendering page 1 of a PDF) lives in
 `src/marv/runtime/attachments.py`; see [`tui.md`](tui.md#attaching-files) and

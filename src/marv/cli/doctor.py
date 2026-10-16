@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from marv.llm.marv_mlx import resolve_max_output_tokens, resolve_mlx_server_command
 from marv.llm.marv_mlx_cli import resolve_marv_mlx_binary
-from marv.llm.mlx_models import discover_model_ids, running_model_id
+from marv.llm.mlx_models import discover_model_ids, model_supports_vision, running_model_id
 from marv.llm.model_download import hub_model_present, is_hub_repo_id, resolve_download_interpreter
 from marv.llm.server_process import listener_pid, server_reachable
 from marv.tools.pdf import ENGINES
@@ -230,6 +230,30 @@ def _check_output_budget(config: Config) -> CheckResult:
     )
 
 
+def _check_vision(provider: LLMProvider) -> CheckResult:
+    """Whether the active model accepts image input, and on what evidence.
+
+    `marv-mlx` serves whatever local model is selected, so capability is a
+    per-model question there; every other provider answers for itself. The two
+    provider names are matched first because their capability is not a simple
+    `supports_vision()` call.
+    """
+    try:
+        name = getattr(provider, "name", "")
+        model = getattr(provider, "model", "")
+        if name == "apple-fm":
+            return CheckResult("vision", WARN, "chat-only: image input is not supported")
+        if name == "marv-mlx" and model:
+            if model_supports_vision(model, getattr(provider, "hub_dir", None)):
+                return CheckResult("vision", OK, "accepts image input")
+            return CheckResult("vision", WARN, "text-only model: `@path` images are dropped")
+        if provider.supports_vision():
+            return CheckResult("vision", OK, "provider reports image-input support")
+        return CheckResult("vision", WARN, "provider reports no image-input support")
+    except Exception as exc:  # noqa: BLE001 - doctor never raises
+        return CheckResult("vision", WARN, f"{type(exc).__name__}: {exc}")
+
+
 def _check_pdf_tooling() -> CheckResult:
     """The optional PDF engines the `pdf` tool drives, and where each one lives."""
     try:
@@ -272,6 +296,7 @@ def run_checks(
         _check_mlx_runtime(provider),
         _check_runtime_cli(config),
         _check_output_budget(config),
+        _check_vision(provider),
         _check_download_tooling(),
         _check_pdf_tooling(),
         _check_extensions(config),

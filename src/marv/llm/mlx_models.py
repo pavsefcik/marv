@@ -24,15 +24,21 @@ def _model_name(model_id: str) -> str:
     return model_id.split("/")[-1]
 
 
+def _snapshot_dir(hub_dir: Path, model_id: str) -> Path | None:
+    """The local HF snapshot directory for `model_id`, if one exists."""
+    snapshots_dir = hub_dir / f"models--{model_id.replace('/', '--')}" / "snapshots"
+    if not snapshots_dir.is_dir():
+        return None
+    snapshots = sorted(snapshots_dir.iterdir())
+    return snapshots[0] if snapshots else None
+
+
 def _read_model_type(hub_dir: Path, model_id: str) -> str | None:
     """Read `model_type` from the local HF snapshot config.json, if present."""
-    snapshot_dir = hub_dir / f"models--{model_id.replace('/', '--')}" / "snapshots"
-    if not snapshot_dir.is_dir():
+    snapshot_dir = _snapshot_dir(hub_dir, model_id)
+    if snapshot_dir is None:
         return None
-    snapshots = sorted(snapshot_dir.iterdir())
-    if not snapshots:
-        return None
-    config_file = snapshots[0] / "config.json"
+    config_file = snapshot_dir / "config.json"
     if not config_file.is_file():
         return None
     try:
@@ -78,6 +84,71 @@ def model_family(model_id: str, hub_dir: Path | None = None) -> str:
 def model_supports_thinking(model_id: str, hub_dir: Path | None = None) -> bool:
     """Whether the model can emit a reasoning trace (even display-only)."""
     return model_family(model_id, hub_dir) in _THINKING_FAMILIES
+
+
+#: Snapshot files that only a vision-language model ships.
+_VISION_PROCESSOR_FILES = (
+    "preprocessor_config.json",
+    "processor_config.json",
+    "image_processor_config.json",
+)
+
+#: `config.json` keys that mark an image tower inside a language model config.
+_VISION_CONFIG_MARKERS = (
+    '"vision_config"',
+    '"vision_tower"',
+    '"image_token_index"',
+    '"vision_feature_layer"',
+)
+
+#: Name fragments of well-known open VLM families.
+_VISION_NAME_HINTS = (
+    "vl",
+    "vlm",
+    "vision",
+    "llava",
+    "pixtral",
+    "idefics",
+    "mllama",
+    "internvl",
+    "molmo",
+    "paligemma",
+    "florence",
+    "smolvlm",
+)
+
+
+def _looks_like_vlm(model_id: str) -> bool:
+    """Whether the model id's own name names a vision-language family."""
+    base = _model_name(model_id).lower()
+    return any(hint in base for hint in _VISION_NAME_HINTS)
+
+
+def model_supports_vision(model_id: str, hub_dir: Path | None = None) -> bool:
+    """Whether a locally inspectable MLX model accepts image input.
+
+    Evidence, in order: an image-processor config in the local snapshot; a
+    vision marker in the snapshot's `config.json`; a VLM-shaped model name.
+
+    A model with no local snapshot (not downloaded, or an id marv cannot
+    inspect) reports **True on purpose**: an image is never silently dropped for
+    a model that may well accept it — the server's own error is clearer than a
+    drop, and `marv doctor` still says so when a text-only snapshot is found.
+    """
+    snapshot_dir = _snapshot_dir(hub_dir or DEFAULT_HUB_DIR, model_id)
+    if snapshot_dir is None:
+        return True
+    if any((snapshot_dir / name).is_file() for name in _VISION_PROCESSOR_FILES):
+        return True
+    config_file = snapshot_dir / "config.json"
+    if config_file.is_file():
+        try:
+            text = config_file.read_text()
+        except OSError:
+            text = ""
+        if any(marker in text for marker in _VISION_CONFIG_MARKERS):
+            return True
+    return _looks_like_vlm(model_id)
 
 
 def model_thinking_spec(model_id: str, hub_dir: Path | None = None) -> tuple[str, str, bool]:

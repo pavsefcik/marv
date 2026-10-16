@@ -28,6 +28,7 @@ from marv.llm.mlx_models import (
     DEFAULT_HUB_DIR,
     discover_model_ids,
     model_supports_thinking,
+    model_supports_vision,
     model_thinking_spec,
     running_model_id,
 )
@@ -185,6 +186,10 @@ class MarvMlxProvider(LocalServerProvider):
     def supports_thinking(self) -> bool:
         """Thinking support is per model family."""
         return model_supports_thinking(self.model, self._hub_dir)
+
+    def supports_vision(self) -> bool:
+        """Vision support is per local model, read from the hub snapshot."""
+        return model_supports_vision(self.model, self._hub_dir)
 
     # ---- Seam B: delegate lifecycle to the marv-mlx runtime CLI ---------
 
