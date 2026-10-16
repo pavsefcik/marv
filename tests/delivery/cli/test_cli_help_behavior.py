@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+import re
+
 from typer.testing import CliRunner
 
 from marv import __version__, cli
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(text: str) -> str:
+    """Drop ANSI styling so an assertion does not depend on `FORCE_COLOR`.
+
+    Typer renders ``--help`` through Rich. Locally stdout is captured and Rich
+    emits plain text; in CI (or under ``FORCE_COLOR``) the same help is styled,
+    so ``Usage: marv run`` is split by escape codes. Match the text, not the
+    colour.
+    """
+    return ANSI_RE.sub("", text)
 
 
 def test_marv_help_lists_real_commands_with_their_descriptions():
@@ -46,18 +61,20 @@ def test_run_help_keeps_the_full_typer_option_help():
     result = CliRunner().invoke(cli.app, ["run", "--help"])
 
     assert result.exit_code == 0
-    assert "Usage: marv run" in result.stdout
-    assert "--headless" in result.stdout
-    assert "--approval" in result.stdout
+    help_text = plain(result.stdout)
+    assert "Usage: marv run" in help_text
+    assert "--headless" in help_text
+    assert "--approval" in help_text
 
 
 def test_bench_help_keeps_the_full_typer_option_help():
     result = CliRunner().invoke(cli.app, ["bench", "--help"])
 
     assert result.exit_code == 0
-    assert "Usage: marv bench" in result.stdout
-    assert "--no-warmup" in result.stdout
-    assert "--turns" in result.stdout
+    help_text = plain(result.stdout)
+    assert "Usage: marv bench" in help_text
+    assert "--no-warmup" in help_text
+    assert "--turns" in help_text
 
 
 def test_version_command_prints_the_marv_version():
