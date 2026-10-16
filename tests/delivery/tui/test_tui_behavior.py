@@ -530,6 +530,187 @@ async def test_tui_runner_autocomplete_tab_and_history_navigation(temp_dir):
         assert input_widget.text == ""
 
 
+def at_completion_files(tmp_path: Path) -> None:
+    """Real entries for `@` completion to offer (it lists the cwd)."""
+    (tmp_path / "shot.png").write_bytes(b"png")
+    (tmp_path / "notes.md").write_text("notes")
+    (tmp_path / "my shot.png").write_bytes(b"png")
+    (tmp_path / ".hidden.png").write_bytes(b"png")
+    (tmp_path / "sub").mkdir()
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_lists_cwd_entries_without_dotfiles(
+    temp_dir, tmp_path, monkeypatch
+):
+    """`@` opens the dropdown with directories first and no dotfiles."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("@")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert option_list.display
+
+        options = [
+            str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
+        ]
+        assert options[0] == "@sub/"
+        assert set(options) == {"@sub/", "@shot.png", "@notes.md", "@my shot.png"}
+        assert input_widget.text == "@"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_filters_and_tab_applies_the_document(
+    temp_dir, tmp_path, monkeypatch
+):
+    """A partial filters the list; Tab writes the path back into the prompt."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("l", "o", "o", "k", " ", "a", "t", " ", "@", "s", "h")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        options = [
+            str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
+        ]
+        assert options == ["@shot.png"]
+
+        await pilot.press("tab")
+        await pilot.pause()
+
+        # The text before the `@` is kept, and the token is space-terminated.
+        assert input_widget.text == "look at @shot.png "
+        assert not option_list.display
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_quotes_names_with_spaces(temp_dir, tmp_path, monkeypatch):
+    """A name with whitespace is completed in its quoted form."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("@", '"', "m", "y", " ", "s", "h")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert option_list.display
+
+        await pilot.press("tab")
+        await pilot.pause()
+
+        assert input_widget.text == '@"my shot.png" '
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_gives_directories_a_slash(temp_dir, tmp_path, monkeypatch):
+    """A directory is listed and completed as `@sub/`, the file form with a slash."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("@", "s", "u")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        options = [
+            str(option_list.get_option_at_index(i).prompt) for i in range(option_list.option_count)
+        ]
+        assert options == ["@sub/"]
+
+        await pilot.press("tab")
+        await pilot.pause()
+
+        assert input_widget.text == "@sub/ "
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_stays_hidden_when_nothing_matches(
+    temp_dir, tmp_path, monkeypatch
+):
+    """An unmatched partial leaves the dropdown shut and the text alone."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        input_widget = prompt_input(app)
+        await pilot.press("@", "n", "o", "p", "e")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert not option_list.display
+        assert input_widget.text == "@nope"
+
+
+@pytest.mark.asyncio
+async def test_tui_runner_at_completion_enter_attaches_without_a_second_press(
+    temp_dir, tmp_path, monkeypatch
+):
+    """Enter applies the completion and runs the turn in one press."""
+    monkeypatch.chdir(tmp_path)
+    at_completion_files(tmp_path)
+    config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
+    app = AgentApp(config, provider=LLMProviderFake([]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        prompt_input(app)
+        await pilot.press("@", "s", "h", "o", "t")
+        await pilot.pause()
+
+        prompt = app.query_one("#prompt-input", PromptInput)
+        option_list = prompt.query_one("#suggestions", OptionList)
+        assert option_list.display
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # The completion is applied and the turn submitted in one press: the
+        # token is consumed as an attachment and the prompt becomes the turn.
+        assert not option_list.display
+        assert prompt.query_one("#prompt-inner", TextArea).text == ""
+        chat = app.query_one("#chat-view")
+        user_messages = [w for w in chat.query(MessageWidget) if w.role == "user"]
+        assert [(w.text_content(), [a.name for a in w.attachments]) for w in user_messages] == [
+            ("", ["shot.png"])
+        ]
+
+
 @pytest.mark.asyncio
 async def test_tui_runner_model_menu_updates_model_and_thinking(temp_dir):
     session = Session.new(temp_dir)

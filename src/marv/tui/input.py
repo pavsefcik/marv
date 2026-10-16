@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from textual.binding import Binding
@@ -20,6 +22,14 @@ if TYPE_CHECKING:
 
 # Keys that insert a newline instead of submitting.
 NEWLINE_KEYS = {"shift+enter", "alt+enter", "meta+enter"}
+
+#: A `@partial` token ending the document, quoted (`@"partial`) or bare. A token
+#: that is not at the end (a finished `@file.png `, or a path fragment further
+#: back in the prompt) is not being typed, so nothing is completed for it.
+_ATTACHMENT_PARTIAL = re.compile(r'(?:^|(?<=\s))@(?:"[^"]*"?|\S*)\Z')
+
+#: Most `@` choices offered at once; a longer partial is the way to narrow.
+MAX_ATTACHMENT_OPTIONS = 20
 
 
 # Built-in commands available for autocomplete
@@ -179,6 +189,51 @@ class PromptInput(Widget, can_focus=False):
         """Update the model list offered by the inline `/model` dropdown."""
         self._models = sorted(models)
 
+    def _get_attachment_options(self, value: str) -> list[Option] | None:
+        """Path choices for a trailing `@partial` token, or None when absent.
+
+        Entries come from the working directory: directories first, then by
+        name, with dotfiles only once the partial itself starts with a dot.
+        The option id is the whole replacement document — the text before the
+        `@`, the path (quoted when it contains whitespace), and a trailing
+        space — because Tab, Enter, and clicks all rewrite the input from the
+        id.
+        """
+        match = _ATTACHMENT_PARTIAL.search(value)
+        if match is None:
+            return None
+
+        partial = match.group(0)[1:]
+        quoted = partial.startswith('"')
+        if quoted:
+            partial = partial[1:]
+
+        try:
+            entries = sorted(Path.cwd().iterdir(), key=lambda p: (not p.is_dir(), p.name))
+        except OSError:
+            return None
+
+        prefix = value[: match.start()]
+        options: list[Option] = []
+        for entry in entries:
+            name = entry.name
+            if name.startswith(".") and not partial.startswith("."):
+                continue
+            if not name.startswith(partial):
+                continue
+            if entry.is_dir():
+                prompt = f"@{name}/"
+                completion = f"{name}/"
+            else:
+                prompt = f"@{name}"
+                completion = name
+            if quoted or " " in name:
+                completion = f'"{completion}"'
+            options.append(Option(prompt, id=f"{prefix}@{completion} "))
+            if len(options) == MAX_ATTACHMENT_OPTIONS:
+                break
+        return options or None
+
     def _get_model_options(self, value: str) -> list[Option] | None:
         """Inline model choices for `/model`, or None when not applicable.
 
@@ -233,6 +288,11 @@ class PromptInput(Widget, can_focus=False):
             model_options = self._get_model_options(value)
             filtered = [str(o.id) for o in model_options] if model_options else []
             option_objects = model_options
+        elif (attachment_options := self._get_attachment_options(value)) is not None:
+            # `@partial` file completion: like model choices, the id is the
+            # document to write back, the label is what the user reads.
+            filtered = [str(o.id) for o in attachment_options]
+            option_objects = attachment_options
         elif value.startswith("/"):
             # Filter commands matching input
             query = value.lower()
@@ -388,7 +448,9 @@ class PromptInput(Widget, can_focus=False):
             option = option_list.get_option_at_index(option_list.highlighted)
             if not option:
                 return
-            value = str(option.prompt)
+            # Options that carry an id (model choices, `@path` completions) store
+            # the document to write back there, same as Enter and clicks.
+            value = str(option.id) if option.id is not None else str(option.prompt)
             self._set_input_value(value, reset_history=True)
             option_list.display = False
 

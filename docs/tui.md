@@ -24,7 +24,7 @@ straight back into input mode; `Esc` cancels.
 
 - Streaming assistant output + tool calls
 - `@path` image/PDF attachment (see [Attaching files](#attaching-files))
-- Skill and slash‑command autocomplete
+- Skill, slash‑command, and `@path` autocomplete
 - Status bar showing model + token usage + generation speed + thinking level + RAM usage + extension status
 - Model selector, model-download picker with live progress, and context viewer
 - Extension UI host for `notify`, `input`, `confirm`, `select`, `present(view)`, and persistent widgets
@@ -38,6 +38,15 @@ vision-capable model as a content part; the chat shows a dim `[image: name]`
 line under the prompt, and replaying a session restores it. A token that is not
 an existing image or PDF is left as ordinary text. When the loaded model cannot
 accept images (e.g. `apple-fm`), the turn runs text-only with a system warning.
+
+Typing `@` opens the same dropdown as `/` and `$`, listing entries from the
+working directory: directories first (a directory reads `@sub/`), then names,
+and dotfiles only once the partial itself starts with a dot. `Tab` fills the
+path into the prompt without running it, `Enter` or a click fills it and runs
+the turn. A name with whitespace is written back in its quoted form
+(`@"my shot.png"`), the form the attachment parser accepts. The list shows any
+entry, not just attachable ones — only an existing image or PDF becomes an
+attachment, so a completed `.md` or `.py` path stays plain prompt text.
 
 A PDF needs a renderer: `pdftoppm` (poppler, `brew install poppler`) or macOS
 `sips`. When neither is present the attachment fails with a message naming the
