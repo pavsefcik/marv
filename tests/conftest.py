@@ -10,9 +10,18 @@ import pytest
 
 @pytest.fixture
 def temp_dir() -> Path:
-    """Temporary directory for filesystem-based tests."""
+    """Temporary directory for filesystem-based tests.
+
+    The path is nested one level (``<tmp>/sessions``) so that ``state_path`` —
+    ``session_dir.parent / state.toml`` — lands inside this test's temporary
+    directory rather than the shared system temp root. Without the nesting,
+    every test that passes ``temp_dir`` as a session dir shares one
+    ``state.toml`` and persisted themes/latency fits leak between tests.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+        sessions = Path(tmpdir) / "sessions"
+        sessions.mkdir()
+        yield sessions
 
 
 @pytest.fixture(autouse=True)

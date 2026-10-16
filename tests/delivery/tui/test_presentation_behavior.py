@@ -519,3 +519,23 @@ async def test_transient_status_notice_leads_with_the_success_glyph(temp_dir):
             for widget in chat.query(Static)
             if "message-system" in widget.classes
         )
+
+
+@pytest.mark.asyncio
+async def test_system_message_content_is_shown_literally(temp_dir):
+    """System text is data, not markup: shell output cannot inject Rich tags."""
+    app = make_app(temp_dir)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        chat.add_system_message("$ echo [bold red]hi[/]")
+        await pilot.pause()
+
+        rendered = [
+            render_text(widget)
+            for widget in chat.query(Static)
+            if "message-system" in widget.classes
+        ]
+        assert any("$ echo [bold red]hi[/]" in text for text in rendered)

@@ -41,10 +41,13 @@ def format_system_message(text: str) -> str:
 
     The ``--`` marker belongs to the first line only, so continuation lines are
     indented under it and the block still reads as one system row instead of as
-    unprefixed prose.
+    unprefixed prose. Content is escaped: a system line is data, not markup, so
+    shell output from ``!command`` cannot inject Rich tags.
     """
     head, *rest = text.splitlines() or [""]
-    return "\n".join([f"-- {head}", *(f"   {line}" if line.strip() else "" for line in rest)])
+    return "\n".join(
+        [f"-- {escape(head)}", *(f"   {escape(line)}" if line.strip() else "" for line in rest)]
+    )
 
 
 def format_tokens(tokens: int) -> str:
