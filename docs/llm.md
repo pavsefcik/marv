@@ -55,7 +55,10 @@ how to launch their server and how to tell it is ready.
   family-accurate.
 - **Process naming** — the server is launched with `MARV_PROCTITLE` and a bundled
   `_proctitle/sitecustomize.py` hook, so Activity Monitor / `ps` show the model id
-  instead of "Python".
+  instead of "Python". The hook chain-loads the next `sitecustomize` on
+  `sys.path` (Python imports only the first), so it does not shadow — and
+  silently disable — the marv-mlx APC (prefix-cache) defaults installed in the
+  mlx-vlm tool env's site-packages.
 
 ### apple-fm
 
@@ -219,6 +222,12 @@ machine (see [`cli.md`](cli.md#latency-benchmark)). Either way it is persisted
 per model in `state.toml` beside the last-used selection
 (`remember_latency_fit`) and re-loaded on the next start
 (`Config.latency_fit_for(model)`).
+- **The serving server seeds it first.** A local mlx_vlm server measures every
+request it serves and reports them on `/v1/metrics`; at the start of each run
+`Agent._seed_latency_from_server()` folds those samples into an empty fit
+(`marv.llm.server_metrics`), so even a first-ever turn gets a real ETA from
+this machine's own numbers. A persisted calibration is never overwritten by
+server samples, and a server without the endpoint changes nothing.
 
 See [`configuration.md`](configuration.md#last-used-selection) for where the fit
 is stored.
@@ -234,6 +243,14 @@ so tool schemas — on the wire every turn — are part of the estimate.
 
 - `eta_ms is None` is a first-class value: on a machine with no measured turns
 there is no honest ETA, and delivery must degrade to elapsed-only.
+- `cached_tokens` is the prefix the server is expected to serve from its
+  Automatic Prefix Caching (APC) cache. When the server reports APC enabled,
+  the agent expects the previous turn's full footprint (prompt + schemas +
+  completion) to be a cache hit and prices only the newly added tokens; a
+  compaction or model switch resets the prefix, and `cached_tokens` is clamped
+  so the newest input is always priced. The TUI narration shows the cached
+  share ("prefilling 1.2k tokens (9.8k cached)") so a short wait on a long
+  prompt reads as a cache hit, not as a wrong token count.
 - `dominant_cost` (`cold` | `prompt` | `schemas`) and `prompt_share` reuse the
   prompt/schema split to attribute the wait.
 - `wait_advice()` turns a long prediction into a specific exit offer (compact,

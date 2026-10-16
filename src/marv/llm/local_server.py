@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from marv.llm.mlx_models import running_model_id
 from marv.llm.openai_compat import DEFAULT_LOCAL_READ_TIMEOUT, OpenAICompatibleProvider
 from marv.llm.server_lifecycle import register_stop, unregister_stop
+from marv.llm.server_metrics import ServerMetrics, fetch_server_metrics
 from marv.llm.server_process import (
     listener_pid,
     port_of,
@@ -103,6 +104,17 @@ class LocalServerProvider(OpenAICompatibleProvider):
     def _proctitle(self) -> str:
         """Process title for the server (shown in Activity Monitor / `ps`)."""
         return self.model or self.server_label
+
+    async def server_metrics(self) -> ServerMetrics | None:
+        """Live runtime state from the serving process, or None when absent.
+
+        The mlx_vlm server reports its own measured prefill/decode rates and
+        prefix-cache state on ``/v1/metrics``; the agent uses them to seed the
+        wait prediction before marv has any measured turns of its own. A server
+        that does not speak the endpoint (older mlx_vlm, other local servers)
+        yields None and callers fall back to the existing behaviour.
+        """
+        return await fetch_server_metrics(self.base_url, client=self.client)
 
     # ---- lifecycle ------------------------------------------------------
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from marv.llm.latency import LatencyTracker, WaitEstimate, fit_slope, percentile
 
 
@@ -302,3 +304,36 @@ def test_prompt_share_is_the_conversation_fraction_of_prefill() -> None:
 
     assert estimate.prompt_share == 0.75
     assert _estimate().prompt_share == 0.0
+
+
+def test_prediction_subtracts_the_expected_prefix_cache_hit() -> None:
+    """With APC on, cached prefix tokens must not be priced as prefill."""
+
+    from marv.llm.latency import LatencyFit, LatencySample
+
+    fit = LatencyFit.from_samples(
+        [
+            LatencySample(prompt_tokens=2000, ttft_ms=2000.0, streamed=True),
+            LatencySample(prompt_tokens=4000, ttft_ms=4000.0, streamed=True),
+        ]
+    )
+    assert fit.has_data
+
+    full = fit.predict_ttft_ms(5000)
+    cached = fit.predict_ttft_ms(5000, cached_tokens=4500)
+
+    assert full is not None and cached is not None
+    # 5000 tokens at 2000 tok/s = 2.5 s; only the 500 uncached are priced.
+    assert cached == pytest.approx(full * 0.1)
+    # A cache cannot cover the whole request: an over-long prefix still leaves
+    # the newest tokens priced, never a zero ETA.
+    clamped = fit.predict_ttft_ms(1000, cached_tokens=9999)
+    assert clamped is not None and 0 < clamped <= fit.predict_ttft_ms(1000)
+
+
+def test_estimate_reports_its_uncached_share() -> None:
+    estimate = _estimate(prompt_tokens=1000, schema_tokens=500, cached_tokens=800)
+
+    assert estimate.prefill_tokens == 1500
+    assert estimate.uncached_tokens == 700
+    assert _estimate(prompt_tokens=100, cached_tokens=500).uncached_tokens == 0

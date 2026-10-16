@@ -136,6 +136,8 @@ class Agent:
         "_approver",
         "_latency",
         "_latency_fit",
+        "_server_apc_enabled",
+        "_last_turn_total_tokens",
         "_warm_models",
         "_interaction_mode",
         "_active_tools_before_chat",
@@ -194,6 +196,14 @@ class Agent:
         #: ``state.toml``). Empty until one is set, so a first-ever run reports
         #: no ETA rather than a hardcoded one.
         self._latency_fit = LatencyFit()
+        #: Whether the serving server reported prefix caching (APC) enabled;
+        #: refreshed from the server at the start of each run. Unknown (no
+        #: server metrics) reads as False, i.e. predict the full prefill.
+        self._server_apc_enabled = False
+        #: Total tokens (prompt + schemas + completion) of the last streamed
+        #: turn: with APC on, that prefix is what the next turn's request is
+        #: expected to hit in the server's prefix cache.
+        self._last_turn_total_tokens = 0
         #: (provider, model) pairs already observed to stream in this run; the
         #: first turn for a pair may include cold weight loading.
         self._warm_models: set[str] = set()
@@ -470,6 +480,9 @@ class Agent:
 
         previous_model = self.provider.model
         self.provider.set_model(model)
+        # A different model is a different prefix (and a different cache
+        # namespace server-side): nothing of the last turn carries over.
+        self._last_turn_total_tokens = 0
 
         # Clamp thinking level to model capabilities
         available = get_available_thinking_levels(model, provider=self.provider.name)
@@ -534,6 +547,44 @@ class Agent:
         for sample in self._latency.metrics.samples:
             self._latency_fit = self._latency_fit.with_sample(sample)
         return self._latency_fit
+
+    async def _seed_latency_from_server(self) -> None:
+        """Seed the wait prediction from the serving server's own numbers.
+
+        A first-ever run has no persisted calibration, so its turns would show
+        no ETA at all. A local mlx_vlm server already measures every request
+        it serves (ours included) and reports prefill rates and prefix-cache
+        state on ``/v1/metrics``; those samples give the fit real measurements
+        from the first turn of a session. Best-effort and one-shot per run: an
+        unreachable or older server changes nothing.
+        """
+        fetch = getattr(self.provider, "server_metrics", None)
+        if not callable(fetch):
+            return
+        try:
+            metrics = await fetch()
+        except Exception:  # noqa: BLE001 - a probe failure must not block a turn
+            metrics = None
+        if metrics is None:
+            return
+        self._server_apc_enabled = bool(metrics.apc_enabled)
+        if not self._latency_fit.has_data and metrics.samples:
+            from marv.llm.server_metrics import to_latency_samples
+
+            self._latency_fit = LatencyFit.from_samples(to_latency_samples(metrics))
+
+    def _expected_cached_tokens(self, prefill_tokens: int) -> int:
+        """Prefix tokens the server is expected to serve from its cache.
+
+        With APC on, the previous turn's prompt + schemas + completion is
+        already in the server's prefix cache, so only the tokens added since
+        then are actually prefilled. Clamped to the current prompt both ways:
+        a cache cannot cover more than the request contains, and a compaction
+        or model switch resets the prefix entirely (the caller zeroes it).
+        """
+        if not self._server_apc_enabled or self._last_turn_total_tokens <= 0:
+            return 0
+        return min(self._last_turn_total_tokens, max(0, prefill_tokens))
 
     async def _turn_is_cold(self) -> bool:
         """Whether this turn may pay a cold model start (weights loading).
@@ -683,6 +734,7 @@ class Agent:
 
         # Each run reports its own latency profile.
         self._latency.reset()
+        await self._seed_latency_from_server()
 
         async with self._hooks.run_scope() as run_control:
             while pending_inputs:
@@ -721,6 +773,9 @@ class Agent:
                 )
 
                 if self._context.needs_compaction(self.session.messages):
+                    # A compacted context is a new prefix: the server's prefix
+                    # cache cannot cover it, so the next turn pays full prefill.
+                    self._last_turn_total_tokens = 0
                     original_tokens = self._context.current_tokens(self.session.messages)
                     compaction = await self._context.compact(self.session.messages)
                     self.session.append_compaction(
@@ -1101,12 +1156,14 @@ class Agent:
                     schema_tokens=schema_tokens,
                     cold=cold,
                 )
+                cached_tokens = self._expected_cached_tokens(prompt_tokens + schema_tokens)
                 yield WaitEstimateChunk(
                     payload=WaitEstimate(
                         prompt_tokens=prompt_tokens,
                         schema_tokens=schema_tokens,
+                        cached_tokens=cached_tokens,
                         eta_ms=self._latency_fit.predict_ttft_ms(
-                            prompt_tokens, schema_tokens, cold=cold
+                            prompt_tokens, schema_tokens, cold=cold, cached_tokens=cached_tokens
                         ),
                         cold=cold,
                     )
@@ -1120,6 +1177,15 @@ class Agent:
                 stream_state = _StreamConsumptionState()
                 async for chunk in self._consume_stream(stream, stream_state):
                     yield chunk
+
+                if not stream_state.stream_error:
+                    # Remember this turn's full token footprint: with APC the
+                    # next request's prefix up to here is a cache hit.
+                    self._last_turn_total_tokens = (
+                        prompt_tokens
+                        + schema_tokens
+                        + self.provider.count_tokens(stream_state.response_content)
+                    )
 
                 if stream_state.stream_error:
                     # The turn never streamed: drop the pending sample so it is

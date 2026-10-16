@@ -489,15 +489,20 @@ class WaitingIndicator(Static):
             return f"{label}\u2026"
 
         tokens = format_tokens(estimate.prefill_tokens)
+        cached = (
+            f" ({format_tokens(estimate.cached_tokens)} cached)"
+            if estimate.cached_tokens > 0
+            else ""
+        )
         elapsed = self.elapsed_seconds()
         eta_seconds = (estimate.eta_ms or 0.0) / 1000.0
         if not estimate.has_eta or eta_seconds <= 0:
             # A first-ever run has no measured history, so only the clock is
             # honest: no ETA is invented and no constant is assumed.
-            return f"prefilling {tokens} tokens \u00b7 {format_clock(elapsed)} elapsed"
+            return f"prefilling {tokens} tokens{cached} \u00b7 {format_clock(elapsed)} elapsed"
         if elapsed > eta_seconds:
             return (
-                f"prefilling {tokens} tokens \u00b7 taking longer than predicted"
+                f"prefilling {tokens} tokens{cached} \u00b7 taking longer than predicted"
                 f" \u00b7 {format_clock(elapsed)} elapsed"
             )
 
@@ -506,7 +511,7 @@ class WaitingIndicator(Static):
         # jump or freeze at 99%.
         percent = min(99, int(elapsed / eta_seconds * 100))
         return (
-            f"prefilling {tokens} tokens \u00b7 ~{format_clock(eta_seconds - elapsed)}"
+            f"prefilling {tokens} tokens{cached} \u00b7 ~{format_clock(eta_seconds - elapsed)}"
             f" \u00b7 {format_clock(elapsed)} elapsed ({percent}%)"
         )
 

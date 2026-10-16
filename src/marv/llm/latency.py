@@ -152,15 +152,23 @@ class LatencyFit:
         schema_tokens: int = 0,
         *,
         cold: bool = False,
+        cached_tokens: int = 0,
     ) -> float | None:
         """Predicted time-to-first-token, or None with no measured history.
 
-        Returning None is the honest answer on a first-ever run: the UI then
-        degrades to elapsed-only instead of showing a fabricated ETA.
+        ``cached_tokens`` is the prefix the serving server is expected to
+        serve from its prefix cache rather than prefill (APC); those tokens
+        cost roughly nothing, so they are subtracted before the rate is
+        applied. Returning None is the honest answer on a first-ever run: the
+        UI then degrades to elapsed-only instead of showing a fabricated ETA.
         """
         if not self.has_data:
             return None
-        eta = self.predict_prefill_ms(prompt_tokens + schema_tokens)
+        total = max(0, prompt_tokens + schema_tokens)
+        # A cache cannot cover the whole request (this turn's new user input
+        # is never cached), so at least one token is always priced.
+        cached = min(max(0, cached_tokens), max(0, total - 1))
+        eta = self.predict_prefill_ms(total - cached)
         if cold:
             eta += self.cold_start_ms
         return eta
@@ -345,6 +353,9 @@ class WaitEstimate:
 
     prompt_tokens: int = 0
     schema_tokens: int = 0
+    #: Prefix tokens the serving server is expected to hit in its prefix
+    #: cache (APC), so they are not part of this turn's prefill cost.
+    cached_tokens: int = 0
     eta_ms: float | None = None
     cold: bool = False
 
@@ -352,6 +363,11 @@ class WaitEstimate:
     def prefill_tokens(self) -> int:
         """Prompt + tool-schema tokens this turn must prefill."""
         return self.prompt_tokens + self.schema_tokens
+
+    @property
+    def uncached_tokens(self) -> int:
+        """Prefill tokens minus the expected prefix-cache hit."""
+        return max(0, self.prefill_tokens - self.cached_tokens)
 
     @property
     def has_eta(self) -> bool:
