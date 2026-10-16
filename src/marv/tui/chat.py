@@ -1,21 +1,23 @@
 """Chat display widget for conversation history."""
 
+from __future__ import annotations
+
 import re
 import time
 from typing import TYPE_CHECKING, Any
 
-from rich.markdown import Markdown
+from rich.markdown import Markdown as RichMarkdown
 from rich.markup import escape
 from rich.text import Text
 from textual.containers import ScrollableContainer
-from textual.widgets import Static
+from textual.widgets import Markdown, Static
 
 from marv.llm.latency import wait_advice
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from textual.selection import Selection
+    from textual.app import ComposeResult
 
     from marv.llm.latency import WaitEstimate
     from marv.runtime.message import ImageAttachment, ToolCall
@@ -87,7 +89,23 @@ def parse_skill_block(text: str) -> tuple[str, str, str, str] | None:
 
 
 class MessageWidget(Static):
-    """Chat message with markdown rendering."""
+    """Chat message.
+
+    A prompt is Textual markup rendered by the widget itself; an answer hosts
+    Textual's own `Markdown` widget. Its blocks render `Content`, which Textual
+    annotates with content offsets, so a drag over an answer selects the dragged
+    text. A Rich `Markdown` renderable carries no offsets, which left Textual
+    with no offset for the cell under the pointer and made it select the whole
+    message instead.
+    """
+
+    DEFAULT_CSS = """
+    /* Textual's Markdown indents itself; the message already pads the body, so
+       an answer is not indented twice. */
+    MessageWidget > Markdown {
+        padding: 0;
+    }
+    """
 
     def __init__(
         self,
@@ -100,10 +118,21 @@ class MessageWidget(Static):
         self.role = role
         self._content = content
         self.attachments = list(attachments or [])
+        self._body: Markdown | None = None
         self.add_class(f"message-{role}")
 
+    def compose(self) -> ComposeResult:
+        if self.role == "assistant":
+            # ``open_links`` off: clicking a link while selecting one must not
+            # open a browser, and answers have never launched URLs.
+            self._body = Markdown(self._content, open_links=False)
+            yield self._body
+
     def on_mount(self) -> None:
-        self._update_content()
+        # An answer's body is composed with its content; a prompt is markup on
+        # the widget itself, so only that needs its first render here.
+        if self.role == "user":
+            self._update_content()
 
     def append_text(self, text: str) -> None:
         self._content += text
@@ -118,18 +147,6 @@ class MessageWidget(Static):
     # the whole reply instead. Selection is Textual's, and ``ctrl+o`` remains
     # the whole-reply fallback.
 
-    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
-        """Extract the selected text from the lines this widget renders.
-
-        Textual's default only understands ``Text``/``Content`` visuals, and an
-        answer is a Rich ``Markdown`` renderable, so without this the answer
-        could not be selected at all. The rendered lines are the text the user
-        dragged over, wrapping and padding included; the trailing padding of a
-        line is dropped so copying a whole line does not copy the blanks.
-        """
-        lines = [self.render_line(y).text.rstrip() for y in range(self.size.height)]
-        return selection.extract("\n".join(lines)), "\n"
-
     def text_content(self) -> str:
         """Return the current plain text content."""
         return self._content
@@ -140,12 +157,10 @@ class MessageWidget(Static):
             lines = [f"[bold $primary]> [/][bold]{escape(self._content)}[/]"]
             lines.extend(self._attachment_lines())
             self.update("\n".join(lines))
-        else:
-            try:
-                self.update(Markdown(self._content))
-            except Exception:
-                # Fallback to plain text if Markdown fails
-                self.update(Text(self._content))
+        elif self._body is not None and self._body.is_mounted:
+            self._body.update(self._content)
+        # An answer that is not mounted yet renders ``self._content`` from
+        # ``compose``, so nothing is lost by skipping the update.
 
     def _attachment_lines(self) -> list[str]:
         """Dim markers naming each attached image, one per line."""
@@ -340,7 +355,7 @@ class SkillInvocationWidget(Static):
             header += f"\n\nLocation: {self.location}"
         content = f"{header}\n\n{self.body}"
         try:
-            self.update(Markdown(content))
+            self.update(RichMarkdown(content))
         except Exception:
             self.update(Text(content))
 

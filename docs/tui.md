@@ -259,6 +259,9 @@ It should not own:
   the whole-reply fallback for a reply too long to select by hand
 - `Esc` — cancel or refocus input
 
-Dragging with the mouse selects text anywhere in the chat, including inside an
-answer. A click no longer copies the whole message, because that made copying
-one paragraph of a long reply impossible.
+Dragging with the mouse selects text anywhere in the chat, including part of an
+answer. Answers render through Textual's own `Markdown` widget, whose blocks
+carry the content offsets Textual needs to resolve the cell under the pointer;
+a Rich `Markdown` renderable carries none, which made every drag over an answer
+select the whole reply. A click no longer copies the whole message, because that
+made copying one paragraph of a long reply impossible.

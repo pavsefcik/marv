@@ -9,14 +9,14 @@ markup.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 from textual.color import Color
-from textual.geometry import Offset
-from textual.selection import Selection
-from textual.widgets import Static, TextArea
+from textual.widgets import Markdown, Static, TextArea
 
 from marv.config import Config
+from marv.runtime.message import ImageAttachment
 from marv.runtime.session import Session
 from marv.tui.app import AgentApp
 from marv.tui.chat import (
@@ -30,6 +30,9 @@ from marv.tui.chat import (
 )
 from marv.tui.renderer import banner_text
 from tests.test_doubles.llm_provider_fake import LLMProviderFake
+
+if TYPE_CHECKING:
+    from textual.pilot import Pilot
 
 
 def make_app(temp_dir, **overrides) -> AgentApp:
@@ -50,6 +53,34 @@ def make_app(temp_dir, **overrides) -> AgentApp:
 def render_text(widget: Static) -> str:
     renderable = widget.render()
     return getattr(renderable, "plain", str(renderable))
+
+
+# An answer long enough to wrap over several lines of an 80-column chat, so a
+# drag can start on its first line and finish several lines further down.
+WRAPPING_ANSWER = (
+    "The parser fix is in src/parser.py: the tokenizer now keeps the trailing "
+    "comma so a list of arguments still parses when the last one is empty and "
+    "the caller passes no keywords at all, which used to raise a confusing "
+    "TypeError from deep inside the resolver."
+)
+
+# Two one-line paragraphs, one blank line apart, so each rendered line's cells
+# are known exactly.
+PARAGRAPHS = "the parser fix is in src/parser.py\n\nand the second line follows here"
+
+
+async def drag(
+    pilot: Pilot, widget: MessageWidget, start: tuple[int, int], end: tuple[int, int]
+) -> str:
+    """Drag the mouse over ``widget`` and return the text that got selected.
+
+    Offsets are (x, y) cells relative to the widget's own region; a message
+    indents its body by two cells, so (2, 0) is the body's first cell.
+    """
+    await pilot.mouse_down(widget, offset=start)
+    await pilot.mouse_up(widget, offset=end)
+    await pilot.pause()
+    return pilot.app.screen.get_selected_text() or ""
 
 
 @pytest.mark.asyncio
@@ -198,12 +229,12 @@ async def test_user_message_carries_a_primary_stripe(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_an_answer_is_extractable_as_plain_text(temp_dir):
-    """A selection over a message yields its text, not a ``RichVisual`` repr.
+async def test_a_drag_over_an_answer_selects_only_the_dragged_text(temp_dir):
+    """A drag inside an answer selects what it swept over, not the whole reply.
 
-    Answers render from Markdown, and Textual's default extraction stringifies
-    the visual, so the selected text of a reply was a repr and could not be
-    copied at all.
+    An answer used to render as a Rich ``Markdown`` renderable, which carries no
+    content offsets, so Textual had no cell offset to anchor a selection to and
+    took its select-all path: every drag copied the entire reply.
     """
     app = make_app(temp_dir)
 
@@ -211,39 +242,84 @@ async def test_an_answer_is_extractable_as_plain_text(temp_dir):
         await pilot.pause()
         chat = app.query_one("#chat-view", ChatView)
 
-        prompt = MessageWidget("user", "fix the parser")
-        answer = MessageWidget("assistant", "the parser fix is in src/parser.py")
-        await chat.mount(prompt)
+        answer = MessageWidget("assistant", WRAPPING_ANSWER)
         await chat.mount(answer)
         await pilot.pause()
 
-        # Offset coordinates are (x, y) and are read per line against the
-        # widget's own content: cells 0-14 of the answer's only line.
-        app.screen.selections = {answer: Selection(Offset(0, 0), Offset(14, 0))}
-        section = app.screen.get_selected_text()
-        assert section == "the parser fix"
+        # The body's first cell down to eleven cells into its fourth line:
+        # three full wrapped lines plus eleven cells, and nothing beyond them.
+        selected = await drag(pilot, answer, (2, 0), (12, 3))
 
-        app.screen.selections = {answer: Selection(Offset(0, 0), Offset(36, 0))}
-        whole_line = app.screen.get_selected_text()
-        assert whole_line == "the parser fix is in src/parser.py"
+        assert selected == WRAPPING_ANSWER[:227]
+        assert selected != WRAPPING_ANSWER
 
-        # A user prompt is selectable too, `> ` marker included.
-        app.screen.selections = {prompt: Selection(Offset(0, 0), Offset(30, 0))}
-        asked = app.screen.get_selected_text()
-        assert asked == "> fix the parser"
-
-        # ctrl+c copies the selection — the section, not the whole reply —
+        # ctrl+c copies the selection — the dragged part, not the whole reply —
         # rather than quitting marv (the quit binding applies to no selection).
-        app.screen.selections = {answer: Selection(Offset(0, 0), Offset(14, 0))}
         await pilot.press("ctrl+c")
         await pilot.pause()
-        assert app.clipboard == "the parser fix"
+        assert app.clipboard == selected
         assert app.is_running
 
         app.screen.clear_selection()
         await pilot.press("ctrl+c")
         await pilot.pause()
         assert not app.is_running
+
+
+@pytest.mark.asyncio
+async def test_a_drag_selects_an_answer_line_and_nothing_beyond_it(temp_dir):
+    """A drag past the end of a line stops at the line, not at the answer."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        answer = MessageWidget("assistant", PARAGRAPHS)
+        await chat.mount(answer)
+        await pilot.pause()
+
+        selected = await drag(pilot, answer, (2, 0), (72, 0))
+        assert selected == "the parser fix is in src/parser.py"
+
+
+@pytest.mark.asyncio
+async def test_a_drag_across_answer_lines_starts_where_the_drag_did(temp_dir):
+    """A drag spanning two answer lines reads from the cell it started on."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        answer = MessageWidget("assistant", PARAGRAPHS)
+        await chat.mount(answer)
+        await pilot.pause()
+
+        # From four cells into the first paragraph to ten cells into the second.
+        selected = await drag(pilot, answer, (6, 0), (12, 2))
+        assert selected == "parser fix is in src/parser.py\nand the se"
+
+
+@pytest.mark.asyncio
+async def test_a_user_prompt_is_selectable(temp_dir):
+    """A prompt is selectable too: the `> ` marker and the image lines."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        attachment = ImageAttachment(media_type="image/png", data="", name="shot.png")
+        prompt = MessageWidget("user", "fix the parser", [attachment])
+        await chat.mount(prompt)
+        await pilot.pause()
+
+        assert await drag(pilot, prompt, (2, 0), (9, 0)) == "> fix th"
+        app.screen.clear_selection()
+        assert await drag(pilot, prompt, (2, 0), (17, 0)) == "> fix the parser"
+        app.screen.clear_selection()
+        assert await drag(pilot, prompt, (2, 1), (20, 1)) == "  [image: shot.png]"
 
 
 @pytest.mark.asyncio
@@ -271,12 +347,8 @@ async def test_clicking_an_answer_selects_text_instead_of_copying_it(temp_dir, m
         assert copied == []
 
         # A drag over one section copies that section, not the whole message.
-        await pilot.mouse_down(answer, offset=(0, 0))
-        await pilot.mouse_up(answer, offset=(28, 0))
-        await pilot.pause()
-        selected = app.screen.get_selected_text()
-        assert selected is not None
-        assert "the parser fix" in selected
+        selected = await drag(pilot, answer, (2, 0), (15, 0))
+        assert selected == "the parser fix"
 
         app.action_copy_last_reply()
         assert copied == ["the parser fix is in src/parser.py"]
@@ -360,6 +432,62 @@ async def test_prompt_placeholder_is_grey_under_the_ansi_themes(temp_dir):
 
         placeholder = prompt.get_component_styles("text-area--placeholder").color
         assert placeholder.ansi == 8  # ansi_bright_black
+
+
+@pytest.mark.asyncio
+async def test_streaming_appends_keep_the_raw_text_and_render_it(temp_dir):
+    """An answer built by streamed deltas holds the raw text and shows it."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        answer = MessageWidget("assistant")
+        await chat.mount(answer)
+        answer.append_text("the parser fix ")
+        answer.append_text("is in **src/parser.py**")
+        await pilot.pause()
+
+        assert answer.text_content() == "the parser fix is in **src/parser.py**"
+        block = answer.query_one(Markdown).query_one("MarkdownParagraph")
+        assert block.render().plain == "the parser fix is in src/parser.py"
+
+        # The whole text is replaced, not appended to the rendered body.
+        answer.set_content("the tokenizer fix")
+        await pilot.pause()
+        assert answer.text_content() == "the tokenizer fix"
+        blocks = list(answer.query_one(Markdown).children)
+        assert [child.render().plain for child in blocks] == ["the tokenizer fix"]
+
+
+@pytest.mark.asyncio
+async def test_an_answer_still_renders_markdown(temp_dir):
+    """Headings, lists, inline code and bold survive the move to Markdown blocks."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        answer = MessageWidget(
+            "assistant", "# Heading\n\n- one\n- two\n\nthe `tokenizer` is **wrong**"
+        )
+        await chat.mount(answer)
+        await pilot.pause()
+
+        blocks = list(answer.query_one(Markdown).children)
+        assert [child.name for child in blocks] == [
+            "heading_open",
+            "bullet_list_open",
+            "paragraph_open",
+        ]
+        assert blocks[0].render().plain == "Heading"
+
+        paragraph = blocks[-1]
+        styles = [span.style for span in paragraph.render().spans if isinstance(span.style, str)]
+        assert ".code_inline" in styles
+        assert ".strong" in styles
 
 
 @pytest.mark.asyncio
