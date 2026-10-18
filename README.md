@@ -102,9 +102,10 @@ namespaces (`AGENT_*` for the harness, `MARV_MLX_*` for the runtime).
 
 ## Why this exists
 
-To own the whole agent harness end-to-end — and to run it on the models you
-already have locally. It is not the best agent; it is _readable, hackable, and
-yours_.
+Because the harness should be yours. marv runs end to end on your machine, on
+the models you already have — no cloud account, no API key, no vendor in the
+loop. Small enough to read in a sitting, built so every layer (loop, tools,
+prompts, provider, TUI) can be replaced. Read it, hack it, own it.
 
 ## Quickstart
 
