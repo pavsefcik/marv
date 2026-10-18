@@ -5,6 +5,29 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [1.123.0] - 2026-10-18
+
+### Changed
+
+- **The one-line installer no longer needs Xcode Command Line Tools or
+  Homebrew.** It installs `uv` from Astral's standalone installer and lets the
+  marv-mlx installer bring `gum` in as a sha256-checked release binary — both
+  into `~/.local/bin`, with no compiler and no GUI `xcode-select --install`
+  prompt. An existing `uv`/`gum`/Homebrew is detected and reused; Homebrew is
+  only a fallback when a download fails. The Apple Silicon/macOS preflight still
+  runs first, and `MARV_NO_ZSH`/`MARV_SKIP_HARDWARE_CHECK` are now forwarded to
+  the nested marv-mlx installer so both layers obey one flag.
+
+### Added
+
+- **`install.sh --model <id>` / `MARV_MODEL=…`** (repeatable) downloads the
+  model(s) *and* writes the first one to `~/.marv/config.toml` as the default, so
+  `curl … | sh -s -- --model mlx-community/…` ends with a ready-to-chat marv.
+  Without it nothing is downloaded — the model picker stays the default — and an
+  existing `model = …` in the config is never overwritten.
+- **`--dry-run`, `--skip-mlx`, `--no-zsh`, `--skip-hardware-check`, `--help`**
+  flags, mirroring the existing `MARV_*` environment overrides.
+
 ## [1.122.0] - 2026-10-16
 
 ### Added

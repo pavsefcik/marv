@@ -14,8 +14,8 @@ CLI when it is installed.
 
 ## Install
 
-One line — checks the machine is MLX-capable, installs `uv` (Xcode CLT and
-Homebrew are the only manual steps), installs the
+One line — checks the machine is MLX-capable, installs `uv` and `gum` (prebuilt
+binaries: **no Xcode Command Line Tools and no Homebrew**), installs the
 [marv-mlx](https://github.com/pavsefcik/marv-mlx) runtime, installs marv as a
 `uv` tool, and puts it on `PATH` in `~/.zshrc`:
 
@@ -23,11 +23,26 @@ Homebrew are the only manual steps), installs the
 curl -fsSL https://raw.githubusercontent.com/pavsefcik/marv/main/install.sh | sh
 ```
 
-It is safe to re-run, and `MARV_DRY_RUN=1` prints the plan without changing
-anything. Overrides: `MARV_VERSION=0.111.0` (pin a release), `MARV_SKIP_MLX=1`
-(harness only), `MARV_NO_ZSH=1` (leave the shell alone), and
-`MARV_SKIP_HARDWARE_CHECK=1` (install on non-MLX hardware for a cloud provider
-such as `openai`). Open a new terminal afterwards, then run `marv`.
+To install **and** fetch a model in the same command, pass `--model` (the
+`-s --` is needed because a piped `sh` would otherwise parse the flag itself):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pavsefcik/marv/main/install.sh \
+  | sh -s -- --model mlx-community/Qwen3.5-4B-MLX-4bit
+```
+
+The model is downloaded **and** written to `~/.marv/config.toml` as marv's
+default, so the first `marv` opens with that model instead of the picker.
+`--model` is repeatable, and optional — that is the default: without it nothing
+is downloaded and marv starts with its model picker.
+
+It is safe to re-run, and `MARV_DRY_RUN=1` (or `--dry-run`) prints the plan
+without changing anything. Overrides: `MARV_VERSION=0.111.0` (pin a release),
+`MARV_MODEL=...` (same as `--model`), `MARV_SKIP_MLX=1` (harness only),
+`MARV_NO_ZSH=1` (leave the shell alone), and `MARV_SKIP_HARDWARE_CHECK=1`
+(install on non-MLX hardware for a cloud provider such as `openai`). Anything
+already installed — an existing `uv`, `gum`, or Homebrew — is reused, never
+replaced. Open a new terminal afterwards, then run `marv`.
 
 ### Manual install
 
@@ -49,11 +64,17 @@ uv tool install "marv @ https://github.com/pavsefcik/marv/releases/download/vX.Y
 ## Requirements
 
 - Apple Silicon Mac (M1 or later) with macOS 14.0+ — the installer preflights this
-- Xcode Command Line Tools and [Homebrew](https://brew.sh)
-- Python 3.14+ and `uv` (the installer brings `uv` in via Homebrew)
+- Network access for the install (the first model download too, if you pass `--model`)
+- Nothing else to install by hand: `uv` and `gum` land in `~/.local/bin` as
+  prebuilt binaries (`uv` from Astral, `gum` sha256-checked from its GitHub
+  release), so **Xcode Command Line Tools and Homebrew are not needed**
+- Python 3.14+ is managed by `uv` (`uv python install 3.14`), not by the system
 - For `marv-mlx`: the `mlx-vlm` tool — the installer brings it in via marv-mlx;
   by hand it is `uv tool install mlx-vlm --with jinja2 --with setproctitle`
   (the `setproctitle` extra is optional and only affects the process name)
+
+After installing, `marv doctor` reports anything optional that is missing (a PDF
+renderer, for example) with the `brew install …` command that fixes it.
 
 ## The MARV family
 
