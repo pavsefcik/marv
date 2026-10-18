@@ -12,45 +12,6 @@ MARV family (see below) — or with `hf`; marv reads the same hub and has **no
 runtime dependency** on either. `marv mlx …` passes through to the `marv-mlx`
 CLI when it is installed.
 
-## The MARV family
-
-**MARV** — *Modular Agent Runtime Valve* — is two layers:
-
-```
-user ──► marv   (harness: agent loop · tools · sessions · skills · Textual TUI)
-            │  OpenAI-compatible HTTP :11500 + lifecycle CLI
-            ▼
-         marv-mlx (runtime: catalog · download · run/swap · mlx_vlm.server)
-            │
-            ▼
-         Hugging Face hub + Apple Silicon (MLX)
-```
-
-- **[marv](https://github.com/pavsefcik/marv)** (this repo) is the harness. It
-  keeps its name, package, binary and state paths.
-- **[marv-mlx](https://github.com/pavsefcik/marv-mlx)** is the runtime: it
-  manages and serves local models. marv self-manages `mlx_vlm.server`, so the
-  runtime is recommended, not required; `marv mlx …` forwards to its CLI.
-
-The two layers share the Hugging Face hub and the `~/.cache/marv/` cache root
-(harness state at the top, runtime state under `mlx/`), but own disjoint env
-namespaces (`AGENT_*` for the harness, `MARV_MLX_*` for the runtime).
-
-## Why this exists
-
-To own the whole agent harness end-to-end — and to run it on the models you
-already have locally. It is not the best agent; it is _readable, hackable, and
-yours_.
-
-## Requirements
-
-- Apple Silicon Mac (M1 or later) with macOS 14.0+ — the installer preflights this
-- Xcode Command Line Tools and [Homebrew](https://brew.sh)
-- Python 3.14+ and `uv` (the installer brings `uv` in via Homebrew)
-- For `marv-mlx`: the `mlx-vlm` tool — the installer brings it in via marv-mlx;
-  by hand it is `uv tool install mlx-vlm --with jinja2 --with setproctitle`
-  (the `setproctitle` extra is optional and only affects the process name)
-
 ## Install
 
 One line — checks the machine is MLX-capable, installs `uv` (Xcode CLT and
@@ -84,6 +45,45 @@ Or install straight from the release URL (replace `X.Y.Z` with the version):
 ```sh
 uv tool install "marv @ https://github.com/pavsefcik/marv/releases/download/vX.Y.Z/marv-X.Y.Z-py3-none-any.whl"
 ```
+
+## Requirements
+
+- Apple Silicon Mac (M1 or later) with macOS 14.0+ — the installer preflights this
+- Xcode Command Line Tools and [Homebrew](https://brew.sh)
+- Python 3.14+ and `uv` (the installer brings `uv` in via Homebrew)
+- For `marv-mlx`: the `mlx-vlm` tool — the installer brings it in via marv-mlx;
+  by hand it is `uv tool install mlx-vlm --with jinja2 --with setproctitle`
+  (the `setproctitle` extra is optional and only affects the process name)
+
+## The MARV family
+
+**MARV** — *Modular Agent Runtime Valve* — is two layers:
+
+```
+user ──► marv   (harness: agent loop · tools · sessions · skills · Textual TUI)
+            │  OpenAI-compatible HTTP :11500 + lifecycle CLI
+            ▼
+         marv-mlx (runtime: catalog · download · run/swap · mlx_vlm.server)
+            │
+            ▼
+         Hugging Face hub + Apple Silicon (MLX)
+```
+
+- **[marv](https://github.com/pavsefcik/marv)** (this repo) is the harness. It
+  keeps its name, package, binary and state paths.
+- **[marv-mlx](https://github.com/pavsefcik/marv-mlx)** is the runtime: it
+  manages and serves local models. marv self-manages `mlx_vlm.server`, so the
+  runtime is recommended, not required; `marv mlx …` forwards to its CLI.
+
+The two layers share the Hugging Face hub and the `~/.cache/marv/` cache root
+(harness state at the top, runtime state under `mlx/`), but own disjoint env
+namespaces (`AGENT_*` for the harness, `MARV_MLX_*` for the runtime).
+
+## Why this exists
+
+To own the whole agent harness end-to-end — and to run it on the models you
+already have locally. It is not the best agent; it is _readable, hackable, and
+yours_.
 
 ## Quickstart
 
