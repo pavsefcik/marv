@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 # Truncate long outputs for display
 MAX_DISPLAY_CHARS = 5000
 
+#: How far past its prediction a wait must run before the indicator calls it
+#: late. A few seconds is estimate noise; ten is information about the machine.
+OVERRUN_GRACE_SECONDS = 10.0
+
 # Tool-row presentation glyphs. Kept here (not in CSS) because they are content.
 TOOL_SUCCESS_GLYPH = "\u2713"  # check
 TOOL_ERROR_GLYPH = "\u2717"  # ballot X (marv-mlx's failure mark)
@@ -36,15 +40,20 @@ def truncate(text: str, limit: int, message: str = "...") -> str:
     return text if len(text) <= limit else text[:limit] + f"\n{message}"
 
 
-def format_system_message(text: str) -> str:
+def format_system_message(text: str, *, marker: bool = True) -> str:
     """Mark up a system message, which may be several lines (``/help``).
 
     The ``--`` marker belongs to the first line only, so continuation lines are
     indented under it and the block still reads as one system row instead of as
     unprefixed prose. Content is escaped: a system line is data, not markup, so
-    shell output from ``!command`` cannot inject Rich tags.
+    shell output from ``!command`` cannot inject Rich tags. A mode announcement
+    passes ``marker=False``: it is current state rather than history, so it
+    stands on its own emoji row.
     """
-    head, *rest = text.splitlines() or [""]
+    lines = text.splitlines() or [""]
+    if not marker:
+        return "\n".join(escape(line) for line in lines)
+    head, *rest = lines
     return "\n".join(
         [f"-- {escape(head)}", *(f"   {escape(line)}" if line.strip() else "" for line in rest)]
     )
@@ -441,12 +450,14 @@ class WaitingIndicator(Static):
     """Animated waiting indicator that can narrate a predicted wait.
 
     Without an estimate it is the plain spinner (``working…``/``thinking…``).
-    With one it narrates the prefill -- ``prefilling 32k tokens · ~2:00 ·
-    1:14 elapsed (62%)`` -- where the ``~`` figure and the derived percentage
-    are a *revising* estimate of the remaining wait, recomputed on every tick
-    from elapsed vs the prediction. A wait that outlives its prediction says
-    ``taking longer than predicted`` rather than sitting at 99%: an overrun is
-    information about the machine, not a failed progress bar.
+    With one it narrates the work this turn adds -- ``adding 16 tokens (2.712k
+    cached) · ~0:02 · 0:01 elapsed (50%)`` -- where the ``~`` figure and the
+    derived percentage are a *revising* estimate of the remaining wait,
+    recomputed on every tick from elapsed vs the prediction. A first turn with
+    nothing cached reads ``prefilling 32k tokens``. A wait that runs ten seconds
+    past its prediction says ``taking longer than predicted`` rather than
+    sitting at 99%: an overrun is information about the machine, not a failed
+    progress bar.
     """
 
     FRAMES = [
@@ -506,21 +517,15 @@ class WaitingIndicator(Static):
             label = "thinking" if self._thinking else "working"
             return f"{label}\u2026"
 
-        tokens = format_tokens(estimate.prefill_tokens)
-        cached = (
-            f" ({format_tokens(estimate.cached_tokens)} cached)"
-            if estimate.cached_tokens > 0
-            else ""
-        )
         elapsed = self.elapsed_seconds()
         eta_seconds = (estimate.eta_ms or 0.0) / 1000.0
         if not estimate.has_eta or eta_seconds <= 0:
             # A first-ever run has no measured history, so only the clock is
             # honest: no ETA is invented and no constant is assumed.
-            return f"prefilling {tokens} tokens{cached} \u00b7 {format_clock(elapsed)} elapsed"
-        if elapsed > eta_seconds:
+            return f"{self._work_phrase(estimate)} \u00b7 {format_clock(elapsed)} elapsed"
+        if elapsed > eta_seconds + OVERRUN_GRACE_SECONDS:
             return (
-                f"prefilling {tokens} tokens{cached} \u00b7 taking longer than predicted"
+                f"{self._work_phrase(estimate)} \u00b7 taking longer than predicted"
                 f" \u00b7 {format_clock(elapsed)} elapsed"
             )
 
@@ -529,9 +534,20 @@ class WaitingIndicator(Static):
         # jump or freeze at 99%.
         percent = min(99, int(elapsed / eta_seconds * 100))
         return (
-            f"prefilling {tokens} tokens{cached} \u00b7 ~{format_clock(eta_seconds - elapsed)}"
+            f"{self._work_phrase(estimate)} \u00b7 ~{format_clock(eta_seconds - elapsed)}"
             f" \u00b7 {format_clock(elapsed)} elapsed ({percent}%)"
         )
+
+    def _work_phrase(self, estimate: WaitEstimate) -> str:
+        """Name only the tokens this turn actually prefills.
+
+        With a cached prefix, the total is not what the machine is working on;
+        the newly added tokens are. Without a cache, the whole prompt is.
+        """
+        cached = f" ({format_tokens(estimate.cached_tokens)} cached)"
+        if estimate.cached_tokens > 0:
+            return f"adding {format_tokens(estimate.uncached_tokens)} tokens{cached}"
+        return f"prefilling {format_tokens(estimate.prefill_tokens)} tokens"
 
     def _advice(self) -> str | None:
         """The exit offer for a long-predicted wait, shown beneath the spinner.
@@ -648,9 +664,13 @@ class ChatView(ScrollableContainer):
                 return child.text_content()
         return None
 
-    def add_system_message(self, text: str) -> None:
-        """Add a permanent system message (single line or a block)."""
-        self.mount(Static(format_system_message(text), classes="message-system"))
+    def add_system_message(self, text: str, *, marker: bool = True) -> None:
+        """Add a permanent system message (single line or a block).
+
+        ``marker=False`` omits the historical ``--`` prefix for a row that
+        states the current mode rather than an event.
+        """
+        self.mount(Static(format_system_message(text, marker=marker), classes="message-system"))
         self.scroll_to_bottom()
 
     def set_notice(self, text: str, *, spinner: bool = False) -> None:

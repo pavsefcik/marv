@@ -664,7 +664,7 @@ class AgentApp(App[None]):
         chat.set_notice(f"starting model {self.agent.model_name}…", spinner=True)
         try:
             await ensure()
-            chat.set_notice("model ready")
+            chat.set_notice("🚀 all systems ready")
         except Exception as exc:  # noqa: BLE001 - surface to the user
             chat.dismiss_notice()
             chat.end_assistant_message()

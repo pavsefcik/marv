@@ -104,6 +104,9 @@ guidelines, no skills, and no project context files. The date is kept; the
 working directory is dropped.
 - `/tools` restores the previous active set, so a `read_only` narrowing survives
 the round trip.
+- `/kurt` enters kurt mode. Until kurt's own behaviour lands it is deliberately
+chat-like: every tool is off, no schema is sent, and the status bar shows
+`[kurt]`.
 
 The mode lives on the agent (`InteractionMode` in `src/marv/runtime/settings.py`),
 not the session: `/new` keeps the last choice, while a fresh launch starts in

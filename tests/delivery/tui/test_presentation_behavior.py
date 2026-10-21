@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from textual.color import Color
-from textual.widgets import Markdown, Static, TextArea
+from textual.widgets import Label, Markdown, Static, TextArea
+from textual.widgets.markdown import MarkdownFence
 
 from marv.config import Config
 from marv.runtime.message import ImageAttachment
@@ -491,18 +492,43 @@ async def test_an_answer_still_renders_markdown(temp_dir):
 
 
 @pytest.mark.asyncio
+async def test_a_code_fence_frames_the_code_without_a_scrollbar_row_below_it(temp_dir):
+    """The frame surrounds the code; no black scrollbar sits underneath it."""
+    app = make_app(temp_dir)
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        chat = app.query_one("#chat-view", ChatView)
+
+        answer = MessageWidget("assistant", "```python\nprint(1)\n```")
+        await chat.mount(answer)
+        await pilot.pause()
+
+        fence = answer.query_one(MarkdownFence)
+        label = fence.query_one(Label)
+        assert fence.scrollbar_size_horizontal == 0
+        assert fence.region.height == label.region.height
+
+        # ANSI themes have no alpha for Textual's `black 10%` frame, so marv
+        # supplies an opaque one instead of leaving the code unframed.
+        app.theme = "ansi-dark"
+        await pilot.pause()
+        assert fence.styles.background.a > 0
+
+
+@pytest.mark.asyncio
 async def test_transient_status_notice_leads_with_the_success_glyph(temp_dir):
-    """A settled notice is an outcome (`✓ model ready`), not a `--` line."""
+    """A settled notice is an outcome (`✓ all systems ready`), not a `--` line."""
     app = make_app(temp_dir)
 
     async with app.run_test() as pilot:
         await pilot.pause()
         chat = app.query_one("#chat-view", ChatView)
 
-        chat.set_notice("model ready")
+        chat.set_notice("all systems ready")
         await pilot.pause()
         notice = chat.query_one(StatusNotice)
-        assert render_text(notice) == f"{TOOL_SUCCESS_GLYPH} model ready"
+        assert render_text(notice) == f"{TOOL_SUCCESS_GLYPH} all systems ready"
 
         # The waiting form is a spinner row and stays as it was.
         notice.set_status("starting qwen", spinner=True)
