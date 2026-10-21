@@ -897,7 +897,7 @@ class SlowStartProviderFake(ServerLifecycleProviderFake):
 
 @pytest.mark.asyncio
 async def test_tui_runner_model_start_is_one_spinning_notice_then_ready(temp_dir):
-    """Warm-up is a single animated row that becomes ``model ready`` in place."""
+    """Warm-up is a single animated row that becomes ``all systems ready`` in place."""
     config = Config(
         provider="openai",
         model="gpt-4o",
@@ -920,7 +920,7 @@ async def test_tui_runner_model_start_is_one_spinning_notice_then_ready(temp_dir
         await pilot.pause()
 
         ready = notices(app)
-        assert [n.text_content() for n in ready] == ["model ready"]
+        assert [n.text_content() for n in ready] == ["🚀 all systems ready"]
         assert not ready[0].spinning
 
 
@@ -1143,7 +1143,7 @@ async def test_tui_runner_chat_and_tools_commands_toggle_mode(temp_dir):
         await submit(app, pilot, "/chat ")
         assert app.agent.interaction_mode is InteractionMode.CHAT
         assert "[chat]" in status_left_text(app)
-        assert any("chat mode" in msg for msg in system_messages(app))
+        assert any("💬 chat mode" in msg for msg in system_messages(app))
 
         # Mode is agent state, so a new session keeps the last choice.
         await submit(app, pilot, "/new ")
@@ -1153,7 +1153,13 @@ async def test_tui_runner_chat_and_tools_commands_toggle_mode(temp_dir):
         await submit(app, pilot, "/tools ")
         assert app.agent.interaction_mode is InteractionMode.TOOLS
         assert "[chat]" not in status_left_text(app)
-        assert any("tool mode" in msg for msg in system_messages(app))
+        assert any("🛠️ tool mode" in msg for msg in system_messages(app))
+
+        await submit(app, pilot, "/kurt ")
+        assert app.agent.interaction_mode is InteractionMode.KURT
+        assert "[kurt]" in status_left_text(app)
+        assert app.agent.tools.get_schemas() == []
+        assert any("🤘 kurt mode" in msg for msg in system_messages(app))
 
 
 @pytest.mark.asyncio
@@ -1477,7 +1483,7 @@ async def test_tui_runner_warms_model_server_on_startup(temp_dir):
         await pilot.pause()
 
         assert provider.ensure_calls == 1
-        assert any("model ready" in msg for msg in system_messages(app))
+        assert any("all systems ready" in msg for msg in system_messages(app))
 
 
 @pytest.mark.asyncio
@@ -1777,7 +1783,7 @@ async def test_tui_runner_shows_live_download_progress_then_applies_the_model(te
         # The switch and the warm-up share one replacing row, so the header is
         # what records the applied model; the notice settles on readiness.
         assert "mlx-community/Remembered-4bit" in header_text(app)
-        assert [n.text_content() for n in notices(app)] == ["model ready"]
+        assert [n.text_content() for n in notices(app)] == ["🚀 all systems ready"]
 
 
 @pytest.mark.asyncio

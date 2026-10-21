@@ -65,14 +65,19 @@ A local model can send nothing for minutes while it prefills, so the waiting
 indicator narrates the wait instead of spinning opaquely:
 
 ```
-⠹ prefilling 32k tokens · ~2:00 · 1:14 elapsed (62%)
+⠹ adding 16 tokens (2.712k cached) · ~0:02 · 0:01 elapsed (50%)
 ```
+
+Only the tokens this turn actually prefills are named: with a cached prefix the
+line says `adding`, not the whole prompt again. A first turn with nothing cached
+reads `prefilling 32k tokens`.
 
 The `~` figure and the percentage are a *revising* estimate, recomputed on
 every tick from elapsed against the prediction — not a progress bar that jumps
-or freezes at 99%. When the estimate is exceeded the indicator says
-`taking longer than predicted`, which is information about the machine rather
-than a failed bar.
+or freezes at 99%. When the estimate is exceeded by more than ten seconds the
+indicator says `taking longer than predicted`, which is information about the
+machine rather than a failed bar. A few seconds over is estimate noise and is
+not called out.
 
 The prediction comes from this machine's own measured turns (see
 [`llm.md`](llm.md#prefill-calibration)). A first-ever run has no measured
@@ -197,15 +202,16 @@ or `AGENT_BYE=off`.
   built-in Textual theme)
 - `/chat` — plain chat mode: every tool is off and no schema is sent
 - `/tools` — back to tool-calling mode (the default)
+- `/kurt` — kurt mode: chat-like for now (every tool is off, no schema sent)
 - `/help` — the command list, one line per command with what it does
 - `/quit` — exit
 
 Chat mode is agent state, not session state: `/new` keeps the current choice,
 while a fresh launch always starts in tools mode (nothing is persisted). The
-status bar shows `[chat]` while tools are off. See
+status bar shows `[chat]` (or `[kurt]`) while tools are off. See
 [tools.md](tools.md#chat-mode).
 
-Model switching is routed through `Agent.set_model(...)` and provider `set_model(...)`. Invalid provider/model pairs are rejected and shown as a system message. A successful switch updates the startup header and updates the single transient status row (`switched to …` → `starting model …` with a spinner → `model ready`).
+Model switching is routed through `Agent.set_model(...)` and provider `set_model(...)`. Invalid provider/model pairs are rejected and shown as a system message. A successful switch updates the startup header and updates the single transient status row (`switched to …` → `starting model …` with a spinner → `🚀 all systems ready`).
 
 If the requested model is not present in the local HF hub, `/model <id>` opens the
 download picker instead of switching, and the switch happens once the download

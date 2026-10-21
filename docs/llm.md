@@ -255,8 +255,8 @@ there is no honest ETA, and delivery must degrade to elapsed-only.
   completion) to be a cache hit and prices only the newly added tokens; a
   compaction or model switch resets the prefix, and `cached_tokens` is clamped
   so the newest input is always priced. The TUI narration shows the cached
-  share ("prefilling 1.2k tokens (9.8k cached)") so a short wait on a long
-  prompt reads as a cache hit, not as a wrong token count.
+  share ("adding 16 tokens (2.712k cached)") so a short wait on a long prompt
+  reads as a cache hit, not as a wrong token count.
 - `dominant_cost` (`cold` | `prompt` | `schemas`) and `prompt_share` reuse the
   prompt/schema split to attribute the wait.
 - `wait_advice()` turns a long prediction into a specific exit offer (compact,

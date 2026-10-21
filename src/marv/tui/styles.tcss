@@ -325,3 +325,15 @@ Screen {
 .extension-modal-actions Button {
     margin-right: 1;
 }
+
+/* A fenced code block is a framed body, not a scroller. Textual reserves a
+   horizontal scrollbar row even when the code fits, which surfaced as a black
+   bar *below* the code; the frame itself also vanished under the ANSI themes
+   (ANSI has no alpha for Textual's default `black 10%`). */
+MarkdownFence {
+    scrollbar-size-horizontal: 0;
+}
+
+MarkdownFence:ansi {
+    background: ansi_bright_black;
+}

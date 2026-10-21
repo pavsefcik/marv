@@ -14,6 +14,7 @@ class InteractionMode(StrEnum):
 
     TOOLS = "tools"
     CHAT = "chat"
+    KURT = "kurt"
 
 
 class ThinkingLevel(StrEnum):

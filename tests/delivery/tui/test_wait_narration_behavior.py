@@ -152,21 +152,38 @@ def test_indicator_narrates_elapsed_against_a_revising_prediction():
     assert "1:14 elapsed" in later
 
 
-def test_indicator_says_taking_longer_than_predicted_past_the_estimate():
+def test_indicator_says_taking_longer_than_predicted_past_the_grace_period():
     clock = ManualClock()
     indicator = WaitingIndicator(
         estimate=WaitEstimate(prompt_tokens=32_000, eta_ms=120_000.0),
         clock=clock,
     )
 
+    # A few seconds past the estimate is noise, not an overrun.
     clock.advance(121)
+    indicator.advance()
+    assert "taking longer than predicted" not in render_text(indicator)
+
+    clock.advance(10)
     indicator.advance()
 
     text = render_text(indicator)
     assert "taking longer than predicted" in text
-    assert "2:01 elapsed" in text
+    assert "2:11 elapsed" in text
     assert "100%" not in text
     assert "~0:00" not in text
+
+
+def test_indicator_names_only_the_new_tokens_when_the_prefix_is_cached():
+    clock = ManualClock()
+    indicator = WaitingIndicator(
+        estimate=WaitEstimate(prompt_tokens=2_728, cached_tokens=2_712, eta_ms=3_000.0),
+        clock=clock,
+    )
+
+    text = render_text(indicator)
+    assert "adding 16 tokens (2.712k cached)" in text
+    assert "prefilling 2.728k tokens" not in text
 
 
 def test_indicator_without_an_estimate_degrades_to_elapsed_only():

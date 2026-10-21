@@ -274,12 +274,14 @@ class Agent:
         """
         if mode is self._interaction_mode:
             return
-        if mode is InteractionMode.CHAT:
-            self._active_tools_before_chat = self.tools.list_active_tools()
+        if mode is InteractionMode.TOOLS:
+            if self._active_tools_before_chat is not None:
+                self.tools.set_active_tools(self._active_tools_before_chat)
+                self._active_tools_before_chat = None
+        else:
+            if self._interaction_mode is InteractionMode.TOOLS:
+                self._active_tools_before_chat = self.tools.list_active_tools()
             self.tools.set_active_tools([])
-        elif self._active_tools_before_chat is not None:
-            self.tools.set_active_tools(self._active_tools_before_chat)
-            self._active_tools_before_chat = None
         self._interaction_mode = mode
         self.refresh_system_prompt()
 
@@ -391,7 +393,7 @@ class Agent:
             context_files=context_files,
             skills=skills,
             tools_available=self._tools_available,
-            plain_chat=self._interaction_mode is InteractionMode.CHAT,
+            plain_chat=self._interaction_mode is not InteractionMode.TOOLS,
         )
 
         # Build the system prompt
@@ -423,7 +425,7 @@ class Agent:
             context_files=context_files,
             skills=self._skill_loader.get_invocable_skills(),
             tools_available=self._tools_available,
-            plain_chat=self._interaction_mode is InteractionMode.CHAT,
+            plain_chat=self._interaction_mode is not InteractionMode.TOOLS,
         )
         self.session.replace_message(
             first_message.id,

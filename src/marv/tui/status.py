@@ -59,9 +59,10 @@ class StatusBar(Horizontal):
 
         # A durable marker that tools are off; the mode change is otherwise
         # only announced once in the chat stream.
-        if self._interaction_mode is InteractionMode.CHAT:
+        mode = self._interaction_mode
+        if mode is not None and mode is not InteractionMode.TOOLS:
             # Escaped: a bare ``[chat]`` is parsed as markup and swallowed.
-            left += r"  \[chat]"
+            left += rf"  \[{mode.value}]"
 
         # Add token usage next to model
         if self._max_tokens > 0:

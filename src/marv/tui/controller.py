@@ -33,6 +33,7 @@ HELP_COMMANDS: tuple[tuple[str, str], ...] = (
     ("/theme", "choose a theme"),
     ("/chat", "plain chat; tools off"),
     ("/tools", "enable tools"),
+    ("/kurt", "kurt mode; tools off for now"),
     ("!<command>", "run a shell command; output stays local"),
     ("/help", "show this help"),
     ("/quit", "exit marv"),
@@ -239,6 +240,9 @@ class TUIController:
         if prompt.lower() == "/tools":
             self.set_interaction_mode(InteractionMode.TOOLS)
             return True
+        if prompt.lower() == "/kurt":
+            self.set_interaction_mode(InteractionMode.KURT)
+            return True
         if prompt.lower() == "/model":
             await self._app._open_model_panel()
             return True
@@ -335,10 +339,12 @@ class TUIController:
         status = self._app.query_one("#status-line", StatusBar)
         self._app.agent.set_interaction_mode(mode)
         status.set_interaction_mode(mode)
-        if mode is InteractionMode.CHAT:
-            chat.add_system_message("chat mode - tools off (/tools to re-enable)")
-        else:
-            chat.add_system_message("tool mode - tools enabled (/chat for a plain chat)")
+        messages = {
+            InteractionMode.CHAT: "💬 chat mode - tools off (/tools to re-enable)",
+            InteractionMode.TOOLS: "🛠️ tool mode - tools enabled (/chat for a plain chat)",
+            InteractionMode.KURT: "🤘 kurt mode - tools off / kurt on",
+        }
+        chat.add_system_message(messages[mode])
 
     def remember_selection(self) -> None:
         """Persist the active model/thinking so the next start preselects it.

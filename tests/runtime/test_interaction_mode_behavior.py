@@ -70,6 +70,19 @@ async def test_chat_mode_refuses_a_tool_call_the_model_emits_anyway(temp_dir):
     assert "Inactive tool" in result.content
 
 
+def test_kurt_mode_is_chat_mode_for_now(temp_dir):
+    agent, _ = build_agent(temp_dir)
+
+    agent.set_interaction_mode(InteractionMode.KURT)
+
+    assert agent.list_active_tools() == []
+    assert agent.tools.get_schemas() == []
+    assert "helpful, friendly assistant" in agent.get_system_prompt()
+
+    agent.set_interaction_mode(InteractionMode.TOOLS)
+    assert agent.tools.get_schemas()
+
+
 def test_returning_to_tools_restores_the_previous_active_set(temp_dir):
     agent, _ = build_agent(temp_dir, read_only=True)
     before = sorted(agent.list_active_tools())
