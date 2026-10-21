@@ -334,6 +334,14 @@ MarkdownFence {
     scrollbar-size-horizontal: 0;
 }
 
+/* Textual's ANSI variant drops the fence margin and side padding, so code
+   blocks (and the headings around them) sit differently from every hex theme.
+   Keep the frame geometry identical and only swap in an opaque background. */
 MarkdownFence:ansi {
+    margin: 1 0;
     background: ansi_bright_black;
+}
+
+MarkdownFence:ansi > Label {
+    padding: 1 2;
 }

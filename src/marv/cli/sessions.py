@@ -150,24 +150,32 @@ def tree_command(
 
 
 def sessions_command(limit: int) -> None:
-    """List recent sessions."""
+    """List recent sessions that contain a real prompt."""
     config = Config.load()
     session_list = Session.list_sessions(config.session_dir, limit)
 
-    if not session_list:
-        typer.echo("No sessions found")
-        return
-
-    typer.echo(f"Recent sessions (in {config.session_dir}):\n")
+    listed: list[tuple[Path, Session]] = []
+    errors: list[tuple[Path, Exception]] = []
     for path in session_list:
         try:
             sess = Session.load(path)
-            msg_count = len(sess.messages)
+            if sess.is_resumable():
+                listed.append((path, sess))
+        except Exception as exc:  # noqa: BLE001 - report, then keep the rest
+            errors.append((path, exc))
+
+    if listed:
+        typer.echo(f"Recent sessions (in {config.session_dir}):\n")
+        for path, sess in listed:
             typer.echo(f"  {path.name}")
+            typer.echo(f"    About: {sess.description()}")
             typer.echo(f"    ID: {sess.metadata.id}")
             typer.echo(f"    Created: {sess.metadata.created_at}")
-            typer.echo(f"    Messages: {msg_count}")
+            typer.echo(f"    Messages: {len(sess.messages)}")
             typer.echo(f"    CWD: {sess.metadata.cwd}")
             typer.echo()
-        except Exception as exc:
-            typer.echo(f"  {path.name} (error: {exc})")
+    elif not errors:
+        typer.echo("No sessions found")
+
+    for error_path, error in errors:
+        typer.echo(f"  {error_path.name} (error: {error})")

@@ -56,18 +56,55 @@ class TestSession:
 
         assert len(sessions) == 3
 
-    def test_get_latest(self, temp_dir: Path):
-        """Test getting the latest session."""
-        # Create sessions
-        Session.new(temp_dir)
-        latest = Session.new(temp_dir)
-        latest.append(Message.user("Latest"))
+    def test_get_latest_skips_empty_and_trivial_sessions(self, temp_dir: Path):
+        """Resuming goes to the latest session with a real prompt."""
+        meaningful = Session.new(temp_dir)
+        meaningful.append(Message.user("Fix the parser bug in src/parser.py"))
+        greeting = Session.new(temp_dir)
+        greeting.append(Message.user("hi"))
+        greeting.append(Message.assistant("hello"))
 
         retrieved = Session.get_latest(temp_dir)
 
         assert retrieved is not None
-        assert len(retrieved.messages) == 1
-        assert retrieved.messages[0].content == "Latest"
+        assert retrieved.metadata.id == meaningful.metadata.id
+
+    def test_greetings_and_tests_are_not_worth_resuming(self, temp_dir: Path):
+        for prompt in ("hi", "hello there", "testing", "thanks!", "ok"):
+            session = Session.new(temp_dir)
+            session.append(Message.user(prompt))
+            session.append(Message.assistant("hi"))
+
+            assert not session.is_resumable()
+
+    def test_a_real_prompt_makes_a_session_resumable(self, temp_dir: Path):
+        session = Session.new(temp_dir)
+        session.append(Message.user("hi"))
+        session.append(Message.assistant("hello"))
+        session.append(Message.user("Why does the tokenizer drop Unicode spaces?"))
+        session.append(Message.assistant("Because the splitter normalises them."))
+
+        assert session.is_resumable()
+        assert session.description() == "Why does the tokenizer drop Unicode spaces?"
+
+    def test_description_is_one_line_from_the_first_real_prompt(self, temp_dir: Path):
+        session = Session.new(temp_dir)
+        session.append(Message.user("Explain\n\nthe parser\nplease"))
+
+        assert session.description() == "Explain the parser please"
+        assert session.description(limit=12) == "Explain the\u2026"
+
+    def test_list_resumable_sessions_hides_empty_greetings_and_broken_files(self, temp_dir: Path):
+        real = Session.new(temp_dir)
+        real.append(Message.user("Investigate the flaky release workflow"))
+        greeting = Session.new(temp_dir)
+        greeting.append(Message.user("testing"))
+        Session.new(temp_dir)
+        (temp_dir / "broken.jsonl").write_text("not-json\n")
+
+        sessions = Session.list_resumable_sessions(temp_dir)
+
+        assert sessions == [real.path]
 
     def test_fork_session(self, temp_dir: Path):
         """Test forking a session."""

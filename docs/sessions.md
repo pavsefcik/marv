@@ -24,7 +24,11 @@ The header may also carry `provider`/`model` for the session's starting selectio
 ## Capabilities
 
 **Resume**
-Load an existing session and continue from its active leaf.
+Load an existing session and continue from its active leaf. `/resume` (and the
+`marv sessions` listing) only offers sessions with a real user prompt: a launch
+that was never used, a greeting/test such as `hi` or `testing`, and files that
+cannot be read are skipped. Each entry is described by the first meaningful
+prompt, flattened to one line.
 
 **Tree (in-place branching)**
 Entries form a tree via `id` and `parentId`. The active branch is defined by the latest `session_state` entry. Context is built by walking from the leaf to the root and using only that path.

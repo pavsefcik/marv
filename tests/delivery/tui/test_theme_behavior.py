@@ -180,6 +180,17 @@ async def test_app_applies_a_builtin_theme_from_config(temp_dir):
 
 
 @pytest.mark.asyncio
+async def test_marv_theme_uses_the_terminal_background(temp_dir):
+    """marv's palette blends into the terminal instead of painting a black box."""
+    app = make_app(temp_dir, theme="marv-mlx")
+
+    async with app.run_test():
+        assert app.current_theme.background == "ansi_default"
+        assert app.current_theme.surface == "ansi_default"
+        assert app.current_theme.panel == "ansi_default"
+
+
+@pytest.mark.asyncio
 async def test_app_applies_the_minimal_theme_from_config(temp_dir):
     app = make_app(temp_dir, theme="minimal")
 

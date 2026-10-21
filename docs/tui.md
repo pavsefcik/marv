@@ -97,8 +97,10 @@ An ordinary turn never shows this advice. While generating, the footer shows an
 ## Appearance
 
 The default `theme = "marv-mlx"` applies the marv family's own palette (the
-magenta wordmark, dim greys and green/yellow markers). Set `theme = "auto"` to
-follow the terminal instead: marv probes the terminal background (OSC 11, then
+magenta wordmark, dim greys and green/yellow markers) on the terminal's own
+background, so marv blends into the window instead of drawing a black box inside
+it. Set `theme = "auto"` to follow the terminal exactly: marv probes the terminal
+background (OSC 11, then
 the system appearance) and applies Textual's built-in `ansi-dark` or
 `ansi-light` theme, so marv matches the terminal it runs in. Any built-in
 Textual theme name (`nord`, `tokyo-night`, `dracula`, …) can be selected too, and

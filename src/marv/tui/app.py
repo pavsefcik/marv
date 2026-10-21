@@ -75,16 +75,17 @@ MINIMAL_THEME = Theme(
 )
 
 # The marv-mlx look as a theme: the magenta wordmark, dim greys and the
-# green/yellow markers of the marv family UI.
+# green/yellow markers of the marv family UI. Its backgrounds are the terminal's
+# own, so marv blends into the window instead of painting a black box inside it.
 MARV_MLX_THEME = Theme(
     name=MARV_MLX_THEME_NAME,
     primary="#ff87d7",
     secondary="#d7afd7",
     accent="#af87ff",
     foreground="#e4e4e4",
-    background="#1c1c1c",
-    surface="#262626",
-    panel="#303030",
+    background="ansi_default",
+    surface="ansi_default",
+    panel="ansi_default",
     success="#00d787",
     warning="#ffff5f",
     error="#ff5f5f",

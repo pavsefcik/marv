@@ -508,12 +508,18 @@ async def test_a_code_fence_frames_the_code_without_a_scrollbar_row_below_it(tem
         label = fence.query_one(Label)
         assert fence.scrollbar_size_horizontal == 0
         assert fence.region.height == label.region.height
+        default_margin = fence.styles.margin
+        default_padding = label.styles.padding
 
         # ANSI themes have no alpha for Textual's `black 10%` frame, so marv
-        # supplies an opaque one instead of leaving the code unframed.
+        # supplies an opaque one instead of leaving the code unframed. They also
+        # collapse Textual's fence margin/padding, which made code blocks (and
+        # the headings around them) sit differently from every hex theme.
         app.theme = "ansi-dark"
         await pilot.pause()
         assert fence.styles.background.a > 0
+        assert fence.styles.margin == default_margin
+        assert label.styles.padding == default_padding
 
 
 @pytest.mark.asyncio

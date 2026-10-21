@@ -1,6 +1,7 @@
 """Session management with JSONL persistence."""
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Self
@@ -14,6 +15,56 @@ if TYPE_CHECKING:
 from marv.runtime.message import Message, Role
 
 SESSION_VERSION = 1
+
+#: Words that carry no request on their own. A session whose prompts are made
+#: only of these is a greeting/test rather than work worth resuming.
+_TRIVIAL_PROMPT_WORDS = frozenset(
+    {
+        "a",
+        "again",
+        "all",
+        "and",
+        "cool",
+        "everyone",
+        "hello",
+        "hey",
+        "hi",
+        "hiya",
+        "hmm",
+        "is",
+        "it",
+        "lol",
+        "morning",
+        "nice",
+        "no",
+        "ok",
+        "okay",
+        "ping",
+        "sup",
+        "test",
+        "testing",
+        "thanks",
+        "thank",
+        "the",
+        "there",
+        "this",
+        "yo",
+        "yes",
+        "you",
+    }
+)
+
+
+def is_meaningful_prompt(text: str) -> bool:
+    """Whether a prompt asks for something rather than just opening a chat.
+
+    The check is deliberately lexical: it filters greetings and test messages
+    (``hi``, ``testing``, ``thanks!``) without sending a prompt to a model or
+    claiming to judge intent. Any word outside the greeting vocabulary makes
+    the prompt meaningful.
+    """
+    words = re.findall(r"[a-z0-9]+", text.casefold())
+    return bool(words) and any(word not in _TRIVIAL_PROMPT_WORDS for word in words)
 
 
 class SessionMetadata(BaseModel):
@@ -156,7 +207,7 @@ class Session:
 
     @classmethod
     def list_sessions(cls, session_dir: Path, limit: int = 20) -> list[Path]:
-        """List recent sessions, sorted by modification time."""
+        """List recent session files, sorted by modification time."""
         if not session_dir.exists():
             return []
         sessions = list(session_dir.glob("*.jsonl"))
@@ -164,12 +215,58 @@ class Session:
         return sessions[:limit]
 
     @classmethod
+    def list_resumable_sessions(cls, session_dir: Path, limit: int = 20) -> list[Path]:
+        """List recent sessions that contain something worth returning to.
+
+        Launch-created empty sessions and one-off greetings/tests are skipped.
+        Unreadable files are skipped too: they cannot be resumed.
+        """
+        if not session_dir.exists():
+            return []
+        resumable: list[Path] = []
+        for path in sorted(
+            session_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
+        ):
+            try:
+                if not cls.load(path).is_resumable():
+                    continue
+            except Exception:  # noqa: BLE001 - a broken file cannot be resumed
+                continue
+            resumable.append(path)
+            if len(resumable) >= limit:
+                break
+        return resumable
+
+    @classmethod
     def get_latest(cls, session_dir: Path) -> Self | None:
-        """Get the most recent session, if any."""
-        sessions = cls.list_sessions(session_dir, limit=1)
+        """Get the most recent resumable session, if any."""
+        sessions = cls.list_resumable_sessions(session_dir, limit=1)
         if sessions:
             return cls.load(sessions[0])
         return None
+
+    def meaningful_prompt(self) -> str | None:
+        """The first user prompt that asks for something, if any."""
+        for message in self.messages:
+            if message.role == Role.USER and is_meaningful_prompt(message.content):
+                return message.content
+        return None
+
+    def is_resumable(self) -> bool:
+        """Whether this session is more than an empty launch or a greeting."""
+        return self.meaningful_prompt() is not None
+
+    def description(self, limit: int = 80) -> str:
+        """A one-line description, taken from the first meaningful prompt."""
+        prompt = self.meaningful_prompt()
+        if prompt is None:
+            prompt = next((m.content for m in self.messages if m.role == Role.USER), "")
+        one_line = " ".join(prompt.split())
+        if not one_line:
+            return "(no prompt)"
+        if len(one_line) <= limit:
+            return one_line
+        return one_line[: limit - 1].rstrip() + "\u2026"
 
     def append(self, message: Message) -> None:
         """Append message and persist to disk."""

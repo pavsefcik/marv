@@ -34,14 +34,18 @@ class SessionLoadPanel(MenuPanel):
     @staticmethod
     def _build_options(session_dir: Path, limit: int) -> list[tuple[str, str]]:
         options: list[tuple[str, str]] = []
-        for path in Session.list_sessions(session_dir, limit=limit):
+        for path in Session.list_resumable_sessions(session_dir, limit=limit):
             try:
                 sess = Session.load(path)
                 created = sess.metadata.created_at.strftime("%Y-%m-%d %H:%M:%S")
                 msg_count = len(sess.messages)
                 cwd = sess.metadata.cwd
-                label = f"{created} | id:{sess.metadata.id} | msgs:{msg_count} | cwd:{cwd}"
-            except Exception:  # noqa: BLE001 - a broken session stays selectable
+                description = sess.description(limit=64)
+                label = (
+                    f"{description} | {created} | id:{sess.metadata.id} | "
+                    f"msgs:{msg_count} | cwd:{cwd}"
+                )
+            except Exception:  # noqa: BLE001 - keep an unexpected file selectable
                 label = f"{path.name} | (error reading session)"
             options.append((str(path), label))
         return options
