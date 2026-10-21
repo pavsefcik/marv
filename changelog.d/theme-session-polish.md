@@ -1,8 +1,8 @@
 ### Changed
 
 - **The marv theme blends into the terminal.** Its background, surface, and panel
-  now use the terminal's default colour instead of painting a black box behind
-  the TUI; the magenta/grey marv palette is unchanged.
+  are now fully transparent instead of painting a black box behind the TUI; the
+  magenta/grey marv palette is unchanged.
 - **Session resume lists only sessions worth returning to.** `/resume` and
   `marv sessions` skip launch-created empty sessions and one-off greetings/tests
   (`hi`, `testing`, `thanks`), and each entry starts with a one-line description

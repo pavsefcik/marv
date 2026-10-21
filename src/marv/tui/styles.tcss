@@ -165,6 +165,13 @@ Screen {
     max-height: 12;
 }
 
+/* Textual's TextArea falls back to `theme.surface` (a Rich colour) when its own
+   background resolves transparent. marv's surface is transparent too, which
+   Rich cannot express, so the prompt pins the terminal default instead. */
+.-theme-marv-mlx #prompt-inner {
+    background: ansi_default;
+}
+
 #prompt-inner:focus {
     border: none;
     border-top: solid $primary;

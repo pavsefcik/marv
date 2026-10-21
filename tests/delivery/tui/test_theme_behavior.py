@@ -180,14 +180,15 @@ async def test_app_applies_a_builtin_theme_from_config(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_marv_theme_uses_the_terminal_background(temp_dir):
-    """marv's palette blends into the terminal instead of painting a black box."""
+async def test_marv_theme_is_transparent_so_the_terminal_shows_through(temp_dir):
+    """marv's palette paints no background of its own."""
     app = make_app(temp_dir, theme="marv-mlx")
 
     async with app.run_test():
-        assert app.current_theme.background == "ansi_default"
-        assert app.current_theme.surface == "ansi_default"
-        assert app.current_theme.panel == "ansi_default"
+        assert app.current_theme.background == "transparent"
+        assert app.current_theme.surface == "transparent"
+        assert app.current_theme.panel == "transparent"
+        assert app.screen.styles.background.is_transparent
 
 
 @pytest.mark.asyncio
