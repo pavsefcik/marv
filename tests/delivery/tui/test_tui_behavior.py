@@ -1143,7 +1143,8 @@ async def test_tui_runner_chat_and_tools_commands_toggle_mode(temp_dir):
         await submit(app, pilot, "/chat ")
         assert app.agent.interaction_mode is InteractionMode.CHAT
         assert "[chat]" in status_left_text(app)
-        assert any("💬 chat mode" in msg for msg in system_messages(app))
+        assert any(msg.startswith("💬 chat mode") for msg in system_messages(app))
+        assert not any("-- 💬" in msg for msg in system_messages(app))
 
         # Mode is agent state, so a new session keeps the last choice.
         await submit(app, pilot, "/new ")
@@ -1153,13 +1154,15 @@ async def test_tui_runner_chat_and_tools_commands_toggle_mode(temp_dir):
         await submit(app, pilot, "/tools ")
         assert app.agent.interaction_mode is InteractionMode.TOOLS
         assert "[chat]" not in status_left_text(app)
-        assert any("🛠️ tool mode" in msg for msg in system_messages(app))
+        assert any(msg.startswith("🛠️ tool mode") for msg in system_messages(app))
+        assert not any("-- 🛠️" in msg for msg in system_messages(app))
 
         await submit(app, pilot, "/kurt ")
         assert app.agent.interaction_mode is InteractionMode.KURT
         assert "[kurt]" in status_left_text(app)
         assert app.agent.tools.get_schemas() == []
-        assert any("🤘 kurt mode" in msg for msg in system_messages(app))
+        assert any(msg.startswith("🤘 kurt mode") for msg in system_messages(app))
+        assert not any("-- 🤘" in msg for msg in system_messages(app))
 
 
 @pytest.mark.asyncio

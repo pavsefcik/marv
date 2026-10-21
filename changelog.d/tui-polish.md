@@ -7,7 +7,8 @@
 ### Changed
 
 - **Emoji status rows.** A warmed model settles as `🚀 all systems ready`, and
-  mode switches announce themselves with `🛠️` (tools) and `💬` (chat).
+  mode switches announce themselves with `🛠️` (tools), `💬` (chat), and `🤘`
+  (kurt). Mode announcements are bare emoji rows, without the historical `--`.
 - **Wait narration names only the new tokens.** With a cached prefix the
   indicator reads `adding 16 tokens (2.712k cached)` instead of re-prefilling
   the whole prompt. `taking longer than predicted` now waits for a ten-second

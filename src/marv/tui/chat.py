@@ -40,15 +40,20 @@ def truncate(text: str, limit: int, message: str = "...") -> str:
     return text if len(text) <= limit else text[:limit] + f"\n{message}"
 
 
-def format_system_message(text: str) -> str:
+def format_system_message(text: str, *, marker: bool = True) -> str:
     """Mark up a system message, which may be several lines (``/help``).
 
     The ``--`` marker belongs to the first line only, so continuation lines are
     indented under it and the block still reads as one system row instead of as
     unprefixed prose. Content is escaped: a system line is data, not markup, so
-    shell output from ``!command`` cannot inject Rich tags.
+    shell output from ``!command`` cannot inject Rich tags. A mode announcement
+    passes ``marker=False``: it is current state rather than history, so it
+    stands on its own emoji row.
     """
-    head, *rest = text.splitlines() or [""]
+    lines = text.splitlines() or [""]
+    if not marker:
+        return "\n".join(escape(line) for line in lines)
+    head, *rest = lines
     return "\n".join(
         [f"-- {escape(head)}", *(f"   {escape(line)}" if line.strip() else "" for line in rest)]
     )
@@ -659,9 +664,13 @@ class ChatView(ScrollableContainer):
                 return child.text_content()
         return None
 
-    def add_system_message(self, text: str) -> None:
-        """Add a permanent system message (single line or a block)."""
-        self.mount(Static(format_system_message(text), classes="message-system"))
+    def add_system_message(self, text: str, *, marker: bool = True) -> None:
+        """Add a permanent system message (single line or a block).
+
+        ``marker=False`` omits the historical ``--`` prefix for a row that
+        states the current mode rather than an event.
+        """
+        self.mount(Static(format_system_message(text, marker=marker), classes="message-system"))
         self.scroll_to_bottom()
 
     def set_notice(self, text: str, *, spinner: bool = False) -> None:

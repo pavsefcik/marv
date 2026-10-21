@@ -344,7 +344,7 @@ class TUIController:
             InteractionMode.TOOLS: "🛠️ tool mode - tools enabled (/chat for a plain chat)",
             InteractionMode.KURT: "🤘 kurt mode - tools off / kurt on",
         }
-        chat.add_system_message(messages[mode])
+        chat.add_system_message(messages[mode], marker=False)
 
     def remember_selection(self) -> None:
         """Persist the active model/thinking so the next start preselects it.
