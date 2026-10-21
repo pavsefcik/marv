@@ -180,15 +180,16 @@ async def test_app_applies_a_builtin_theme_from_config(temp_dir):
 
 
 @pytest.mark.asyncio
-async def test_marv_theme_is_transparent_so_the_terminal_shows_through(temp_dir):
-    """marv's palette paints no background of its own."""
+async def test_marv_theme_uses_the_ansi_dark_background(temp_dir):
+    """marv shares ansi-dark's terminal-native background rather than a black box."""
     app = make_app(temp_dir, theme="marv-mlx")
 
     async with app.run_test():
-        assert app.current_theme.background == "transparent"
-        assert app.current_theme.surface == "transparent"
-        assert app.current_theme.panel == "transparent"
-        assert app.screen.styles.background.is_transparent
+        assert app.current_theme.ansi
+        assert app.current_theme.background == "ansi_default"
+        assert app.screen.styles.background.hex == "ansi_default"
+        # The prompt still renders: Textual's TextArea needs the ANSI treatment.
+        assert app.query_one("#prompt-inner")
 
 
 @pytest.mark.asyncio

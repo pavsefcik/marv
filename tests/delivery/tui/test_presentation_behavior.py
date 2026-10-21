@@ -401,9 +401,10 @@ async def test_prompt_placeholder_uses_the_themes_disabled_text_colour(temp_dir)
 
     A `>` combinator never matches a component class, so the rule was dead and
     TextArea's own default (`$text 40%`) applied instead. The selector is a
-    descendant one now: the assertion below is the cascade, not the file.
+    descendant one now: the assertion below is the cascade, not the file. Use a
+    hex theme: ANSI has no alpha, which has its own assertion below.
     """
-    app = make_app(temp_dir)
+    app = make_app(temp_dir, theme="nord")
 
     async with app.run_test() as pilot:
         await pilot.pause()

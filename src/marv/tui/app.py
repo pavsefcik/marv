@@ -75,22 +75,29 @@ MINIMAL_THEME = Theme(
 )
 
 # The marv-mlx look as a theme: the magenta wordmark, dim greys and the
-# green/yellow markers of the marv family UI. Chroma is fully transparent, so
-# the terminal window itself shows through instead of marv painting a black box
-# (``ansi_default`` still emitted an opaque background on some terminals).
+# green/yellow markers of the marv family UI. It is an ANSI-aware theme with the
+# same terminal background as ansi-dark, so the window shows through instead of
+# marv painting an opaque black box.
 MARV_MLX_THEME = Theme(
     name=MARV_MLX_THEME_NAME,
     primary="#ff87d7",
     secondary="#d7afd7",
     accent="#af87ff",
     foreground="#e4e4e4",
-    background="transparent",
-    surface="transparent",
-    panel="transparent",
+    background="ansi_default",
+    surface="ansi_default",
+    panel="ansi_default",
     success="#00d787",
     warning="#ffff5f",
     error="#ff5f5f",
     dark=True,
+    ansi=True,
+    # The same terminal-background variables ansi-dark provides; Textual's
+    # inline-screen rules reference them whenever a theme is ANSI-aware.
+    variables={
+        "ansi-background": "ansi_black",
+        "ansi-foreground": "ansi_white",
+    },
 )
 
 
