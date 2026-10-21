@@ -1308,9 +1308,11 @@ async def test_tui_runner_context_menu_shows_context_and_closes(temp_dir):
 async def test_tui_runner_load_menu_selects_session_and_returns_to_input(temp_dir):
     target = Session.new(temp_dir)
     target.append(Message.user("target-session"))
+    target.append(Message.assistant("target answer"))
 
     current = Session.new(temp_dir)
     current.append(Message.user("current-session"))
+    current.append(Message.assistant("current answer"))
 
     config = Config(provider="openai", model="gpt-4o", api_key="test", session_dir=temp_dir)
     app = AgentApp(config, provider=LLMProviderFake([]), session=current)

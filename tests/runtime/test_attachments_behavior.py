@@ -259,6 +259,7 @@ class TestAttachmentPersistence:
         attachment = load_one(AttachmentSpec(image), store=attachments_dir(session_dir))
         session = Session.new(session_dir)
         session.append(Message.user("look", attachments=[attachment]))
+        session.append(Message.assistant("I see it."))
 
         loaded = Session.load(session.path)
 
@@ -273,6 +274,7 @@ class TestAttachmentPersistence:
         attachment = load_one(AttachmentSpec(image), store=attachments_dir(session_dir))
         session = Session.new(session_dir)
         session.append(Message.user("look", attachments=[attachment]))
+        session.append(Message.assistant("I see it."))
 
         loaded = Session.load(session.path)
         hydrate_attachments(loaded.messages, session_dir)
@@ -296,6 +298,7 @@ class TestMissingBlob:
         attachment = load_one(AttachmentSpec(image), store=store)
         session = Session.new(session_dir)
         session.append(Message.user("look", attachments=[attachment]))
+        session.append(Message.assistant("I see it."))
         assert attachment.ref is not None
         (store / attachment.ref).unlink()
 

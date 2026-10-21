@@ -62,6 +62,7 @@ def test_cli_tree_errors_when_explicit_session_path_missing(temp_dir):
 def test_cli_fork_errors_when_from_message_cannot_be_resolved(temp_dir):
     source = Session.new(temp_dir)
     source.append(Message.user("first"))
+    source.append(Message.assistant("second"))
 
     runner = CliRunner()
     result = runner.invoke(
@@ -76,6 +77,7 @@ def test_cli_fork_errors_when_from_message_cannot_be_resolved(temp_dir):
 def test_cli_tree_errors_when_target_entry_cannot_be_resolved(temp_dir):
     session = Session.new(temp_dir)
     session.append(Message.user("first"))
+    session.append(Message.assistant("second"))
 
     runner = CliRunner()
     result = runner.invoke(

@@ -1,7 +1,6 @@
 """Session management with JSONL persistence."""
 
 import json
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Self
@@ -15,56 +14,6 @@ if TYPE_CHECKING:
 from marv.runtime.message import Message, Role
 
 SESSION_VERSION = 1
-
-#: Words that carry no request on their own. A session whose prompts are made
-#: only of these is a greeting/test rather than work worth resuming.
-_TRIVIAL_PROMPT_WORDS = frozenset(
-    {
-        "a",
-        "again",
-        "all",
-        "and",
-        "cool",
-        "everyone",
-        "hello",
-        "hey",
-        "hi",
-        "hiya",
-        "hmm",
-        "is",
-        "it",
-        "lol",
-        "morning",
-        "nice",
-        "no",
-        "ok",
-        "okay",
-        "ping",
-        "sup",
-        "test",
-        "testing",
-        "thanks",
-        "thank",
-        "the",
-        "there",
-        "this",
-        "yo",
-        "yes",
-        "you",
-    }
-)
-
-
-def is_meaningful_prompt(text: str) -> bool:
-    """Whether a prompt asks for something rather than just opening a chat.
-
-    The check is deliberately lexical: it filters greetings and test messages
-    (``hi``, ``testing``, ``thanks!``) without sending a prompt to a model or
-    claiming to judge intent. Any word outside the greeting vocabulary makes
-    the prompt meaningful.
-    """
-    words = re.findall(r"[a-z0-9]+", text.casefold())
-    return bool(words) and any(word not in _TRIVIAL_PROMPT_WORDS for word in words)
 
 
 class SessionMetadata(BaseModel):
@@ -138,7 +87,15 @@ class SessionContext(BaseModel):
 class Session:
     """Manages conversation history with JSONL persistence."""
 
-    __slots__ = ("path", "metadata", "messages", "entries", "_leaf_id", "_entries_by_id")
+    __slots__ = (
+        "path",
+        "metadata",
+        "messages",
+        "entries",
+        "_leaf_id",
+        "_entries_by_id",
+        "_persisted",
+    )
 
     def __init__(
         self,
@@ -146,12 +103,15 @@ class Session:
         metadata: SessionMetadata,
         entries: list[SessionEntry] | None = None,
         leaf_id: str | None = None,
+        *,
+        persisted: bool = True,
     ) -> None:
         self.path = path
         self.metadata = metadata
         self.entries: list[SessionEntry] = list(entries) if entries is not None else []
         self._entries_by_id: dict[str, SessionEntry] = {entry.id: entry for entry in self.entries}
         self._leaf_id: str | None = leaf_id
+        self._persisted = persisted
         self.messages: list[Message] = []
         self._rebuild_messages()
 
@@ -171,8 +131,9 @@ class Session:
             model=model,
         )
 
-        cls._write_header_file(path, metadata)
-        return cls(path, metadata)
+        # The file is written lazily: a launch that never gets a real message
+        # should not leave an empty, system-prompt-only session behind.
+        return cls(path, metadata, persisted=False)
 
     @classmethod
     def load(cls, path: Path) -> Self:
@@ -245,22 +206,21 @@ class Session:
             return cls.load(sessions[0])
         return None
 
-    def meaningful_prompt(self) -> str | None:
-        """The first user prompt that asks for something, if any."""
-        for message in self.messages:
-            if message.role == Role.USER and is_meaningful_prompt(message.content):
-                return message.content
-        return None
+    def first_prompt(self) -> str | None:
+        """The first user prompt, if any."""
+        return next(
+            (message.content for message in self.messages if message.role == Role.USER),
+            None,
+        )
 
     def is_resumable(self) -> bool:
-        """Whether this session is more than an empty launch or a greeting."""
-        return self.meaningful_prompt() is not None
+        """Whether this session has at least one prompt and one answer."""
+        roles = {message.role for message in self.messages}
+        return Role.USER in roles and Role.ASSISTANT in roles
 
     def description(self, limit: int = 80) -> str:
-        """A one-line description, taken from the first meaningful prompt."""
-        prompt = self.meaningful_prompt()
-        if prompt is None:
-            prompt = next((m.content for m in self.messages if m.role == Role.USER), "")
+        """A one-line description, taken from the first prompt."""
+        prompt = self.first_prompt() or ""
         one_line = " ".join(prompt.split())
         if not one_line:
             return "(no prompt)"
@@ -316,9 +276,6 @@ class Session:
             provider=selected_provider,
             model=selected_model,
         )
-        # Rewrite header with parent info
-        type(self)._write_header_file(new_session.path, new_session.metadata)
-
         prev_id: str | None = None
         for msg in self.messages[: idx + 1]:
             new_id = uuid4().hex[:12]
@@ -395,10 +352,32 @@ class Session:
 
     def _rewrite_file(self) -> None:
         """Rewrite header + all entries."""
+        if not self._persisted:
+            return
         self._write_header()
         with open(self.path, "a") as f:
             for entry in self.entries:
                 f.write(self._serialize_entry(entry) + "\n")
+
+    def _persist_entry(self, entry: SessionEntry, *, triggers: bool) -> None:
+        """Append an entry, or start the file when it is worth keeping.
+
+        A new session stays in memory until it has both a prompt and an
+        answer. That keeps launches, ``/resume`` detours, and abandoned prompts
+        from accumulating JSONL files. Once the first answer arrives, the whole
+        session so far is flushed.
+        """
+        if not self._persisted:
+            if not triggers:
+                return
+            self._persisted = True
+            self._write_header()
+            with open(self.path, "a") as f:
+                for pending in self.entries:
+                    f.write(self._serialize_entry(pending) + "\n")
+            return
+        with open(self.path, "a") as f:
+            f.write(self._serialize_entry(entry) + "\n")
 
     @classmethod
     def _parse_entry(cls, line: str) -> SessionEntry | None:
@@ -451,8 +430,7 @@ class Session:
         self.messages.append(entry.message)
         self._leaf_id = entry.id
         if persist:
-            with open(self.path, "a") as f:
-                f.write(self._serialize_entry(entry) + "\n")
+            self._persist_entry(entry, triggers=self.is_resumable())
         return entry
 
     def _append_model_change_entry(
@@ -469,8 +447,7 @@ class Session:
         self._add_entry(entry)
         self._leaf_id = entry.id
         if persist:
-            with open(self.path, "a") as f:
-                f.write(self._serialize_entry(entry) + "\n")
+            self._persist_entry(entry, triggers=False)
         return entry
 
     def _append_compaction_entry(
@@ -493,8 +470,7 @@ class Session:
         )
         self._add_entry(entry)
         if persist:
-            with open(self.path, "a") as f:
-                f.write(self._serialize_entry(entry) + "\n")
+            self._persist_entry(entry, triggers=False)
         return entry
 
     def _append_session_state_entry(
@@ -511,8 +487,7 @@ class Session:
         )
         self._add_entry(entry)
         if persist:
-            with open(self.path, "a") as f:
-                f.write(self._serialize_entry(entry) + "\n")
+            self._persist_entry(entry, triggers=False)
         return entry
 
     def __len__(self) -> int:

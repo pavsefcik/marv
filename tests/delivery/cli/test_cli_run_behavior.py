@@ -8,6 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from marv import cli
+from marv.runtime.message import Message
 from marv.runtime.session import Session
 
 
@@ -271,6 +272,8 @@ def test_cli_run_headless_loads_explicit_session(temp_dir, monkeypatch):
     ext_path = project / "ext_dump.py"
     write_extension(ext_path)
     session = Session.new(temp_dir)
+    session.append(Message.user("start"))
+    session.append(Message.assistant("ready"))
 
     runner = CliRunner()
     result = runner.invoke(

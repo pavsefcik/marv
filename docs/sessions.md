@@ -2,6 +2,11 @@
 
 Sessions are stored as JSONL files in `~/.cache/marv/sessions` by default.
 
+A session file is written lazily: launching marv, browsing `/resume`, or a
+prompt that never gets an answer does not create one. The first answer writes
+the header, the system prompt, and the whole conversation so far, so every
+saved session has at least one prompt and one answer.
+
 ## Format
 
 Each session is a JSONL file. The first line is the session header, the rest are entries.
@@ -25,10 +30,10 @@ The header may also carry `provider`/`model` for the session's starting selectio
 
 **Resume**
 Load an existing session and continue from its active leaf. `/resume` (and the
-`marv sessions` listing) only offers sessions with a real user prompt: a launch
-that was never used, a greeting/test such as `hi` or `testing`, and files that
-cannot be read are skipped. Each entry is described by the first meaningful
-prompt, flattened to one line.
+`marv sessions` listing) offers every session with at least one prompt and one
+answer; unfinished prompts, launches that were never used, and files that
+cannot be read are skipped. Each entry is described by its first prompt,
+flattened to one line.
 
 **Tree (in-place branching)**
 Entries form a tree via `id` and `parentId`. The active branch is defined by the latest `session_state` entry. Context is built by walking from the leaf to the root and using only that path.
