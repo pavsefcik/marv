@@ -5,6 +5,41 @@ All notable changes to marv are documented here. The version in
 
 ## [Unreleased]
 
+## [1.124.0] - 2026-10-21
+
+### Added
+
+- **Kurt mode, for now a chat-like mode.** `/kurt` turns every tool off, sends no
+  tool schemas, and shows `🤘 kurt mode - tools off / kurt on`; the status bar
+  marks it `[kurt]`. It behaves as plain chat until kurt's own behaviour lands.
+
+### Changed
+
+- **The marv theme blends into the terminal.** It is now an ANSI-aware theme that
+  uses the same terminal-native background as `ansi-dark` instead of painting a
+  black box behind the TUI; the magenta/grey marv palette is unchanged.
+- **Session resume lists only sessions worth returning to.** `/resume` and
+  `marv sessions` skip launch-created empty sessions and one-off greetings/tests
+  (`hi`, `testing`, `thanks`), and each entry starts with a one-line description
+  taken from the first meaningful prompt.
+- **Emoji status rows.** A warmed model settles as `🚀 all systems ready`, and
+  mode switches announce themselves with `🛠️` (tools), `💬` (chat), and `🤘`
+  (kurt). Mode announcements are bare emoji rows, without the historical `--`.
+- **Wait narration names only the new tokens.** With a cached prefix the
+  indicator reads `adding 16 tokens (2.712k cached)` instead of re-prefilling
+  the whole prompt. `taking longer than predicted` now waits for a ten-second
+  overrun instead of firing on the first second past the estimate.
+
+### Fixed
+
+- **Code fences keep their spacing under the ANSI themes.** Textual's ANSI
+  variant collapsed the fence margin and side padding, so code blocks and the
+  headings around them sat differently from the marv and hex themes. The frame
+  geometry is now the same in every theme.
+- **Code blocks are framed, not followed by a frame.** A code fence no longer
+  reserves an empty horizontal scrollbar row beneath the code, and the ANSI
+  themes now give the fence an opaque background so the code sits inside it.
+
 ## [1.123.0] - 2026-10-18
 
 ### Changed
